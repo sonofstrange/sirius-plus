@@ -379,10 +379,7 @@ async def _snipe_loop(
                             storage.spend_reserved_coin(uid)
                 storage.set_watch_status(user_id, event_id, "registered")
                 _log_snipe_attempt(user_id, event_id, event_name, "success", status_code=result.status_code, success=True, reserved=bool(final_reserved), message="registered")
-                if final_reserved:
-                    await notify(user_id, f"😅 «{event_name}» — основные места разобрали, но я успел записать тебя в резерв.")
-                else:
-                    await notify(user_id, f"✅ Записал тебя на «{event_name}»!")
+                await notify(user_id, f"✅ Ты теперь записан на «{event_name}».")
                 return
 
             log.info("snipe retry %s: HTTP %s %s", event_id, result.status_code, result.body[:120])

@@ -8,6 +8,7 @@ import logging
 import urllib.parse
 from dataclasses import dataclass, field
 from email.utils import parsedate_to_datetime
+from html.parser import HTMLParser
 from typing import Self
 
 log = logging.getLogger("sirius_api")
@@ -30,6 +31,49 @@ BASE_HEADERS = {
         "Chrome/149.0.0.0 Safari/537.36"
     ),
 }
+
+
+class _DescriptionTextParser(HTMLParser):
+    _BLOCK_TAGS = {"address", "article", "blockquote", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li", "p", "section"}
+    _IGNORED_TAGS = {"script", "style"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.ignored_depth = 0
+
+    def _newline(self):
+        if self.parts and not self.parts[-1].endswith("\n"):
+            self.parts.append("\n")
+
+    def handle_starttag(self, tag, attrs):
+        tag = tag.lower()
+        if tag in self._IGNORED_TAGS:
+            self.ignored_depth += 1
+        elif not self.ignored_depth and (tag == "br" or tag in self._BLOCK_TAGS):
+            self._newline()
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if tag in self._IGNORED_TAGS and self.ignored_depth:
+            self.ignored_depth -= 1
+        elif not self.ignored_depth and tag in self._BLOCK_TAGS:
+            self._newline()
+
+    def handle_data(self, data):
+        if not self.ignored_depth:
+            self.parts.append(data)
+
+
+def clean_description(value: str | None) -> str:
+    """Turn Sirius rich-text descriptions into safe, readable plain text."""
+    if not value:
+        return ""
+    parser = _DescriptionTextParser()
+    parser.feed(str(value))
+    parser.close()
+    lines = [" ".join(line.replace("\xa0", " ").split()) for line in "".join(parser.parts).splitlines()]
+    return "\n".join(line for line in lines if line).strip()
 
 
 @dataclass
@@ -188,7 +232,7 @@ def _parse_events(data: dict) -> list[EventInfo]:
                 is_reserved=bool(ev.get("isReserved")),
                 people_current=ev.get("peopleCurrent", 0),
                 people_max=ev.get("peopleMax", 0),
-                description=ev.get("description") or ev.get("eventDescription") or "",
+                description=clean_description(ev.get("description") or ev.get("eventDescription")),
                 raw=ev,
             ))
     return events
@@ -214,7 +258,7 @@ def _parse_schedule_events(data: dict) -> list[ScheduleEvent]:
                 status=ev.get("status", ""),
                 location=ev.get("eventLocation") or [],
                 tutors=ev.get("tutors") or [],
-                description=ev.get("description") or "",
+                description=clean_description(ev.get("description")),
                 people_max=ev.get("peopleMax", 0),
                 people_current=ev.get("peopleCurrent", 0),
                 people_reserved=ev.get("peopleReserved", 0),

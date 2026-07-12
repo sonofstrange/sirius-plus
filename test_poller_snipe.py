@@ -84,6 +84,16 @@ class SnipeLoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(spent, ["uid-1"])
         self.assertEqual(released, [])
 
+    async def test_success_notification_is_neutral_for_reserve(self):
+        client = FakeClient([SubscribeResult(True, True, 201, "{}")])
+
+        await self._run_snipe(client)
+
+        self.assertEqual(
+            _notify_sink.messages[-1][1],
+            "✅ Ты теперь записан на «Test event».",
+        )
+
     async def test_error_body_retries_until_success(self):
         client = FakeClient([
             SubscribeResult(True, False, 200, '{"error":[{"key":"record_disabled"}]}'),

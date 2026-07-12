@@ -22,7 +22,7 @@ from fastapi.templating import Jinja2Templates
 import config as app_config
 import poller
 import storage
-from sirius_api import EventInfo, SiriusClient, token_expiry, parse_sirius_time, classify_subscribe_result
+from sirius_api import EventInfo, SiriusClient, token_expiry, parse_sirius_time, classify_subscribe_result, clean_description
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("main")
@@ -110,7 +110,7 @@ async def web_notify(user_id: str, text: str, ntype: str = "info"):
             asyncio.create_task(_send_push_to_user(user_id, text, ntype))
         except Exception as e:
             log.warning("Failed to schedule push notification: %s", e)
-    if text.startswith("✅ Записал") or text.startswith("😅"):
+    if text.startswith("✅ Ты теперь записан"):
         _schedule_cache.pop(f"events:{user_id}", None)
     log.info("NOTIFY %s [%s]: %s", user_id, ntype, text)
 
@@ -141,6 +141,7 @@ def _deserialize_events(data_json: str) -> list[EventInfo]:
     events = []
     for item in items:
         item = {k: item.get(k) for k in EventInfo.__dataclass_fields__}
+        item["description"] = clean_description(item.get("description"))
         events.append(EventInfo(**item))
     return events
 
