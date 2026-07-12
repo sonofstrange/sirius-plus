@@ -1,0 +1,10 @@
+# Runtime data and private keys.
+data/
+*.sqlite3
+*.sqlite3-journal
+
+# Python and local environment files.
+__pycache__/
+*.py[cod]
+.venv/
+.env

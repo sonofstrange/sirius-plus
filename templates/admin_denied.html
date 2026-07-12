@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Доступ запрещён — Пирожковый Диспетчер{% endblock %}
+{% block content %}
+<div class="page">
+    <div class="page__header">
+        <h1 class="page__title">Доступ запрещён</h1>
+    </div>
+
+    <div class="empty-state">
+        <span class="material-symbols-outlined empty-state__icon">block</span>
+        <p>У тебя нет прав администратора.</p>
+        <a href="/" class="btn btn-primary">На главную</a>
+    </div>
+</div>
+{% endblock %}

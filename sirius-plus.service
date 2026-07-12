@@ -1,0 +1,17 @@
+[Unit]
+Description=Пирожковый Диспетчер (Sirius Plus)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/sirius-plus
+Environment="SIRIUS_HOST=0.0.0.0"
+Environment="SIRIUS_PORT=8000"
+Environment="TOKEN_ENCRYPTION_KEY="
+ExecStart=/opt/sirius-plus/.venv/bin/python /opt/sirius-plus/main.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

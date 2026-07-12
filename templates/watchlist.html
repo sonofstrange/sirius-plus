@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}Слежка — Пирожковый Диспетчер{% endblock %}
+{% block content %}
+<div class="page">
+    <div class="page__header">
+        <h1 class="page__title">Слежка</h1>
+        <p class="page__subtitle">События, за которыми ты следишь</p>
+    </div>
+
+    {% if not watches %}
+    <div class="empty-state">
+        <span class="material-symbols-outlined empty-state__icon">visibility_off</span>
+        <p>Ты пока не следишь ни за одним событием</p>
+        <a href="/events" class="btn btn-primary">Найти события</a>
+    </div>
+    {% endif %}
+
+    <div class="watchlist">
+        {% for w in watches %}
+        <div class="event-card" data-watch-id="{{ w.id }}">
+            <div class="event-card__time">
+                {% if w.event_start %}
+                <span class="event-card__time-start">{{ fmt_dt(w.event_start) }}</span>
+                {% endif %}
+            </div>
+            <div class="event-card__info">
+                <div class="event-card__title">{{ w.event_name }}</div>
+                <div class="event-card__meta">
+                    {% if w.status == 'watching' %}
+                    <span class="badge badge-success">
+                        <span class="material-symbols-outlined" style="font-size:14px">radar</span>
+                        <span class="snipe-countdown" id="snipe-timer-{{ loop.index }}">{{ w._snipe_label }}</span>
+                    </span>
+                    {% elif w._snipe_label %}
+                    <span class="badge badge-muted">{{ w._snipe_label }}</span>
+                    {% endif %}
+                    <span class="badge badge-{{ 'success' if w.status == 'registered' else 'warning' if w.status == 'watching' else 'muted' }}">
+                        {% if w.status == 'registered' %}Записан
+                        {% elif w.status == 'watching' %}{% if w._snipe_active %}Ловит{% else %}Ожидает{% endif %}
+                        {% elif w.status == 'failed' %}Ошибка
+                        {% elif w.status == 'removed' %}Удалено
+                        {% else %}{{ w.status }}{% endif %}
+                    </span>
+                    <span class="badge badge-muted">
+                        {% if w.snipe_priority == 'high' %}Высокий · 2🪙{% elif w.snipe_priority == 'medium' %}Средний · 1🪙{% else %}Низкий · бесплатно{% endif %}
+                    </span>
+                </div>
+            </div>
+            <div class="event-card__actions">
+                {% if w.status == 'watching' %}
+                <select class="form-select snipe-priority-select" onchange="changeWatchPriority('{{ w.event_id }}', this.value, this)" aria-label="Приоритет автозаписи">
+                    <option value="low" {% if w.snipe_priority == 'low' %}selected{% endif %}>Низкий · бесплатно</option>
+                    <option value="medium" {% if w.snipe_priority == 'medium' %}selected{% endif %}>Средний · 1🪙</option>
+                    <option value="high" {% if w.snipe_priority == 'high' %}selected{% endif %}>Высокий · 2🪙</option>
+                </select>
+                {% endif %}
+                <button class="btn btn-outline btn-sm" onclick='showSnipeLog("{{ w.event_id }}", {{ w.event_name|tojson }})'>
+                    Журнал
+                </button>
+                <button class="btn btn-danger-text btn-sm" onclick="removeWatch('{{ w.event_id }}', '{{ w.status }}')">
+                    {% if w.status == 'watching' %}Перестать следить{% else %}Убрать{% endif %}
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="modal-overlay" id="snipe-log-modal" onclick="closeModal('snipe-log-modal')">
+    <div class="modal modal-lg" onclick="event.stopPropagation()">
+        <div class="modal__header">
+            <h2 id="snipe-log-title">Журнал снайпера</h2>
+            <button class="modal__close" onclick="closeModal('snipe-log-modal')">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <div class="modal__body" id="snipe-log-body"></div>
+    </div>
+</div>
+
+<script>
+const PRIORITY_LABELS = {
+    low: 'Низкий · бесплатно',
+    medium: 'Средний · 1🪙',
+    high: 'Высокий · 2🪙',
+};
+
+async function changeWatchPriority(eventId, priority, selectEl) {
+    const oldValue = selectEl.dataset.prev || selectEl.querySelector('option[selected]')?.value || priority;
+    selectEl.disabled = true;
+    try {
+        const resp = await fetch('/api/watch/priority', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({event_id: eventId, snipe_priority: priority}),
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+            selectEl.value = oldValue;
+            dlgAlert('Ошибка', data.error || 'Не удалось поменять приоритет');
+            return;
+        }
+        selectEl.dataset.prev = priority;
+        location.reload();
+    } catch (e) {
+        selectEl.value = oldValue;
+        dlgAlert('Ошибка', 'Ошибка соединения: ' + e);
+    } finally {
+        selectEl.disabled = false;
+    }
+}
+
+function snipePhaseLabel(phase) {
+    return ({
+        prewarm: 'Прогрев',
+        prewarm_error: 'Ошибка прогрева',
+        start: 'Старт',
+        try: 'Попытка',
+        error: 'Ошибка',
+        success: 'Успех',
+        timeout: 'Таймаут',
+    })[phase] || phase;
+}
+
+async function showSnipeLog(eventId, eventName) {
+    const modal = document.getElementById('snipe-log-modal');
+    const title = document.getElementById('snipe-log-title');
+    const body = document.getElementById('snipe-log-body');
+    title.textContent = 'Журнал: ' + eventName;
+    body.innerHTML = '<p class="muted">Загружаю...</p>';
+    modal.style.display = 'flex';
+    try {
+        const resp = await fetch('/api/snipe-log/' + encodeURIComponent(eventId));
+        const data = await resp.json();
+        if (!data.ok) {
+            body.innerHTML = '<p class="muted">' + escapeHtml(data.error || 'Не удалось загрузить журнал') + '</p>';
+            return;
+        }
+        if (!data.attempts.length) {
+            body.innerHTML = '<p class="muted">Попыток пока не было.</p>';
+            return;
+        }
+        body.innerHTML = `<div class="snipe-log-list">${data.attempts.map(a => `
+            <div class="snipe-log-row ${a.success ? 'snipe-log-row--ok' : ''}">
+                <div class="snipe-log-row__top">
+                    <strong>${escapeHtml(snipePhaseLabel(a.phase))}</strong>
+                    <span>${escapeHtml(a.created_at || '')}</span>
+                </div>
+                <div class="snipe-log-row__meta">
+                    ${a.status_code ? `HTTP ${a.status_code}` : 'без HTTP'}
+                    ${a.latency_ms ? ` · ${a.latency_ms} мс` : ''}
+                    ${a.reserved ? ' · резерв' : ''}
+                </div>
+                ${a.message ? `<div class="snipe-log-row__message">${escapeHtml(a.message)}</div>` : ''}
+            </div>
+        `).join('')}</div>`;
+    } catch (e) {
+        body.innerHTML = '<p class="muted">Ошибка соединения: ' + escapeHtml(String(e)) + '</p>';
+    }
+}
+
+async function removeWatch(eventId, status) {
+    const isWatching = status === 'watching';
+    const ok = await dlgConfirm(
+        isWatching ? 'Перестать следить' : 'Убрать',
+        isWatching ? 'Перестать следить за этим событием?' : 'Убрать событие из списка?'
+    );
+    if (!ok) return;
+    try {
+        const resp = await fetch('/api/unwatch', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({event_id: eventId}),
+        });
+        const data = await resp.json();
+        if (data.ok) { location.reload(); }
+        else { dlgAlert('Ошибка', data.error || 'Ошибка'); }
+    } catch (e) { dlgAlert('Ошибка', 'Ошибка соединения: ' + e); }
+}
+
+// Live countdown timers
+document.addEventListener('DOMContentLoaded', () => {
+    {% for w in watches %}
+    {% if w.status == 'watching' and w._target_dt %}
+    (function() {
+        const target = new Date('{{ w._snipe_opening_iso }}').getTime();
+        const el = document.getElementById('snipe-timer-{{ loop.index }}');
+        if (!el) return;
+        function tick() {
+            const now = Date.now();
+            const diff = Math.max(0, target - now);
+            if (diff <= 0) { el.textContent = 'ловлю открытие прямо сейчас'; return; }
+            const h = Math.floor(diff / 3600000);
+            const m = Math.floor((diff % 3600000) / 60000);
+            const s = Math.floor((diff % 60000) / 1000);
+            const label = h > 0 ? `запись откроется через ${h}ч ${m}м` : m > 0 ? `запись откроется через ${m}м ${s}с` : `запись откроется через ${s}с`;
+            el.textContent = label;
+        }
+        tick();
+        setInterval(tick, 1000);
+    })();
+    {% endif %}
+    {% endfor %}
+});
+</script>
+{% endblock %}

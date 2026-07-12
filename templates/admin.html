@@ -1,0 +1,341 @@
+{% extends "base.html" %}
+{% block title %}Админ-панель — Пирожковый Диспетчер{% endblock %}
+{% block content %}
+<div class="page">
+    <div class="page__header">
+        <h1 class="page__title">Админ-панель</h1>
+    </div>
+
+    <div class="auth-card__help" style="background:var(--bg-card);padding:24px;border-radius:var(--radius);box-shadow:var(--shadow);line-height:1.8">
+        <h2 style="font-size:18px;margin-bottom:16px">Выдать коины</h2>
+        <div class="form-group" style="position:relative">
+            <label class="form-label">Начни вводить имя или UID</label>
+            <input type="text" class="form-input" id="grant-uid" placeholder="Имя или UID..." style="width:100%" autocomplete="off"
+                   oninput="filterSuggestions()" onfocus="filterSuggestions()">
+            <div id="suggestions" style="position:absolute;top:100%;left:0;right:0;background:var(--bg-card);border:1px solid var(--border);border-radius:0 0 var(--radius) var(--radius);max-height:200px;overflow-y:auto;display:none;z-index:100"></div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Количество коинов</label>
+            <input type="number" class="form-input" id="grant-amount" value="1" min="1" style="width:100%">
+        </div>
+        <button class="btn btn-primary" onclick="grantCoins()">Выдать коины</button>
+        <div id="grant-result" class="alert" style="display:none;margin-top:16px"></div>
+
+        <h2 style="font-size:18px;margin:32px 0 16px">Все пользователи</h2>
+        <input type="text" class="form-input" id="search-input" placeholder="Поиск по имени или UID..." style="width:100%;margin-bottom:16px"
+               oninput="renderTable()">
+        <div id="users-list">
+            <div class="loading">Загрузка...</div>
+        </div>
+
+        <h2 style="font-size:18px;margin:32px 0 16px">Обращения пользователей</h2>
+        <div id="feedback-list">
+            <div class="loading">Загрузка...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+let allUsers = [];
+let _suppressSuggestions = false;
+
+async function loadUsers() {
+    const container = document.getElementById('users-list');
+    try {
+        const resp = await fetch('/api/admin/users');
+        const data = await resp.json();
+        if (!data.ok) {
+            container.innerHTML = '<div class="alert alert-error">Ошибка: ' + (data.error || 'Неизвестная') + '</div>';
+            return;
+        }
+        allUsers = data.users || [];
+        renderTable();
+        filterSuggestions();
+    } catch (e) {
+        container.innerHTML = '<div class="alert alert-error">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
+    }
+}
+
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]); }
+
+function fmtDate(ts) {
+    return new Date(ts * 1000).toLocaleString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+async function loadFeedback() {
+    const container = document.getElementById('feedback-list');
+    try {
+        const resp = await fetch('/api/admin/feedback');
+        const data = await resp.json();
+        if (!data.ok) {
+            container.innerHTML = '<div class="alert alert-error">Ошибка: ' + (data.error || 'Неизвестная') + '</div>';
+            return;
+        }
+        const messages = data.messages || [];
+        if (messages.length === 0) {
+            container.innerHTML = '<p style="color:var(--text-muted)">Обращений пока нет</p>';
+            return;
+        }
+        container.innerHTML = messages.map(m => `
+            <div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:10px;background:${m.is_read ? 'transparent' : 'color-mix(in srgb, var(--primary) 10%, var(--bg-card))'}">
+                <div style="display:flex;gap:8px;align-items:flex-start;justify-content:space-between;margin-bottom:8px">
+                    <div>
+                        <strong>${escapeHtml(m.name || m.user_id || 'Аноним')}</strong>
+                        <div style="color:var(--text-muted);font-size:12px">${fmtDate(m.created_at)}${m.user_id ? ' · ' + escapeHtml(m.user_id) : ''}</div>
+                    </div>
+                    <div style="display:flex;gap:6px;white-space:nowrap">
+                        <button class="btn btn-sm btn-outline" onclick="toggleFeedbackRead(${m.id}, ${m.is_read ? 'false' : 'true'})">${m.is_read ? 'Не прочитано' : 'Прочитано'}</button>
+                        <button class="btn btn-sm btn-outline" onclick="hideFeedback(${m.id})">Скрыть</button>
+                        <button class="btn btn-sm btn-outline" onclick="deleteFeedback(${m.id})">Удалить</button>
+                    </div>
+                </div>
+                <div style="white-space:pre-wrap;line-height:1.5">${escapeHtml(m.message)}</div>
+                ${m.answer ? '<div style="margin-top:10px;padding:10px 12px;border-left:3px solid var(--success);background:color-mix(in srgb, var(--success) 8%, transparent);border-radius:var(--radius-sm)"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Ответ ' + (m.answered_at ? fmtDate(m.answered_at) : '') + '</div><div style="white-space:pre-wrap;line-height:1.5">' + escapeHtml(m.answer) + '</div></div>' : ''}
+                <div style="display:flex;gap:8px;margin-top:10px;align-items:flex-start">
+                    <textarea class="form-textarea" id="answer-${m.id}" rows="2" placeholder="Ответ пользователю..." style="flex:1;min-height:42px">${m.answer ? escapeHtml(m.answer) : ''}</textarea>
+                    <button class="btn btn-primary btn-sm" onclick="answerFeedback(${m.id})">Ответить</button>
+                </div>
+            </div>
+        `).join('');
+    } catch (e) {
+        container.innerHTML = '<div class="alert alert-error">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
+    }
+}
+
+async function toggleFeedbackRead(id, isRead) {
+    await fetch(`/api/admin/feedback/${id}/read`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({is_read: isRead}),
+    });
+    loadFeedback();
+}
+
+async function deleteFeedback(id) {
+    if (!confirm('Удалить обращение?')) return;
+    await fetch(`/api/admin/feedback/${id}`, {method: 'DELETE'});
+    loadFeedback();
+}
+
+async function hideFeedback(id) {
+    if (!confirm('Скрыть обращение в админ-панели? У пользователя оно останется.')) return;
+    await fetch(`/api/admin/feedback/${id}/hide`, {method: 'POST'});
+    loadFeedback();
+}
+
+async function answerFeedback(id) {
+    const textarea = document.getElementById(`answer-${id}`);
+    const answer = (textarea.value || '').trim();
+    if (!answer) {
+        alert('Ответ не может быть пустым');
+        return;
+    }
+    const resp = await fetch(`/api/admin/feedback/${id}/answer`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({answer}),
+    });
+    const data = await resp.json();
+    if (!data.ok) {
+        alert(data.error || 'Ошибка');
+        return;
+    }
+    loadFeedback();
+}
+
+function renderTable() {
+    const container = document.getElementById('users-list');
+    const q = (document.getElementById('search-input').value || '').toLowerCase();
+    const filtered = allUsers.filter(u =>
+        u.uid.toLowerCase().includes(q) || (u.name || '').toLowerCase().includes(q)
+    );
+    if (filtered.length === 0) {
+        container.innerHTML = '<p style="color:var(--text-muted)">Ничего не найдено</p>';
+        return;
+    }
+    let html = '<div class="admin-users-table-wrap"><table class="admin-users-table"><tr><th>Имя</th><th>UID</th><th>Коины</th><th>Доверие</th><th>Админ</th><th>Выдать</th></tr>';
+    for (const u of filtered) {
+        const trust = Number(u.trust_level || 2);
+        const safeUid = u.uid.replace(/'/g,"\\'");
+        const trustHtml = u.is_admin
+            ? '<span class="badge badge-success">0 · Админ</span>'
+            : `<select class="form-select admin-users-table__select" onchange="setTrust('${safeUid}', this.value)">
+                <option value="1" ${trust === 1 ? 'selected' : ''}>1 · Доверенный</option>
+                <option value="2" ${trust === 2 ? 'selected' : ''}>2 · Обычный</option>
+                <option value="3" ${trust === 3 ? 'selected' : ''}>3 · Недоверенный</option>
+            </select>`;
+        html += `<tr>
+            <td>
+                <a href="javascript:void(0)" onclick="fillUid('${safeUid}')" style="color:var(--link);text-decoration:none" title="Заполнить UID">${escapeHtml(u.name || '(без имени)')}</a>
+            </td>
+            <td class="admin-users-table__uid" onclick="fillUid('${safeUid}')" title="Нажми чтобы скопировать UID в поле">${escapeHtml(u.uid)}</td>
+            <td class="admin-users-table__coins"><strong>${u.coins}</strong></td>
+            <td>${trustHtml}</td>
+            <td>
+                <button class="btn btn-sm ${u.is_admin ? 'btn-primary' : 'btn-outline'} admin-users-table__admin-btn" onclick="setAdmin('${safeUid}', ${u.is_admin ? 'false' : 'true'})">
+                    ${u.is_admin ? 'Админ' : 'Назначить'}
+                </button>
+            </td>
+            <td>
+                <div class="admin-users-table__actions">
+                    <button class="btn btn-sm btn-outline" onclick="quickGrant('${safeUid}', 1)">+1</button>
+                    <button class="btn btn-sm btn-outline" onclick="quickGrant('${safeUid}', 5)">+5</button>
+                </div>
+            </td>
+        </tr>`;
+    }
+    html += '</table></div>';
+    container.innerHTML = html;
+}
+
+function fillUid(uid) {
+    document.getElementById('grant-uid').value = uid;
+    document.getElementById('suggestions').style.display = 'none';
+}
+
+function filterSuggestions() {
+    const input = document.getElementById('grant-uid');
+    const q = (input.value || '').toLowerCase();
+    const box = document.getElementById('suggestions');
+    if (!q) { box.style.display = 'none'; return; }
+    const matches = allUsers.filter(u =>
+        u.uid.toLowerCase().includes(q) || (u.name || '').toLowerCase().includes(q)
+    ).slice(0, 8);
+    if (matches.length === 0) { box.style.display = 'none'; return; }
+    let html = '';
+    for (const u of matches) {
+        html += `<div style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:14px"
+                    onmousedown="event.preventDefault();fillUid('${u.uid.replace(/'/g,"\\'")}')">
+            <strong>${escapeHtml(u.name || '(без имени)')}</strong>
+            <span style="color:var(--text-muted);margin-left:8px;font-size:12px">${escapeHtml(u.uid)}</span>
+            <span style="float:right;color:var(--accent)">${u.coins}🪙</span>
+        </div>`;
+    }
+    box.innerHTML = html;
+    box.style.display = 'block';
+}
+
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('#grant-uid') && !e.target.closest('#suggestions')) {
+        document.getElementById('suggestions').style.display = 'none';
+    }
+});
+
+async function quickGrant(uid, amount) {
+    const result = document.getElementById('grant-result');
+    result.style.display = 'block';
+    result.className = 'alert';
+    result.textContent = 'Выдаю...';
+    try {
+        const resp = await fetch('/api/admin/grant-coins', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({uid, amount}),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            result.className = 'alert alert-success';
+            result.textContent = `Выдано ${amount} коинов. Новый баланс: ${data.new_balance}`;
+            loadUsers();
+        } else {
+            result.className = 'alert alert-error';
+            result.textContent = (data.error || 'Ошибка');
+        }
+    } catch (e) {
+        result.className = 'alert alert-error';
+        result.textContent = 'Ошибка соединения: ' + e.message;
+    }
+}
+
+async function setTrust(uid, trustLevel) {
+    try {
+        const resp = await fetch('/api/admin/set-trust', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({uid, trust_level: Number(trustLevel)}),
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+            alert(data.error || 'Ошибка');
+        }
+        loadUsers();
+    } catch (e) {
+        alert('Ошибка соединения: ' + e.message);
+    }
+}
+
+async function setAdmin(uid, isAdmin) {
+    const action = isAdmin ? 'назначить админом' : 'снять админку';
+    if (!confirm(`Точно ${action}?`)) return;
+    try {
+        const resp = await fetch('/api/admin/set-admin', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({uid, is_admin: isAdmin}),
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+            alert(data.error || 'Ошибка');
+        }
+        loadUsers();
+    } catch (e) {
+        alert('Ошибка соединения: ' + e.message);
+    }
+}
+
+async function grantCoins() {
+    const uid = document.getElementById('grant-uid').value.trim();
+    const amount = parseInt(document.getElementById('grant-amount').value);
+    const result = document.getElementById('grant-result');
+
+    if (!uid) {
+        result.style.display = 'block';
+        result.className = 'alert alert-error';
+        result.textContent = 'Выбери пользователя из списка или введи UID';
+        return;
+    }
+    if (!amount || amount < 1) {
+        result.style.display = 'block';
+        result.className = 'alert alert-error';
+        result.textContent = 'Количество должно быть > 0';
+        return;
+    }
+
+    result.style.display = 'block';
+    result.className = 'alert';
+    result.textContent = 'Выдаю...';
+
+    try {
+        const resp = await fetch('/api/admin/grant-coins', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({uid, amount}),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            result.className = 'alert alert-success';
+            result.textContent = `Выдано ${amount} коинов. Новый баланс: ${data.new_balance}`;
+            document.getElementById('grant-uid').value = '';
+            document.getElementById('grant-amount').value = '1';
+            loadUsers();
+        } else {
+            result.className = 'alert alert-error';
+            result.textContent = (data.error || 'Ошибка');
+        }
+    } catch (e) {
+        result.className = 'alert alert-error';
+        result.textContent = 'Ошибка соединения: ' + e.message;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadUsers();
+    loadFeedback();
+});
+</script>
+{% endblock %}

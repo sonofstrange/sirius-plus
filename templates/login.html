@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block title %}Вход — Пирожковый Диспетчер{% endblock %}
+{% block content %}
+<div class="auth-page">
+    <div class="auth-card">
+        <div class="auth-card__header">
+            <img src="/static/sirius.png" alt="" width="144" height="144" class="login-logo-img">
+            <h1>Пирожковый Диспетчер</h1>
+            <p class="auth-card__subtitle">Автоматическая запись на события</p>
+        </div>
+
+        {% if error %}
+        <div class="alert alert-error">{{ error }}</div>
+        {% endif %}
+
+        <div class="auth-card__body">
+            <details class="auth-card__help" style="margin-bottom:24px" open>
+                <summary>Войти по короткому коду из профиля</summary>
+                <p class="auth-card__desc" style="margin-top:8px">
+                    Подходит только для аккаунта, в который уже входили. На авторизованном устройстве открой профиль и создай одноразовый код входа.
+                </p>
+                <form method="POST" action="/api/login-code">
+                    <div class="form-group">
+                        <label class="form-label" for="login-code-input">Код входа</label>
+                        <input type="text" name="code" id="login-code-input" class="form-input" style="width:100%;text-transform:uppercase"
+                               placeholder="ABCD2345" autocomplete="one-time-code" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block">
+                        Войти по коду
+                    </button>
+                </form>
+            </details>
+
+            <details id="login-section" open>
+                <summary style="cursor:pointer;font-weight:600;font-size:15px;margin-bottom:16px">
+                    Войти через Sirius (email + пароль)
+                </summary>
+                <p class="auth-card__desc" style="margin-top:8px">
+                    Это безопасно: вход выполняется через отдельный браузерный контекст Sirius, а данные для обновления токена хранятся в зашифрованном виде. Вход может занять до 2 минут. Исходный код проекта открыт на <a href="https://github.com/sonofstrange/sirius-plus" target="_blank" rel="noopener noreferrer">GitHub</a>.
+                </p>
+                <form method="POST" action="/api/login" onsubmit="return startLoginProgress()">
+                <div class="form-group">
+                    <label class="form-label" for="email-input">Email</label>
+                    <input type="email" name="email" id="email-input" class="form-input" style="width:100%"
+                           placeholder="email@example.com" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="password-input">Пароль</label>
+                    <input type="password" name="password" id="password-input" class="form-input" style="width:100%"
+                           placeholder="Пароль от Sirius" required>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block" id="login-btn">
+                    Войти
+                </button>
+                </form>
+                <div id="login-progress" style="display:none;text-align:center;padding:16px;font-size:14px">
+                    <div id="login-step" style="color:var(--text);margin-bottom:4px">⏳ Открываю страницу Sirius...</div>
+                    <div style="color:var(--text-muted);font-size:12px" id="login-substep"></div>
+                </div>
+                {% if error %}
+                <div class="alert alert-error" style="margin-top:12px">{{ error }}</div>
+                {% endif %}
+            </details>
+
+            <details class="auth-card__help" style="margin-top:24px">
+                <summary>Или введи токен вручную</summary>
+                <p class="auth-card__desc" style="margin-top:8px">
+                    Введи свой Bearer-токен от my.sirius.online, чтобы я мог записывать тебя на события.
+                </p>
+
+                <div class="form-group">
+                    <label class="form-label" for="token-input">Bearer-токен</label>
+                    <textarea id="token-input" class="form-textarea" rows="3"
+                        placeholder="eyJhbGciOiJQUzUxMiJ9..."></textarea>
+                </div>
+
+                <button class="btn btn-primary btn-block" onclick="saveToken()">
+                    Сохранить токен
+                </button>
+
+                <p style="margin-top:12px">
+                    <a href="/howto">Подробная пошаговая инструкция</a>
+                </p>
+
+                <details class="auth-card__help">
+                    <summary>Краткая инструкция</summary>
+                    <ol>
+                        <li>Открой <a href="https://my.sirius.online" target="_blank">my.sirius.online</a> и войди в аккаунт</li>
+                        <li>Перейди в раздел <strong>События по записи</strong></li>
+                        <li>Открой инструменты разработчика (F12) → вкладка Network</li>
+                        <li>Обнови страницу (F5)</li>
+                        <li>Найди запрос со словом <strong>schedule</strong> или <strong>record</strong></li>
+                        <li>В заголовках запроса найди <code>authorization: Bearer ...</code></li>
+                        <li>Скопируй всё после «Bearer » и вставь выше</li>
+                    </ol>
+                </details>
+            </details>
+        </div>
+    </div>
+</div>
+
+<script>
+function startLoginProgress() {
+    var btn = document.getElementById('login-btn');
+    if (btn.disabled) return false;
+    btn.disabled = true;
+    btn.textContent = 'Вхожу...';
+
+    var prog = document.getElementById('login-progress');
+    prog.style.display = 'block';
+    var step = document.getElementById('login-step');
+    var sub = document.getElementById('login-substep');
+
+    var steps = [
+        ['⏳ Открываю страницу Sirius...', ''],
+        ['⏳ Заполняю email...', ''],
+        ['⏳ Нажимаю «По паролю»...', ''],
+        ['⏳ Ввожу пароль...', ''],
+        ['⏳ Отправляю форму...', ''],
+        ['⏳ Жду ответ сервера Sirius...', ''],
+        ['⏳ Забираю токен...', ''],
+    ];
+    var i = 0;
+    step.textContent = steps[0][0];
+    var iv = setInterval(function() {
+        i = Math.min(i + 1, steps.length - 1);
+        step.textContent = steps[i][0];
+        sub.textContent = steps[i][1];
+    }, 3500);
+    return true;
+}
+
+async function saveToken() {
+    const token = document.getElementById('token-input').value.trim();
+    if (!token) {
+        alert('Введи токен');
+        return;
+    }
+    try {
+        const resp = await fetch('/api/token', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({token}),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            window.location.href = '/events?tab=register';
+        } else {
+            alert('Ошибка: ' + (data.error || 'неизвестная ошибка'));
+        }
+    } catch (e) {
+        alert('Ошибка соединения: ' + e);
+    }
+}
+
+document.getElementById('token-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && e.ctrlKey) {
+        saveToken();
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,8 @@
+__pycache__
+*.pyc
+.venv
+.git
+*.sqlite3
+*.sqlite3-journal
+encryption_key.txt
+.env

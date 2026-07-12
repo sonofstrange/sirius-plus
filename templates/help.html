@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Справка — Пирожковый Диспетчер{% endblock %}
+{% block content %}
+<div class="page">
+    <div class="page__header">
+        <h1 class="page__title">Справка</h1>
+    </div>
+
+    <div class="auth-card__help" style="background:var(--bg-card);padding:24px;border-radius:var(--radius);box-shadow:var(--shadow);line-height:1.8">
+        <h2 style="font-size:18px;margin-bottom:12px">Разделы сайта</h2>
+        <ul style="padding-left:20px;margin-bottom:20px">
+            <li><strong>События</strong> — список всех событий с фильтрами. Здесь можно записаться, взять событие на слежку или отписаться.</li>
+            <li><strong>Расписание</strong> — твоё расписание на конкретный день, включая собственные события.</li>
+            <li><strong>Мои события</strong> — собственные занятия, которые не из Сириуса (например, личные встречи).</li>
+            <li><strong>Слежка</strong> — список событий, за которыми идёт слежка, и тех, куда ты уже записан.</li>
+        </ul>
+
+        <h2 style="font-size:18px;margin-bottom:12px">Как работает снайпинг</h2>
+        <p style="margin-bottom:16px;color:var(--text-muted)">
+            Когда ты нажимаешь «Следить» за событием, сайт ждёт момента открытия записи и за 30 секунд до него начинает отправлять запросы на запись каждые 3 секунды. Если основные места кончились — попробует записать в резерв.
+        </p>
+
+        <h2 style="font-size:18px;margin-bottom:12px">Токен</h2>
+        <p style="margin-bottom:16px;color:var(--text-muted)">
+            Для работы нужен Bearer-токен от <a href="https://my.sirius.online" target="_blank">my.sirius.online</a>. Он хранится в зашифрованном виде и обычно живёт около недели. Когда токен протухает — сайт покажет предупреждение. Подробная инструкция по получению токена — <a href="/howto">здесь</a>.
+        </p>
+
+        <h2 style="font-size:18px;margin-bottom:12px">Советы</h2>
+        <ul style="padding-left:20px;color:var(--text-muted)">
+            <li>Если ты записывался на события напрямую в Сириусе, нажми «Синхронизировать» в разделе «Слежка».</li>
+            <li>События с пересечением по времени помечаются предупреждением ⚠️.</li>
+            <li>Для важных событий можно поставить напоминание.</li>
+        </ul>
+    </div>
+</div>
+{% endblock %}

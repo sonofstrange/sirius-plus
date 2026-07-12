@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Сириус Коины — Пирожковый Диспетчер{% endblock %}
+{% block content %}
+<div class="page">
+    <div class="page__header">
+        <h1 class="page__title">Сириус Коины</h1>
+        <div class="page__actions">
+            <button class="btn btn-primary btn-sm" onclick="doTransfer()">🪙 Перевести</button>
+        </div>
+    </div>
+
+    {% if user_id %}
+    <div class="auth-card__help" style="background:var(--bg-card);padding:24px;border-radius:var(--radius);box-shadow:var(--shadow);line-height:1.8">
+        <h2 style="font-size:18px;margin-bottom:12px">Твой баланс</h2>
+        <div style="font-size:28px;font-weight:700;margin-bottom:4px" id="coins-balance">—</div>
+        <p style="color:var(--text-muted);font-size:14px;margin-bottom:20px">
+            Доступно: <strong id="coins-available">—</strong>
+            &nbsp;|&nbsp;
+            В резерве: <strong id="coins-reserved" style="color:var(--warning)">—</strong>
+        </p>
+
+        <h2 style="font-size:18px;margin-bottom:12px">Как это работает?</h2>
+        <ol style="padding-left:20px;color:var(--text-muted);margin-bottom:20px;line-height:2">
+            <li>Когда ты нажимаешь «Следить» — <strong>1 коин резервируется</strong> (замораживается на время слежки).</li>
+            <li>Если автозапись <strong>прошла успешно</strong> — коин списывается окончательно.</li>
+            <li>Если автозапись <strong>не удалась</strong> или ты <strong>уберёшь событие из слежки</strong> — коин <strong>возвращается</strong> обратно.</li>
+        </ol>
+
+        <h2 style="font-size:18px;margin-bottom:12px">Как получить Сириус Коины?</h2>
+        <p style="margin-bottom:16px;color:var(--text-muted)">
+            Обращайся к <strong>Николаю Русанову</strong> в <strong>комнате 6126</strong>.
+            <br><strong style="color:var(--danger)">Просьба стучаться!!!</strong>
+        </p>
+        <p style="margin-bottom:16px;color:var(--text-muted)">
+            Коины можно получить в обмен на угощения, например:
+        </p>
+        <ul style="padding-left:20px;color:var(--text-muted);margin-bottom:20px">
+            <li>Шоколадки «Алёнка»</li>
+            <li>Батончики «Snickers», «Mars», «Bounty»</li>
+            <li>Чипсы «Lay's»</li>
+            <li>Газировка (Coca-Cola, Sprite, Fanta)</li>
+            <li>Печенье «Oreo»</li>
+            <li>Жевачки, леденцы</li>
+            <li>И другие вкусности на твоё усмотрение</li>
+        </ul>
+
+        <h2 style="font-size:18px;margin-bottom:12px">Контакты</h2>
+        <p style="margin-bottom:16px;color:var(--text-muted)">
+            Telegram / Discord: <strong>@sonofstrange</strong>
+        </p>
+
+        <h2 style="font-size:18px;margin-bottom:12px">О Николае</h2>
+        <p style="margin-bottom:16px;color:var(--text-muted)">
+            Группа <strong>БВ3</strong>, работаю над проектом от <strong>МТС</strong>.
+        </p>
+
+        <div class="alert alert-warning" style="margin-top:20px">
+            <span class="material-symbols-outlined">info</span>
+            При регистрации на сайте тебе начисляется <strong>1 Сириус Коин</strong> бесплатно.
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+async function loadCoins() {
+    try {
+        const resp = await fetch('/api/coins/balance');
+        const data = await resp.json();
+        if (data.ok) {
+            document.getElementById('coins-balance').textContent = data.total + ' 🪙';
+            document.getElementById('coins-available').textContent = data.coins;
+            document.getElementById('coins-reserved').textContent = data.reserved || 0;
+        }
+    } catch (e) { /* ignore */ }
+}
+loadCoins();
+setInterval(loadCoins, 10000);
+
+async function doTransfer() {
+    const toUid = await dlgPrompt('Перевод коинов', 'Введи UID получателя:', 'UID...');
+    if (!toUid) return;
+    const amount = await dlgPrompt('Перевод коинов', 'Сколько Сириус Коинов перевести?', '1', {type: 'number', value: '1'});
+    if (!amount) return;
+    try {
+        const resp = await fetch('/api/coins/transfer', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({to_uid: toUid.trim(), amount: parseInt(amount)}),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            dlgAlert('Готово', 'Переведено! Твой новый баланс: ' + data.new_balance);
+            loadCoins();
+        } else {
+            dlgAlert('Ошибка', data.error || 'Неизвестная ошибка');
+        }
+    } catch (e) { dlgAlert('Ошибка', 'Ошибка соединения: ' + e); }
+}
+</script>
+{% endblock %}

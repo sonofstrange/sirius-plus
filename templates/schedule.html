@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}Расписание — Пирожковый Диспетчер{% endblock %}
+{% block content %}
+<div class="page">
+    <div class="page__header">
+        <h1 class="page__title">Расписание</h1>
+    </div>
+
+    <!-- Horizontal date strip -->
+    <div class="date-strip">
+        {% for d in dates %}
+        <a href="/schedule?date={{ d.iso }}"
+           class="date-chip {% if d.iso == cur_date %}date-chip--active{% endif %} {% if d.is_today %}date-chip--today{% endif %}"
+           {% if d.is_today %}id="today-date-chip"{% endif %}>
+            <span class="date-chip__weekday">{{ d.weekday }}</span>
+            <span class="date-chip__day">{{ d.day }}</span>
+        </a>
+        {% endfor %}
+    </div>
+
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    {% if groups %}
+    <div class="schedule-groups">
+        {% for g in groups %}
+        <span class="chip chip-primary">{{ g }}</span>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="schedule-list">
+        {% for ev in events %}
+        <div class="schedule-card {% if ev.event_type == 'customEvent' %}schedule-card--custom{% else %}schedule-card-{{ ev.event_type | lower }}{% endif %} {% if ev.status == 'finished' %}schedule-card--finished{% elif ev.status == 'ongoing' %}schedule-card--ongoing{% endif %}"
+             onclick="showScheduleDetail('{{ ev.event_id }}')" style="cursor:pointer">
+            {% if ev.event_type == 'transferEvent' %}
+            <div class="schedule-card__bus-icon">
+                <span class="material-symbols-outlined">directions_bus_filled</span>
+            </div>
+            {% endif %}
+            <div class="schedule-card__time">
+                <div class="schedule-card__time-range">
+                    {% if ev.event_type == 'transferEvent' %}
+                    {% if ev.start_time %}
+                    <div style="display:flex;flex-direction:column;align-items:center">
+                    <span class="schedule-card__time-start">{{ fmt_time(ev.start_time) }}</span>
+                    <span class="schedule-card__time-sep">—</span>
+                    <span class="schedule-card__time-end">{{ fmt_time(ev.end_time) }}</span>
+                    </div>
+                    {% endif %}
+                    {% elif ev.event_type == 'customEvent' and ev.start_time %}
+                    <span class="schedule-card__time-start">{{ fmt_time(ev.start_time) }}</span>
+                    {% if ev.end_time %}<span class="schedule-card__time-sep">—</span>
+                    <span class="schedule-card__time-end">{{ fmt_time(ev.end_time) }}</span>{% endif %}
+                    {% elif ev.start_time %}
+                    <span class="schedule-card__time-start">{{ fmt_time(ev.start_time) }}</span>
+                    <span class="schedule-card__time-sep">—</span>
+                    <span class="schedule-card__time-end">{{ fmt_time(ev.end_time) }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="schedule-card__info">
+                <div class="schedule-card__title">
+                    {{ ev.event_name }}
+                    {% if ev.event_type == 'customEvent' %}<span class="badge badge-custom">Моё</span>{% endif %}
+                </div>
+                {% if ev.event_type == 'transferEvent' and ev.transport_info %}
+                <div class="schedule-card__transport">
+                    <span class="material-symbols-outlined">directions_bus_filled</span>
+                    {% set bus_kind = ev.transport_info.get('kind', '') %}
+                    {% set bus_num = ev.transport_info.get('number', '') %}
+                    {% if bus_kind or bus_num %}{{ bus_kind }} {{ bus_num }} · {% endif %}
+                    {{ ev.departure_location }} → {{ ev.arrival_location }}
+                </div>
+                {% elif ev.event_type == 'transferEvent' %}
+                <div class="schedule-card__transport">
+                    <span class="material-symbols-outlined">directions_bus_filled</span>
+                    Трансфер
+                </div>
+                {% elif ev.location %}
+                <div class="schedule-card__location">
+                    <span class="material-symbols-outlined">location_on</span>
+                    {{ ev.location | join(', ') }}
+                </div>
+                {% endif %}
+                {% if ev.tutors %}
+                <div class="schedule-card__tutors">
+                    <span class="material-symbols-outlined">person</span>
+                    {{ ev.tutors | join(', ') }}
+                </div>
+                {% endif %}
+            </div>
+            {% if ev.people_max > 0 %}
+            <div class="schedule-card__people">
+                <span class="material-symbols-outlined">person</span>
+                <span>{{ ev.people_current }}/{{ ev.people_max }}</span>
+            </div>
+            {% endif %}
+            {% if ev.event_type == 'transferEvent' and ev.transport_info and ev.transport_info.get('number') %}
+            {% set plate_raw = ev.transport_info.get('number') | string %}
+            {% set plate_parts = plate_raw.split() %}
+            {% set plate_region = plate_parts[-1] if plate_parts|length > 1 and plate_parts[-1].isdigit() else '77' %}
+            {% set plate_main = plate_parts[:-1] | join(' ') if plate_parts|length > 1 and plate_parts[-1].isdigit() else plate_raw %}
+            <div class="schedule-card__plate" title="Номер автобуса">
+                <span class="schedule-card__plate-main">
+                    {% for ch in plate_main %}
+                    <span class="{% if ch.isdigit() %}schedule-card__plate-digit{% else %}schedule-card__plate-letter{% endif %}">{{ ch }}</span>
+                    {% endfor %}
+                </span>
+                <span class="schedule-card__plate-side">
+                    <span class="schedule-card__plate-region">{{ plate_region }}</span>
+                    <span class="schedule-card__plate-country">
+                        <span>RUS</span>
+                        <span class="schedule-card__plate-flag" aria-hidden="true"></span>
+                    </span>
+                </span>
+            </div>
+            {% endif %}
+            <div class="schedule-card__actions" onclick="event.stopPropagation()">
+                <button class="btn btn-outline btn-sm schedule-card__reminder-btn {% if ev.event_id in reminder_event_ids %}schedule-card__reminder-btn--active{% endif %}" onclick="setReminder('{{ ev.event_id }}', '{{ ev.event_name|e }}', '{{ ev.start_time }}', this)" title="{% if ev.event_id in reminder_event_ids %}Напоминание включено{% else %}Напомнить{% endif %}">
+                    <span class="material-symbols-outlined">notifications</span>
+                </button>
+            </div>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <span class="material-symbols-outlined empty-state__icon">calendar_month</span>
+            <p>На этот день событий нет</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Schedule detail modal -->
+<div class="modal-overlay" id="sched-detail-modal" onclick="closeModal('sched-detail-modal')">
+    <div class="modal modal-lg" onclick="event.stopPropagation()">
+        <div class="modal__header">
+            <h2 id="sched-detail-title">...</h2>
+            <button class="modal__close" onclick="closeModal('sched-detail-modal')">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <div class="modal__body" id="sched-detail-body">
+            <div class="loading">Загрузка...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const today = document.getElementById('today-date-chip');
+    if (today) {
+        today.scrollIntoView({behavior: 'smooth', block: 'nearest', inline: 'center'});
+    }
+});
+
+async function showScheduleDetail(eventId) {
+    const modal = document.getElementById('sched-detail-modal');
+    const body = document.getElementById('sched-detail-body');
+    const title = document.getElementById('sched-detail-title');
+    modal.style.display = 'flex';
+    body.innerHTML = '<div class="loading">Загрузка...</div>';
+    title.textContent = '...';
+    try {
+        const resp = await fetch('/api/schedule?date={{ cur_date }}');
+        const data = await resp.json();
+        if (!data.ok) { body.innerHTML = '<div class="alert alert-error">Ошибка загрузки</div>'; return; }
+        const ev = data.events.find(e => e.event_id === eventId);
+        if (!ev) { body.innerHTML = '<div class="alert alert-error">Событие не найдено</div>'; return; }
+        title.textContent = escapeHtml(ev.event_name);
+        body.innerHTML = `
+            <table class="info-table">
+                <tr><td>ID</td><td class="mono">${escapeHtml(ev.event_id)}</td></tr>
+                <tr><td>Тип</td><td>${escapeHtml(ev.event_type)}</td></tr>
+                <tr><td>Начало</td><td>${ev.start_time ? new Date(ev.start_time).toLocaleString('ru-RU') : '—'}</td></tr>
+                ${ev.end_time ? '<tr><td>Конец</td><td>' + new Date(ev.end_time).toLocaleString('ru-RU') + '</td></tr>' : ''}
+                ${ev.status ? '<tr><td>Статус</td><td>' + (ev.status === 'ongoing' ? '🔵 Идёт' : ev.status === 'finished' ? '⚪ Завершено' : '🟡 Ожидается') + '</td></tr>' : ''}
+                ${ev.location && ev.location.length ? '<tr><td>Место</td><td>' + escapeHtml(ev.location.join(', ')) + '</td></tr>' : ''}
+                ${ev.tutors && ev.tutors.length ? '<tr><td>Преподаватели</td><td>' + escapeHtml(ev.tutors.join(', ')) + '</td></tr>' : ''}
+                ${ev.people_max > 0 ? '<tr><td>Участников</td><td>' + ev.people_current + '/' + ev.people_max + '</td></tr>' : ''}
+                ${ev.unions && ev.unions.length ? '<tr><td>Группы</td><td>' + ev.unions.map(g => '<span class="chip chip-xs">' + escapeHtml(g) + '</span>').join(' ') + '</td></tr>' : ''}
+                ${ev.transport_info ? '<tr><td>Трансфер</td><td>' + escapeHtml(ev.transport_info.kind || '') + ' ' + escapeHtml(ev.transport_info.number || '') + (ev.departure_location ? ' · ' + escapeHtml(ev.departure_location) + ' → ' + escapeHtml(ev.arrival_location) : '') + '</td></tr>' : ev.departure_location ? '<tr><td>Трансфер</td><td>' + escapeHtml(ev.departure_location) + ' → ' + escapeHtml(ev.arrival_location) + '</td></tr>' : ''}
+                ${ev.description ? '<tr><td>Описание</td><td style="white-space:pre-wrap">' + escapeHtml(ev.description) + '</td></tr>' : ''}
+            </table>
+        `;
+    } catch(e) {
+        body.innerHTML = '<div class="alert alert-error">Ошибка соединения: ' + escapeHtml(e.message) + '</div>';
+    }
+}
+</script>
+{% endblock %}

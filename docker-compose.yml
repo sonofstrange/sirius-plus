@@ -1,0 +1,13 @@
+services:
+  sirius-plus:
+    build: .
+    container_name: sirius-plus
+    ports:
+      - "8000:8000"
+    volumes:
+      - /opt/sirius-data:/app/data
+    environment:
+      - SIRIUS_HOST=0.0.0.0
+      - SIRIUS_PORT=8000
+      - DB_PATH=/app/data/sirius_web.sqlite3
+    restart: unless-stopped

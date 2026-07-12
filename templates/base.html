@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Пирожковый Диспетчер{% endblock %}</title>
+    <link rel="icon" href="/static/sirius.png">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260712-2">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <div class="header__container">
+                <a href="/" class="header__logo">
+                    <img src="/static/sirius.png" alt="" width="96" height="96" class="header__logo-img">
+                    <span class="header__logo-text">Пирожковый Диспетчер</span>
+                </a>
+                {% if user_id %}
+                <nav class="header__nav">
+                    <a href="/events?tab=register" class="header__nav-link">События</a>
+                    <a href="/schedule" class="header__nav-link">Расписание</a>
+                    <a href="/custom-events" class="header__nav-link">Мои события</a>
+                    <a href="/watchlist" class="header__nav-link">Слежка</a>
+                    <a href="/coins-info" class="header__nav-link">🪙 {{ coins_balance }}</a>
+                </nav>
+                <button class="header__menu-btn" onclick="toggleMobileMenu()" aria-label="Меню">
+                    <span class="material-symbols-outlined">menu</span>
+                </button>
+                <div class="header__right">
+                    {% if token_expiry %}
+                    <span class="header__token-status header__token-status--{{ token_status }}" title="Токен истекает: {{ token_expiry }} МСК">
+                        <span class="material-symbols-outlined header__token-icon">
+                            {% if token_status == 'expired' %}error{% elif token_status == 'warning' %}warning{% else %}verified{% endif %}
+                        </span>
+                        {% if token_status == 'expired' %}Токен протух — обнови{% elif token_status == 'warning' %}Токен скоро протухнет{% else %}До {{ token_expiry }}{% endif %}
+                    </span>
+                    {% endif %}
+                    <button class="header__auth-btn" onclick="toggleDark()" title="Тёмная тема">
+                        <span class="material-symbols-outlined">dark_mode</span>
+                    </button>
+                    <button class="header__auth-btn" onclick="showUserInfo()" title="Информация о пользователе">
+                        <span class="material-symbols-outlined">account_circle</span>
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+            {% if user_id %}
+            <nav class="header__mobile-nav" id="mobile-nav">
+                <a href="/events?tab=register" class="header__mobile-nav-link">События</a>
+                <a href="/schedule" class="header__mobile-nav-link">Расписание</a>
+                <a href="/custom-events" class="header__mobile-nav-link">Мои события</a>
+                <a href="/watchlist" class="header__mobile-nav-link">Слежка</a>
+                <a href="/coins-info" class="header__mobile-nav-link">🪙 Сириус Коины ({{ coins_balance }})</a>
+                <a href="#" class="header__mobile-nav-link" onclick="showChangelog(true);toggleMobileMenu();return false">Что нового</a>
+                <a href="/howto" class="header__mobile-nav-link">Как получить токен</a>
+                <a href="/help" class="header__mobile-nav-link">Справка</a>
+            </nav>
+            {% endif %}
+        </header>
+
+        {% if notifications %}
+        <div class="notifications" id="notifications">
+            {% for msg in notifications %}
+            <div class="notification">
+                <span class="notification__text">{{ msg|nl2br }}</span>
+                <button class="notification__close" onclick="this.parentElement.remove()">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        <div id="notifications-live"></div>
+
+        <main class="main">
+            {% block content %}{% endblock %}
+        </main>
+
+        <footer class="footer">
+            <div class="footer__container">
+                <div class="footer__links">
+                    <a href="/help" class="footer__link">
+                        <span class="material-symbols-outlined">help_outline</span>
+                        Справка
+                    </a>
+                    <a href="#" class="footer__link" onclick="showChangelog(true);return false">
+                        <span class="material-symbols-outlined">new_releases</span>
+                        Что нового
+                    </a>
+                    <a href="#" class="footer__link" onclick="showFeedback(event)">
+                        <span class="material-symbols-outlined">chat_bubble_outline</span>
+                        Обратная связь
+                    </a>
+                </div>
+                <div class="footer__copyright">
+                    © Пирожковый Диспетчер, 2026 · v1.3.1 · Создатель: Николай Русанов (@sonofstrange) · <a href="https://github.com/sonofstrange/sirius-plus" target="_blank" rel="noopener noreferrer">Открытый исходный код</a>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- User Info Modal -->
+    <div class="modal-overlay" id="user-modal" onclick="closeModal('user-modal')">
+        <div class="modal" onclick="event.stopPropagation()">
+            <div class="modal__header">
+                <h2>Информация о пользователе</h2>
+                <button class="modal__close" onclick="closeModal('user-modal')">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="modal__body" id="user-modal-body">
+                <div class="loading">Загрузка...</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="my-feedback-modal" onclick="closeModal('my-feedback-modal')">
+        <div class="modal" onclick="event.stopPropagation()">
+            <div class="modal__header">
+                <h2>Мои обращения</h2>
+                <button class="modal__close" onclick="closeModal('my-feedback-modal')">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="modal__body">
+                <div id="my-feedback-list" class="profile-list">
+                    <div class="loading">Загрузка...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reminder Modal -->
+    <div class="modal-overlay" id="reminder-modal" onclick="closeModal('reminder-modal')">
+        <div class="modal" onclick="event.stopPropagation()">
+            <div class="modal__header">
+                <h2>Напоминание</h2>
+                <button class="modal__close" onclick="closeModal('reminder-modal')">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="modal__body">
+                <p>Напомнить о событии за:</p>
+                <div class="form-group" style="margin-top:12px">
+                    <div class="reminder-presets">
+                        <button class="chip" onclick="setReminderVal(0)">В начале</button>
+                        <button class="chip" onclick="setReminderVal(5)">5м</button>
+                        <button class="chip" onclick="setReminderVal(10)">10м</button>
+                        <button class="chip" onclick="setReminderVal(15)">15м</button>
+                        <button class="chip" onclick="setReminderVal(30)">30м</button>
+                        <button class="chip" onclick="setReminderVal(60)">1ч</button>
+                    </div>
+                    <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+                        <input type="number" class="form-input" id="reminder-custom" value="15" min="0" style="width:80px;text-align:center">
+                        <span style="font-size:13px;color:var(--text-muted)">минут</span>
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-block" onclick="doSetReminder()">Установить</button>
+                <div id="reminder-result" class="alert" style="display:none;margin-top:8px"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Feedback Modal -->
+    <div class="modal-overlay" id="feedback-modal" onclick="closeModal('feedback-modal')">
+        <div class="modal" onclick="event.stopPropagation()">
+            <div class="modal__header">
+                <h2>Обратная связь</h2>
+                <button class="modal__close" onclick="closeModal('feedback-modal')">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="modal__body">
+                <p class="text-muted">Если у тебя есть вопросы, предложения или ты нашёл баг — напиши нам:</p>
+                <div class="form-group">
+                    <label class="form-label" for="feedback-text">Сообщение</label>
+                    <textarea id="feedback-text" class="form-textarea" rows="4" placeholder="Опиши проблему или идею..."></textarea>
+                </div>
+                <button class="btn btn-primary btn-block" onclick="sendFeedback()">
+                    Отправить
+                </button>
+                <div id="feedback-result" class="alert" style="display:none; margin-top: 8px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Changelog Modal -->
+    <div class="modal-overlay" id="changelog-modal" onclick="closeChangelog()">
+        <div class="modal" onclick="event.stopPropagation()">
+            <div class="modal__header">
+                <h2>Что нового</h2>
+                <button class="modal__close" onclick="closeChangelog()">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="modal__body">
+                <div class="changelog">
+                    <div class="changelog__release">
+                        <div class="changelog__version">Версия 1.3.1</div>
+                        <div class="changelog__date">Первый вход и открытый код</div>
+                        <ul class="changelog__list">
+                            <li>Первый вход через Sirius сразу создаёт сессию для нужного аккаунта.</li>
+                            <li>На странице входа появились пояснения о коде, безопасности и времени авторизации.</li>
+                            <li>Добавлены ссылка на открытый исходный код и информация о создателе проекта.</li>
+                        </ul>
+                    </div>
+                    <div class="changelog__release">
+                        <div class="changelog__version">Версия 1.3</div>
+                        <div class="changelog__date">Приоритеты автозаписи и быстрые события</div>
+                        <ul class="changelog__list">
+                            <li>Добавлены три приоритета автозаписи: высокий, средний и низкий.</li>
+                            <li>Высокий приоритет стоит 2 коина, средний — 1 коин, низкий — бесплатный.</li>
+                            <li>В админ-панели можно назначать и снимать админов.</li>
+                            <li>Скорость снайпинга теперь зависит и от уровня аккаунта, и от выбранного приоритета.</li>
+                            <li>Страница событий открывается сразу по кэшу и обновляет данные Sirius в фоне.</li>
+                            <li>Слежка больше не подвисает при лагах Sirius, если есть кэшированные события.</li>
+                            <li>Добавлен журнал попыток снайпера во вкладке слежки.</li>
+                            <li>Приоритет автозаписи теперь можно менять прямо из слежки.</li>
+                            <li>Снайпер заранее прогревает сессию перед открытием записи.</li>
+                            <li>Кэш расписания сохраняется в SQLite и переживает рестарт Docker.</li>
+                        </ul>
+                    </div>
+                    <div class="changelog__release">
+                        <div class="changelog__version">Версия 1.1.3</div>
+                        <div class="changelog__date">Настройка автозаписи</div>
+                        <ul class="changelog__list">
+                            <li>Добавлены уровни аккаунта: доверенный, обычный и недоверенный.</li>
+                            <li>Частота снайпинга и автообновления зависит от уровня аккаунта.</li>
+                            <li>Фоновое автообновление получило случайную погрешность по времени.</li>
+                            <li>После успешной автозаписи статус резерва проверяется свежим расписанием.</li>
+                            <li>Тег eventRegistrationLimit больше не блокирует кнопку записи.</li>
+                        </ul>
+                    </div>
+                    <div class="changelog__release">
+                        <div class="changelog__version">Версия 1.1.2</div>
+                        <div class="changelog__date">Расписание и напоминания</div>
+                        <ul class="changelog__list">
+                            <li>Лента дат в расписании автоматически прокручивается к сегодняшнему дню.</li>
+                            <li>Кнопка напоминания подсвечивается синим, если будильник уже установлен.</li>
+                            <li>Уменьшены промежутки между буквами в номере автобуса.</li>
+                        </ul>
+                    </div>
+                    <div class="changelog__release">
+                        <div class="changelog__version">Версия 1.1.1</div>
+                        <div class="changelog__date">Визуальные правки</div>
+                        <ul class="changelog__list">
+                            <li>Номер автобуса у трансферов стал похож на российский автомобильный номер с регионом, RUS и флагом.</li>
+                            <li>Логотип Sirius визуально увеличен в шапке.</li>
+                            <li>На телефоне уменьшен отступ между текстом трансфера и номером автобуса.</li>
+                        </ul>
+                    </div>
+                    <div class="changelog__release">
+                        <div class="changelog__version">Версия 1.1.0</div>
+                        <div class="changelog__date">Обращения и расписание</div>
+                        <ul class="changelog__list">
+                            <li>Пользователи видят свои обращения и ответы админа в профиле.</li>
+                            <li>Админы могут отвечать на обращения, ответ приходит пользователю уведомлением.</li>
+                            <li>В админ-панели обращения перенесены вниз страницы.</li>
+                            <li>У трансферов появился номер автобуса в стиле российского автомобильного номера.</li>
+                            <li>Логотип Sirius в шапке занимает всю доступную высоту.</li>
+                            <li>На телефоне исправлена обрезка названия “Пирожковый Диспетчер”.</li>
+                        </ul>
+                    </div>
+                    <div class="changelog__release">
+                        <div class="changelog__version">Версия 1.0.2</div>
+                        <div class="changelog__date">Правки автозаписи</div>
+                        <ul class="changelog__list">
+                            <li>Снайпинг учитывает тег Sirius `noSpace` и честно пишет, когда запись попала только в резерв.</li>
+                            <li>Обычная фоновая проверка расписания работает раз в 10 минут, чтобы не спамить Sirius.</li>
+                            <li>На странице событий появилась кнопка ручного обновления с Sirius.</li>
+                            <li>После успешной записи расписание пользователя сбрасывает старый кэш.</li>
+                            <li>В админ-панели накапливаются обращения пользователей.</li>
+                            <li>По кнопке “Что нового” теперь доступен полный changelog.</li>
+                        </ul>
+                    </div>
+                    <div class="changelog__release">
+                        <div class="changelog__version">Версия 1.0.1</div>
+                        <div class="changelog__date">Обновление интерфейса и надёжности</div>
+                        <ul class="changelog__list">
+                            <li>Логотип в шапке больше не меняет размер при прокрутке.</li>
+                            <li>На телефоне увеличено место под название сайта в шапке.</li>
+                            <li>Кнопка меню на телефоне приведена к стилю кнопок темы и профиля.</li>
+                            <li>Будильник остаётся на экране и повторяет сигнал, пока его не закрыть.</li>
+                            <li>Добавлен полный просмотр changelog по кнопке “Что нового”.</li>
+                            <li>Обращения пользователей теперь сохраняются и видны в админ-панели.</li>
+                            <li>Снайпинг больше не перезапускается на границе открытия и точнее отличает основную запись от резерва.</li>
+                        </ul>
+                    </div>
+                    <div class="changelog__release">
+                        <div class="changelog__version">Версия 1.0</div>
+                        <div class="changelog__date">Первый стабильный релиз</div>
+                        <ul class="changelog__list">
+                            <li>Запись и автоснайпинг событий Sirius.</li>
+                            <li>Слежка за событиями с восстановлением после рестарта сервера.</li>
+                            <li>Уведомления об изменениях расписания и напоминания-будильники.</li>
+                            <li>Сириус Коины для постановки событий в слежку.</li>
+                            <li>Одноразовый короткий код для входа в аккаунт.</li>
+                            <li>Адаптация интерфейса под телефон и тёмная тема.</li>
+                        </ul>
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-block" onclick="closeChangelog()">Понятно</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="dialog-modal" style="display:none">
+        <div class="modal" onclick="event.stopPropagation()" style="max-width:440px">
+            <div class="modal__header">
+                <h2 id="dialog-title"></h2>
+                <button class="modal__close" onclick="closeDialog()"><span class="material-symbols-outlined">close</span></button>
+            </div>
+            <div class="modal__body">
+                <p id="dialog-message" style="margin-bottom:16px;white-space:pre-wrap"></p>
+                <div id="dialog-input-area" style="display:none;margin-bottom:16px">
+                    <input type="text" class="form-input" id="dialog-input" style="width:100%">
+                    <textarea class="form-textarea" id="dialog-textarea" rows="3" style="width:100%;display:none"></textarea>
+                </div>
+                <div style="display:flex;gap:8px;justify-content:flex-end" id="dialog-buttons"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js?v=20260708-7"></script>
+    <script>
+        const CHANGELOG_VERSION = '1.3.1';
+        const CHANGELOG_STORAGE_KEY = 'sirius_seen_changelog_version';
+
+        {% if user_id %}
+        startNotificationPolling('{{ user_id }}');
+        {% endif %}
+
+        function showUserInfo() {
+            const modal = document.getElementById('user-modal');
+            const body = document.getElementById('user-modal-body');
+            body.innerHTML = '<div class="loading">Загрузка...</div>';
+            modal.style.display = 'flex';
+
+            Promise.all([
+                fetch('/api/user-info').then(r => r.json()),
+                fetch('/api/coins/balance').then(r => r.json()).catch(() => ({ok: false, coins: 0}))
+            ])
+                .then(([data, coinsData]) => {
+                    if (!data.ok) {
+                        body.innerHTML = '<div class="alert alert-error">Ошибка: ' + (data.error || 'Неизвестная ошибка') + '</div>';
+                        return;
+                    }
+                    const expDate = data.expiresAt ? new Date(data.expiresAt).toLocaleString('ru-RU') : '—';
+                    const iatDate = data.issuedAt ? new Date(data.issuedAt).toLocaleString('ru-RU') : '—';
+                    const remaining = data.remainingSeconds > 0
+                        ? Math.floor(data.remainingSeconds / 86400) + 'д ' + Math.floor((data.remainingSeconds % 86400) / 3600) + 'ч'
+                        : 'Истёк';
+                    const name = [data.lastName, data.firstName, data.middleName].filter(Boolean).join(' ') || '—';
+                    const coins = coinsData.ok ? coinsData.coins : 0;
+                    const trustNames = {0: '0 · Админ', 1: '1 · Доверенный', 2: '2 · Обычный', 3: '3 · Недоверенный'};
+                    body.innerHTML = `
+                        <table class="info-table">
+                            <tr><td>Имя</td><td>${escapeHtml(name)}</td></tr>
+                            <tr><td>Email</td><td>${escapeHtml(data.email || '—')}</td></tr>
+                            <tr><td>UID</td><td class="mono">${escapeHtml(data.id || '—')}</td></tr>
+                            <tr><td>Уровень аккаунта</td><td>${escapeHtml(trustNames[data.trustLevel] || '2 · Обычный')}</td></tr>
+                            <tr><td>🪙 Сириус Коины</td><td><strong>${coins}</strong></td></tr>
+                            <tr><td>Тип входа</td><td>${data.loginType === 'password' ? '🔐 Пароль (авто)' : data.loginType === 'token' ? '🔑 Токен (ручной)' : '—'}</td></tr>
+                            <tr><td>Выдан</td><td>${escapeHtml(iatDate)}</td></tr>
+                            <tr><td>Истекает</td><td>${escapeHtml(expDate)}</td></tr>
+                            <tr><td>Действует ещё</td><td>${escapeHtml(remaining)}</td></tr>
+                            <tr><td>Отслеживается</td><td>${escapeHtml(data.watchedCount || 0)}</td></tr>
+                            <tr><td>Записей</td><td>${escapeHtml(data.registeredCount || 0)}</td></tr>
+                        </table>
+                        <div class="profile-section">
+                            <div class="profile-section__header">
+                                <span>Уведомления</span>
+                                <span class="profile-section__hint">это устройство</span>
+                            </div>
+                            <div class="profile-status-grid" id="notification-settings-status">
+                                <div class="loading">Проверяю...</div>
+                            </div>
+                            <div class="profile-actions">
+                                <button class="btn btn-outline btn-sm" onclick="enableStrongNotifications()">Включить</button>
+                                <button class="btn btn-outline btn-sm" onclick="testStrongNotification()">Тест</button>
+                                <button class="btn btn-danger-text btn-sm" onclick="disableStrongNotifications()">Отключить</button>
+                            </div>
+                            <div id="strong-notify-result" class="alert" style="display:none;margin-top:8px"></div>
+                        </div>
+                        <div class="profile-section">
+                            <div class="profile-section__header">
+                                <span>Активные будильники</span>
+                                <span class="profile-section__hint" id="reminders-count">—</span>
+                            </div>
+                            <div id="profile-reminders-list" class="profile-list">
+                                <div class="loading">Загрузка...</div>
+                            </div>
+                        </div>
+                        <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;display:flex;flex-direction:column;gap:8px">
+                            <button class="btn btn-outline btn-block" onclick="showMyFeedback()">Мои обращения</button>
+                            <button class="btn btn-outline btn-block" onclick="createLoginCode()">Получить код входа</button>
+                            <button class="btn btn-outline btn-block" onclick="refreshToken()">🔄 Обновить токен</button>
+                            <button class="btn btn-outline btn-block" onclick="ping()">Проверить связь с Sirius</button>
+                            {% if is_admin %}
+                            <a href="/admin" class="btn btn-outline btn-block" style="text-align:center;text-decoration:none">Админ-панель</a>
+                            {% endif %}
+                            <button class="btn btn-outline btn-block" onclick="logout()">Выйти</button>
+                        </div>
+                        <div id="login-code-result" class="alert" style="display:none;margin-top:8px"></div>
+                        <div id="ping-result" class="alert" style="display:none;margin-top:8px"></div>
+                    `;
+                    updateNotificationSettingsStatus();
+                    loadProfileReminders();
+                })
+                .catch(e => {
+                    body.innerHTML = '<div class="alert alert-error">Ошибка соединения: ' + escapeHtml(e.message) + '</div>';
+                });
+        }
+
+        function showFeedback(e) {
+            e.preventDefault();
+            document.getElementById('feedback-modal').style.display = 'flex';
+            document.getElementById('feedback-result').style.display = 'none';
+            document.getElementById('feedback-text').value = '';
+        }
+
+        async function logout() {
+            const ok = await dlgConfirm('Выйти', 'Выйти из аккаунта?');
+            if (!ok) return;
+            await fetch('/api/logout', {method: 'POST'});
+            location.href = '/';
+        }
+
+        function profileDateTime(value) {
+            if (!value) return '—';
+            const raw = typeof value === 'number' && value < 1000000000000 ? value * 1000 : value;
+            const d = new Date(raw);
+            if (isNaN(d.getTime())) return value;
+            return d.toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
+        }
+
+        function profileStatusBadge(text, kind) {
+            return '<span class="badge badge-' + kind + '">' + escapeHtml(text) + '</span>';
+        }
+
+        async function updateNotificationSettingsStatus() {
+            const el = document.getElementById('notification-settings-status');
+            if (!el || typeof getStrongNotificationState !== 'function') return;
+            try {
+                const st = await getStrongNotificationState();
+                const notifText = st.notification === 'granted' ? 'разрешены'
+                    : st.notification === 'denied' ? 'запрещены'
+                    : st.notification === 'unsupported' ? 'нет поддержки'
+                    : 'не включены';
+                const notifKind = st.notification === 'granted' ? 'success' : st.notification === 'denied' ? 'warning' : 'muted';
+                el.innerHTML = `
+                    <div><span>Системные</span>${profileStatusBadge(notifText, notifKind)}</div>
+                    <div><span>Push</span>${profileStatusBadge(st.pushEnabled ? 'включён' : st.pushSupported ? 'выключен' : 'нет поддержки', st.pushEnabled ? 'success' : 'muted')}</div>
+                    <div><span>Звук вкладки</span>${profileStatusBadge(st.soundEnabled ? 'включён' : 'выключен', st.soundEnabled ? 'success' : 'muted')}</div>
+                `;
+            } catch (e) {
+                el.innerHTML = '<div class="alert alert-error">Не удалось проверить уведомления</div>';
+            }
+        }
+
+        async function loadProfileReminders() {
+            const list = document.getElementById('profile-reminders-list');
+            const count = document.getElementById('reminders-count');
+            if (!list) return;
+            try {
+                const resp = await fetch('/api/reminders');
+                const data = await resp.json();
+                if (!data.ok) throw new Error(data.error || 'Ошибка');
+                const reminders = data.reminders || [];
+                if (count) count.textContent = reminders.length ? reminders.length : 'нет';
+                if (!reminders.length) {
+                    list.innerHTML = '<div class="profile-empty">Будильников нет</div>';
+                    return;
+                }
+                list.innerHTML = reminders.map(r => `
+                    <div class="profile-list-item" id="reminder-row-${r.id}">
+                        <div class="profile-list-item__main">
+                            <div class="profile-list-item__title">${escapeHtml(r.event_name || 'Событие')}</div>
+                            <div class="profile-list-item__meta">${profileDateTime(r.event_start)} · за ${escapeHtml(r.minutes_before)} мин</div>
+                        </div>
+                        <button class="btn btn-danger-text btn-sm" onclick="deleteProfileReminder(${r.id})">Удалить</button>
+                    </div>
+                `).join('');
+            } catch (e) {
+                list.innerHTML = '<div class="alert alert-error">Ошибка загрузки будильников</div>';
+            }
+        }
+
+        async function deleteProfileReminder(id) {
+            const ok = await dlgConfirm('Удалить будильник', 'Удалить этот будильник?');
+            if (!ok) return;
+            try {
+                const resp = await fetch('/api/reminders/' + id, {method: 'DELETE'});
+                const data = await resp.json();
+                if (!data.ok) throw new Error(data.error || 'Ошибка');
+                loadProfileReminders();
+            } catch (e) {
+                dlgAlert('Ошибка', 'Не удалось удалить будильник: ' + e.message);
+            }
+        }
+
+        async function showMyFeedback() {
+            const modal = document.getElementById('my-feedback-modal');
+            if (modal) modal.style.display = 'flex';
+            await loadMyFeedback();
+        }
+
+        async function loadMyFeedback() {
+            const list = document.getElementById('my-feedback-list');
+            if (!list) return;
+            try {
+                const resp = await fetch('/api/feedback/my');
+                const data = await resp.json();
+                if (!data.ok) throw new Error(data.error || 'Ошибка');
+                const messages = data.messages || [];
+                if (!messages.length) {
+                    list.innerHTML = '<div class="profile-empty">Обращений пока нет</div>';
+                    return;
+                }
+                list.innerHTML = messages.map(m => `
+                    <div class="profile-list-item profile-list-item--stack">
+                        <div class="profile-feedback-head">
+                            <div class="profile-list-item__main">
+                                <div class="profile-list-item__title">${escapeHtml(m.message || 'Обращение')}</div>
+                                <div class="profile-list-item__meta">${profileDateTime(m.created_at)}</div>
+                            </div>
+                            <button class="btn btn-danger-text btn-sm" onclick="hideMyFeedback(${m.id})">Скрыть</button>
+                        </div>
+                        ${m.answer ? '<div class="profile-answer"><div class="profile-answer__meta">Ответ ' + profileDateTime(m.answered_at) + '</div><div>' + escapeHtml(m.answer) + '</div></div>' : '<div class="profile-empty">Ответа пока нет</div>'}
+                    </div>
+                `).join('');
+            } catch (e) {
+                list.innerHTML = '<div class="alert alert-error">Ошибка загрузки обращений</div>';
+            }
+        }
+
+        async function hideMyFeedback(id) {
+            const ok = await dlgConfirm('Скрыть обращение', 'Скрыть это обращение у себя?');
+            if (!ok) return;
+            const resp = await fetch('/api/feedback/' + id + '/hide', {method: 'POST'});
+            const data = await resp.json();
+            if (!data.ok) {
+                dlgAlert('Ошибка', data.error || 'Не удалось скрыть обращение');
+                return;
+            }
+            loadMyFeedback();
+        }
+
+        async function createLoginCode() {
+            const result = document.getElementById('login-code-result');
+            if (!result) return;
+            result.style.display = 'block';
+            result.className = 'alert';
+            result.textContent = 'Создаю код...';
+            try {
+                const resp = await fetch('/api/login-code/create', {method: 'POST'});
+                const data = await resp.json();
+                if (!data.ok) {
+                    result.className = 'alert alert-error';
+                    result.textContent = data.error || 'Не удалось создать код';
+                    return;
+                }
+                const minutes = Math.max(1, Math.ceil((data.ttl_seconds || 0) / 60));
+                result.className = 'alert alert-success';
+                result.innerHTML = 'Код входа: <strong class="mono" style="font-size:18px;letter-spacing:1px">' + escapeHtml(data.code) + '</strong><br><span style="font-size:12px">Одноразовый, действует ' + minutes + ' мин.</span>';
+                if (navigator.clipboard) {
+                    try { await navigator.clipboard.writeText(data.code); } catch (e) {}
+                }
+            } catch (e) {
+                result.className = 'alert alert-error';
+                result.textContent = 'Ошибка соединения: ' + e.message;
+            }
+        }
+
+        async function refreshToken() {
+            closeModal('user-modal');
+            try {
+                const resp = await fetch('/api/user-info');
+                const data = await resp.json();
+                if (!data.ok) { dlgAlert('Ошибка', 'Сначала авторизуйся'); return; }
+
+                if (data.loginType === 'password') {
+                    const ok = await dlgConfirm('Обновить токен', 'Попробовать обновить токен автоматически через сохранённый пароль?');
+                    if (!ok) return;
+
+                    const progressEl = document.createElement('div');
+                    progressEl.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--bg-card);padding:24px 32px;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.3);z-index:10000;text-align:center;min-width:280px';
+                    progressEl.innerHTML = '<div style="font-size:14px;color:var(--text)">⏳ Обновляю токен...</div>';
+                    document.body.appendChild(progressEl);
+
+                    const steps = [
+                        '⏳ Открываю страницу Sirius...',
+                        '⏳ Заполняю данные...',
+                        '⏳ Отправляю форму...',
+                        '⏳ Жду ответ сервера...',
+                        '⏳ Забираю токен...',
+                    ];
+                    let stepIdx = 0;
+                    const stepInterval = setInterval(() => {
+                        stepIdx = Math.min(stepIdx + 1, steps.length - 1);
+                        progressEl.innerHTML = '<div style="font-size:14px;color:var(--text)">' + steps[stepIdx] + '</div>';
+                    }, 3000);
+
+                    try {
+                        const r = await fetch('/api/refresh-token', {method: 'POST'});
+                        clearInterval(stepInterval);
+                        const d = await r.json();
+                        if (d.ok) {
+                            progressEl.innerHTML = '<div style="font-size:14px;color:var(--success)">✅ Токен обновлён! Перезагружаю...</div>';
+                            setTimeout(() => { progressEl.remove(); location.reload(); }, 1000);
+                        } else {
+                            progressEl.innerHTML = '<div style="font-size:14px;color:var(--danger)">❌ ' + (d.error || 'Не удалось обновить токен') + '</div>';
+                            setTimeout(() => progressEl.remove(), 3000);
+                        }
+                    } catch (e) {
+                        clearInterval(stepInterval);
+                        progressEl.innerHTML = '<div style="font-size:14px;color:var(--danger)">❌ Ошибка: ' + e.message + '</div>';
+                        setTimeout(() => progressEl.remove(), 3000);
+                    }
+                } else {
+                    const newToken = await dlgPrompt('Новый токен', 'Введи новый Bearer-токен от my.sirius.online:', '', {textarea: true});
+                    if (!newToken) return;
+                    const r = await fetch('/api/refresh-token', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({token: newToken}),
+                    });
+                    const d = await r.json();
+                    if (d.ok) {
+                        dlgAlert('Готово', 'Токен обновлён! Страница перезагрузится.');
+                        setTimeout(() => location.reload(), 1000);
+                    } else {
+                        dlgAlert('Ошибка', d.error || 'Неверный токен');
+                    }
+                }
+            } catch (e) { dlgAlert('Ошибка', 'Ошибка соединения: ' + e); }
+        }
+
+        async function transferCoins() {
+            closeModal('user-modal');
+            const toUid = await dlgPrompt('Перевод коинов', 'Введи UID получателя:', 'UID...');
+            if (!toUid) return;
+            const amount = await dlgPrompt('Перевод коинов', 'Сколько Сириус Коинов перевести?', '1', {type: 'number', value: '1'});
+            if (!amount) return;
+            try {
+                const resp = await fetch('/api/coins/transfer', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({to_uid: toUid.trim(), amount: parseInt(amount)}),
+                });
+                const data = await resp.json();
+                if (data.ok) {
+                    dlgAlert('Готово', 'Переведено! Твой новый баланс: ' + data.new_balance);
+                } else {
+                    dlgAlert('Ошибка', data.error || 'Неизвестная ошибка');
+                }
+            } catch (e) { dlgAlert('Ошибка', 'Ошибка соединения: ' + e); }
+        }
+
+        async function sendFeedback() {
+            const text = document.getElementById('feedback-text').value.trim();
+            const result = document.getElementById('feedback-result');
+            if (!text) { alert('Напиши сообщение'); return; }
+            result.style.display = 'block';
+            result.className = 'alert';
+            result.textContent = 'Отправка...';
+            try {
+                const resp = await fetch('/api/feedback', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message: text}),
+                });
+                const data = await resp.json();
+                if (data.ok) {
+                    result.className = 'alert alert-success';
+                    result.textContent = 'Спасибо! Сообщение отправлено разработчику.';
+                    document.getElementById('feedback-text').value = '';
+                    setTimeout(() => { closeModal('feedback-modal'); }, 2000);
+                } else {
+                    result.className = 'alert alert-error';
+                    result.textContent = data.error || 'Ошибка';
+                }
+            } catch (e) {
+                result.className = 'alert alert-error';
+                result.textContent = 'Ошибка соединения';
+            }
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).style.display = 'none';
+        }
+
+        function showChangelog(manual = false) {
+            const modal = document.getElementById('changelog-modal');
+            if (!modal) return;
+            if (!manual) {
+                try {
+                    if (localStorage.getItem(CHANGELOG_STORAGE_KEY) === CHANGELOG_VERSION) return;
+                } catch (e) {}
+            }
+            modal.style.display = 'flex';
+        }
+
+        function closeChangelog() {
+            const modal = document.getElementById('changelog-modal');
+            if (modal) modal.style.display = 'none';
+            try {
+                localStorage.setItem(CHANGELOG_STORAGE_KEY, CHANGELOG_VERSION);
+            } catch (e) {}
+        }
+
+        // Shared escapeHtml for templates that need it
+        function escapeHtml(s) { return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]); }
+
+        // --- Universal Dialog ---
+        let _dialogResolve = null;
+        function showDialog(title, message, options = {}) {
+            document.getElementById('dialog-title').textContent = title;
+            document.getElementById('dialog-message').textContent = message || '';
+            const inputArea = document.getElementById('dialog-input-area');
+            const input = document.getElementById('dialog-input');
+            const textarea = document.getElementById('dialog-textarea');
+            const buttons = document.getElementById('dialog-buttons');
+            if (options.input) {
+                inputArea.style.display = 'block';
+                if (options.textarea) {
+                    textarea.style.display = 'block'; textarea.value = options.value || '';
+                    input.style.display = 'none';
+                } else {
+                    input.style.display = 'block'; input.value = options.value || '';
+                    input.placeholder = options.placeholder || ''; input.type = options.type || 'text';
+                    textarea.style.display = 'none';
+                }
+                setTimeout(() => (options.textarea ? textarea : input).focus(), 100);
+            } else { inputArea.style.display = 'none'; }
+            buttons.innerHTML = '';
+            const btns = options.buttons || [{text: 'OK', primary: true}];
+            btns.forEach((b, i) => {
+                const btn = document.createElement('button');
+                btn.className = 'btn ' + (b.primary ? 'btn-primary' : 'btn-outline') + ' btn-sm';
+                btn.textContent = b.text;
+                btn.onclick = () => {
+                    const val = options.input ? (options.textarea ? textarea.value.trim() : input.value.trim()) : i;
+                    if (_dialogResolve) { _dialogResolve(val); _dialogResolve = null; }
+                    closeDialog();
+                };
+                buttons.appendChild(btn);
+            });
+            document.getElementById('dialog-modal').style.display = 'flex';
+            return new Promise(resolve => { _dialogResolve = resolve; });
+        }
+        function closeDialog() {
+            document.getElementById('dialog-modal').style.display = 'none';
+            if (_dialogResolve) { _dialogResolve(null); _dialogResolve = null; }
+        }
+        function dlgAlert(title, msg) { return showDialog(title, msg, {buttons: [{text: 'OK', primary: true}]}); }
+        function dlgConfirm(title, msg) { return showDialog(title, msg, {buttons: [{text: 'Отмена'}, {text: 'Да', primary: true}]}).then(v => v === 1); }
+        function dlgPrompt(title, msg, placeholder, opts = {}) { return showDialog(title, msg, {input: true, placeholder, ...opts, buttons: [{text: 'Отмена'}, {text: 'OK', primary: true}]}).then(v => v); }
+
+        let _pendingReminder = null;
+        function setReminderVal(m) {
+            document.getElementById('reminder-custom').value = m;
+        }
+        function setReminder(eventId, eventName, eventStart, trigger = null) {
+            _pendingReminder = {event_id: eventId, event_name: eventName, event_start: eventStart, trigger};
+            document.getElementById('reminder-custom').value = 15;
+            document.getElementById('reminder-modal').style.display = 'flex';
+            document.getElementById('reminder-result').style.display = 'none';
+        }
+        async function doSetReminder() {
+            if (!_pendingReminder) return;
+            const minutes = parseInt(document.getElementById('reminder-custom').value);
+            if (isNaN(minutes) || minutes < 0) { alert('Введи корректное число минут'); return; }
+            const result = document.getElementById('reminder-result');
+            result.style.display = 'block';
+            result.className = 'alert';
+            result.textContent = 'Устанавливаю...';
+            try {
+                const resp = await fetch('/api/reminders', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        event_id: _pendingReminder.event_id,
+                        event_name: _pendingReminder.event_name,
+                        event_start: _pendingReminder.event_start,
+                        minutes_before: minutes,
+                    }),
+                });
+                const data = await resp.json();
+                if (data.ok) {
+                    result.className = 'alert alert-success';
+                    result.textContent = '✅ Напоминание установлено';
+                    if (_pendingReminder.trigger) {
+                        _pendingReminder.trigger.classList.add('schedule-card__reminder-btn--active');
+                        _pendingReminder.trigger.title = 'Напоминание включено';
+                    }
+                    setTimeout(() => { closeModal('reminder-modal'); }, 1500);
+                } else {
+                    result.className = 'alert alert-error';
+                    result.textContent = data.error || 'Ошибка';
+                }
+            } catch (e) {
+                result.className = 'alert alert-error';
+                result.textContent = 'Ошибка соединения';
+            }
+        }
+
+        // Dark theme
+        function toggleDark() {
+            document.body.classList.toggle('dark-theme');
+            localStorage.setItem('theme', document.body.classList.contains('dark-theme') ? 'dark' : 'light');
+        }
+
+        // Request browser notifications on first load
+        document.addEventListener('DOMContentLoaded', () => {
+            {% if user_id %}
+            requestNotify();
+            {% endif %}
+            // Close dialog modal on overlay click
+            const dlg = document.getElementById('dialog-modal');
+            if (dlg) dlg.addEventListener('click', () => closeDialog());
+            setTimeout(() => showChangelog(false), 400);
+        });
+
+        function toggleMobileMenu() {
+            const nav = document.getElementById('mobile-nav');
+            nav.classList.toggle('open');
+        }
+        if (localStorage.getItem('theme') === 'dark') {
+            document.body.classList.add('dark-theme');
+        }
+
+        async function ping() {
+            const result = document.getElementById('ping-result');
+            result.style.display = 'block';
+            result.className = 'alert';
+            result.textContent = 'Проверка...';
+            try {
+                const resp = await fetch('/api/ping', {method: 'POST'});
+                const data = await resp.json();
+                if (data.ok) {
+                    const exp = data.token_remaining_seconds != null
+                        ? Math.floor(data.token_remaining_seconds / 86400) + 'д ' + Math.floor((data.token_remaining_seconds % 86400) / 3600) + 'ч'
+                        : '—';
+                    result.className = 'alert alert-success';
+                    result.innerHTML = '✅ Sirius отвечает<br>'
+                        + '⏱ ' + data.response_time_ms + 'мс<br>'
+                        + '📊 ' + data.total_events + ' событий, ' + data.open_events + ' открыто<br>'
+                        + '🕐 Токен живёт ещё ' + exp + '<br>'
+                        + (data.clock_skew_s ? '🔄 Рассинхрон часов: ' + data.clock_skew_s + 'с' : '');
+                } else {
+                    result.className = 'alert alert-error';
+                    result.textContent = '❌ ' + (data.error || 'Ошибка');
+                }
+            } catch (e) {
+                result.className = 'alert alert-error';
+                result.textContent = '❌ Ошибка соединения: ' + e.message;
+            }
+        }
+
+        // Web Notifications
+        function requestNotify() {
+            if (localStorage.getItem('alarmAudioEnabled') === '1' && 'Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+        }
+        async function sendBrowserNotification(title, body) {
+            if ('Notification' in window && Notification.permission === 'granted') {
+                if (typeof showSystemNotification === 'function') {
+                    await showSystemNotification(title, {body, icon: '/static/sirius.png', badge: '/static/sirius.png'});
+                } else {
+                    new Notification(title, {body, icon: '/static/sirius.png'});
+                }
+            }
+        }
+        // Hook into live notifications
+        const origObserver = new MutationObserver(() => {
+            document.querySelectorAll('#notifications-live .notification__text').forEach(el => {
+                if (!el.dataset.notified) {
+                    el.dataset.notified = '1';
+                    sendBrowserNotification('Пирожковый Диспетчер', el.textContent);
+                }
+            });
+        });
+        document.addEventListener('DOMContentLoaded', () => {
+            origObserver.observe(document.getElementById('notifications-live'), {childList: true, subtree: true});
+        });
+    </script>
+</body>
+</html>
