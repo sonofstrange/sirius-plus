@@ -300,6 +300,7 @@ def get_user_id(request: Request) -> str | None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _sirius_client
+    app.state.ready = False
     storage.init_db()
     storage.ensure_encryption_key()
     try:
@@ -324,13 +325,17 @@ async def lifespan(app: FastAPI):
         poller.run_reminder_checker(web_notify, _now)
     ) if _sirius_client else None
 
-    yield
-
-    for t in [poller_task, reminder_task]:
-        if t:
-            t.cancel()
-    if _sirius_client:
-        await _sirius_client.stop()
+    app.state.ready = True
+    try:
+        yield
+    finally:
+        # Nginx turns this 503 into the shared maintenance page immediately.
+        app.state.ready = False
+        for t in [poller_task, reminder_task]:
+            if t:
+                t.cancel()
+        if _sirius_client:
+            await _sirius_client.stop()
 
 
 app = FastAPI(
@@ -354,6 +359,11 @@ templates.env.filters["nl2br"] = lambda v: v.replace("\n", "<br>\n")
 @app.middleware("http")
 async def origin_guard(request: Request, call_next):
     """Require the private activation file and the official host."""
+    if not getattr(request.app.state, "ready", False):
+        return HTMLResponse(
+            "<h1>Сервис перезагружается</h1><p>Подожди немного и обнови страницу.</p>",
+            status_code=503,
+        )
     if not app_config.instance_seal_is_valid():
         return HTMLResponse(
             "<h1>Экземпляр не активирован</h1>"
@@ -385,7 +395,7 @@ async def service_worker():
 
 @app.get("/healthz", include_in_schema=False, status_code=204)
 async def health_check():
-    return Response(status_code=204)
+    return Response(status_code=204 if getattr(app.state, "ready", False) else 503)
 
 
 def _decode_jwt(token: str) -> dict | None:
