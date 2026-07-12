@@ -28,6 +28,11 @@ class _RejectingSiriusClient:
         raise RuntimeError("HTTP 401")
 
 
+class _InvalidJsonRequest(_Request):
+    async def json(self):
+        raise json.JSONDecodeError("invalid JSON", "{", 1)
+
+
 class SecurityTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -49,6 +54,11 @@ class SecurityTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 401)
         self.assertEqual(storage.get_all_users_with_tokens(), [])
+
+    async def test_token_endpoint_rejects_malformed_json(self):
+        response = await main.api_set_token(_InvalidJsonRequest({}))
+
+        self.assertEqual(response.status_code, 400)
 
     async def test_api_documentation_is_disabled(self):
         self.assertIsNone(main.app.docs_url)

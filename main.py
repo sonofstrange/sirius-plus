@@ -828,7 +828,10 @@ async def api_set_token(request: Request):
     is_new_session = user_id is None
     session_id = request.cookies.get("session_id") if user_id else None
 
-    data = await request.json()
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return JSONResponse({"ok": False, "error": "Тело запроса должно быть JSON"}, status_code=400)
     token = data.get("token", "").strip()
     if not token:
         return JSONResponse({"ok": False, "error": "Токен не может быть пустым"}, status_code=400)
@@ -981,6 +984,7 @@ async def api_refresh_token(request: Request):
 
     login_type = storage.get_login_type(user_id)
     if login_type == "password":
+        log.info("token refresh requested for user_id=%s", user_id)
         # Автообновление через пароль с КД 4 часа
         last = storage.get_last_token_refresh(user_id)
         if time.time() - last < 4 * 3600:
@@ -999,14 +1003,17 @@ async def api_refresh_token(request: Request):
         try:
             token = await _sirius_client.login(creds[0], creds[1])
         except Exception as e:
+            log.warning("token refresh failed for user_id=%s: %s", user_id, e)
             return JSONResponse({"ok": False, "error": f"Ошибка входа: {_friendly_error(e)}"}, status_code=500)
 
         if not token:
+            log.warning("token refresh returned no token for user_id=%s", user_id)
             return JSONResponse({"ok": False, "error": "Sirius не успел завершить вход. Возможно, сайт отвечает медленно — попробуй ещё раз."}, status_code=503)
 
         storage.save_token(user_id, token)
         storage.mark_token_verified(user_id, token)
         storage.set_last_token_refresh(user_id)
+        log.info("token refresh succeeded for user_id=%s", user_id)
         return JSONResponse({"ok": True, "method": "auto"})
 
     elif login_type == "token":
