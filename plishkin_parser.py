@@ -15,10 +15,11 @@ _CLEAR_RE = re.compile(r"отбой\s+угрозы\s+атаки\s+бпла", re.
 
 
 def detect_bpla_status(text: str) -> str | None:
-    """Return ``threat`` or ``clear`` for an official message, otherwise None."""
+    """Return the newest visible official status from a newest-first VK feed."""
     normalized = " ".join(text.replace("\xa0", " ").split())
-    if _CLEAR_RE.search(normalized):
-        return "clear"
-    if _THREAT_RE.search(normalized):
-        return "threat"
-    return None
+    matches = [
+        (match.start(), "threat") for match in _THREAT_RE.finditer(normalized)
+    ] + [
+        (match.start(), "clear") for match in _CLEAR_RE.finditer(normalized)
+    ]
+    return min(matches, default=(None, None))[1]

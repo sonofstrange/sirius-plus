@@ -14,6 +14,13 @@ class PlishkinParserTests(unittest.TestCase):
     def test_detects_clear_message(self):
         self.assertEqual(detect_bpla_status("Отбой угрозы атаки БПЛА."), "clear")
 
+    def test_prefers_newer_threat_over_an_older_clear_message(self):
+        text = (
+            "Внимание! Существует угроза атаки БПЛА. "
+            "Отбой угрозы атаки БПЛА."
+        )
+        self.assertEqual(detect_bpla_status(text), "threat")
+
     def test_ignores_unrelated_post(self):
         self.assertIsNone(detect_bpla_status("Сегодня проходит обычное занятие."))
 
