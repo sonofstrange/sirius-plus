@@ -102,6 +102,9 @@
     {% if error %}
     <div class="alert alert-error">{{ error }}</div>
     {% endif %}
+    {% if refresh_message %}
+    <p class="events-refresh-status" id="events-refresh-status" aria-live="polite">{{ refresh_message }}</p>
+    {% endif %}
 
     <div class="events-list">
         {% for ev in events %}
@@ -138,7 +141,9 @@
                     <span class="chip chip-xs chip-danger">⚠️ {{ ev._conflict_with | join(', ') }}</span>
                     {% endif %}
                     {% for r in ev.reasons %}
+                    {% if r != 'recordClosed' %}
                     <span class="chip chip-xs">{{ r }}</span>
+                    {% endif %}
                     {% endfor %}
                 </div>
                 {% endif %}
@@ -154,6 +159,8 @@
                 <span class="badge badge-success">✅ Записан</span>
                 {% elif ev.is_reserved %}
                 <span class="badge badge-warning">🟡 В резерве</span>
+                {% elif 'recordClosed' in ev.reasons %}
+                <span class="badge" style="background:var(--danger);color:white">🔒 Запись закрыта</span>
                 {% elif ev.is_available and ev.people_max > 0 and ev.people_current >= ev.people_max %}
                 <button class="btn btn-primary btn-sm" onclick="subscribe('{{ ev.event_id }}', this)">
                     Записаться в резерв
@@ -198,7 +205,7 @@
             </div>
         </div>
         {% else %}
-        {% if cur_tab != 'notifications' %}
+        {% if cur_tab != 'notifications' and not refresh_message %}
         <div class="empty-state">
             <span class="material-symbols-outlined empty-state__icon">search</span>
             <p>Нет событий по выбранному фильтру</p>
@@ -273,6 +280,8 @@ async function refreshEventsInBackground() {
         }
     } catch (e) {
         console.warn('background sync failed', e);
+        const status = document.getElementById('events-refresh-status');
+        if (status) status.textContent = 'Не удалось обновить данные. Попробуй ещё раз позже.';
     }
 }
 
@@ -403,6 +412,11 @@ async function showEventDetail(eventId) {
         const end = ev.event_end ? new Date(ev.event_end).toLocaleString('ru-RU') : '—';
         const willOpen = ev.will_open_at ? new Date(ev.will_open_at).toLocaleString('ru-RU') : '—';
         const desc = ev.description || '';
+        const recordClosed = ev.reasons && ev.reasons.includes('recordClosed');
+        const registrationStatus = ev.is_recorded ? '✅ Записан'
+            : ev.is_reserved ? '🟡 Резерв'
+            : recordClosed ? '🔒 Запись закрыта'
+            : ev.is_available ? '🔓 Открыто' : '🔒 Закрыто';
         const conflictNames = ev.conflict_with && ev.conflict_with.length ? ev.conflict_with.join(', ') : '';
         const conflict = conflictNames ? '<tr><td>Конфликт</td><td>⚠️ ' + escapeHtml(conflictNames) + '</td></tr>' : '';
         body.innerHTML = `
@@ -412,7 +426,7 @@ async function showEventDetail(eventId) {
                 <tr><td>Начало</td><td>${escapeHtml(start)}</td></tr>
                 <tr><td>Конец</td><td>${escapeHtml(end)}</td></tr>
                 <tr><td>Участников</td><td>${ev.people_current}/${ev.people_max}</td></tr>
-                <tr><td>Статус</td><td>${ev.is_recorded ? '✅ Записан' : ev.is_reserved ? '🟡 Резерв' : ev.is_available ? '🔓 Открыто' : '🔒 Закрыто'}</td></tr>
+                <tr><td>Статус</td><td>${registrationStatus}</td></tr>
                 <tr><td>Откроется</td><td>${escapeHtml(willOpen)}</td></tr>
                 <tr><td>В слежке</td><td>${ev.watched ? '✅ Да' : '❌ Нет'}</td></tr>
                 ${conflict}

@@ -473,6 +473,11 @@ body.dark-theme .form-select {
     color: #856404;
     border: 1px solid #ffeeba;
 }
+.events-refresh-status {
+    margin: 0 0 12px;
+    color: var(--text-muted);
+    font-size: 13px;
+}
 body.dark-theme .alert-error {
     background: #3d2e00;
     color: #ffd54f;

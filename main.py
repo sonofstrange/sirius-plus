@@ -462,23 +462,24 @@ async def events_page(request: Request, tab: str = "register", status: str = "al
     cache_key = f"events:{user_id}"
     all_events = _get_cached(cache_key)
     error = None
+    refresh_message = None
     background_refresh = False
     if all_events is None:
         stale_events = _get_cached_any(cache_key)
         if stale_events is not None:
             all_events = stale_events
             background_refresh = True
-            error = "Показываю кэш, обновляю Sirius в фоне..."
+            refresh_message = "Обновляю..."
         else:
             stored_events = _get_persistent_events_cache(user_id)
             if stored_events is not None:
                 all_events = stored_events
                 background_refresh = True
-                error = "Показываю сохранённое расписание, обновляю Sirius в фоне..."
+                refresh_message = "Обновляю..."
             elif _sirius_client:
                 all_events = []
                 background_refresh = True
-                error = "Загружаю события с Sirius в фоне..."
+                refresh_message = "Сейчас данные загружаются из Sirius. Обычно это занимает до 1 минуты."
             else:
                 all_events = []
                 error = "Sirius клиент не запущен"
@@ -574,7 +575,7 @@ async def events_page(request: Request, tab: str = "register", status: str = "al
     return _render("events.html", request, events=paged, error=error,
                    cur_status=status, cur_date=date, dates=dates, search_q=q,
                    cur_tab=tab, cur_sub=sub, page=page, total_pages=total_pages, total=total,
-                   cur_sort=sort, background_refresh=background_refresh)
+                   cur_sort=sort, background_refresh=background_refresh, refresh_message=refresh_message)
 
 
 @app.get("/schedule", response_class=HTMLResponse)
@@ -1591,6 +1592,7 @@ async def api_events(request: Request):
                 "event_end": ev.raw.get("eventEnd"),
                 "record_start": ev.record_start,
                 "is_available": ev.is_available,
+                "reasons": ev.reasons,
                 "will_open_at": ev.will_open_at,
                 "is_recorded": ev.is_recorded,
                 "is_reserved": ev.is_reserved,
