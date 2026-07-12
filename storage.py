@@ -1,5 +1,6 @@
 import os
 import hashlib
+import json
 import math
 import secrets
 import sqlite3
@@ -272,6 +273,32 @@ def init_db():
                 ON prediction_bets(market_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_prediction_bets_user
                 ON prediction_bets(uid, market_id);
+
+            CREATE TABLE IF NOT EXISTS drone_alerts (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                radar_event_id    TEXT NOT NULL DEFAULT '',
+                market_id         INTEGER NOT NULL UNIQUE,
+                status            TEXT NOT NULL DEFAULT 'active',
+                started_at        INTEGER NOT NULL,
+                ended_at          INTEGER NOT NULL DEFAULT 0,
+                duration_seconds  INTEGER NOT NULL DEFAULT 0,
+                result_option     TEXT NOT NULL DEFAULT '',
+                source_message    TEXT NOT NULL DEFAULT '',
+                source_url        TEXT NOT NULL DEFAULT '',
+                updated_at        INTEGER NOT NULL,
+                created_at        INTEGER NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_drone_alerts_status
+                ON drone_alerts(status, started_at DESC);
+
+            CREATE TABLE IF NOT EXISTS drone_radar_state (
+                id          INTEGER PRIMARY KEY CHECK (id = 1),
+                active      INTEGER NOT NULL,
+                changed_at  INTEGER NOT NULL,
+                message     TEXT NOT NULL DEFAULT '',
+                updated_at  INTEGER NOT NULL
+            );
 
         """)
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(watchlist)").fetchall()]
@@ -1252,11 +1279,13 @@ def get_prediction_market(market_id: int) -> sqlite3.Row | None:
         return conn.execute("SELECT * FROM prediction_markets WHERE id=?", (market_id,)).fetchone()
 
 
-def get_prediction_markets() -> list[sqlite3.Row]:
+def get_prediction_markets(include_dronebet: bool = False) -> list[sqlite3.Row]:
     with get_conn() as conn:
-        return conn.execute(
-            "SELECT * FROM prediction_markets ORDER BY CASE status WHEN 'open' THEN 0 ELSE 1 END, created_at DESC"
-        ).fetchall()
+        query = "SELECT * FROM prediction_markets"
+        if not include_dronebet:
+            query += " WHERE created_by != 'dronebet'"
+        query += " ORDER BY CASE status WHEN 'open' THEN 0 ELSE 1 END, created_at DESC"
+        return conn.execute(query).fetchall()
 
 
 def get_prediction_bets(market_id: int) -> list[sqlite3.Row]:
@@ -1403,6 +1432,94 @@ def delete_prediction_market(market_id: int) -> tuple[bool, str]:
         conn.execute("DELETE FROM prediction_bets WHERE market_id=?", (market_id,))
         conn.execute("DELETE FROM prediction_markets WHERE id=?", (market_id,))
         return True, ""
+
+
+# ---------- DroneBet ----------
+
+def create_drone_alert(
+    radar_event_id: str,
+    started_at: int,
+    source_message: str,
+    source_url: str,
+    options: list[str],
+) -> tuple[sqlite3.Row, bool]:
+    """Create one automatic market for a new Radar threat."""
+    now = int(time.time())
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        active = conn.execute(
+            "SELECT * FROM drone_alerts WHERE status='active' ORDER BY started_at DESC LIMIT 1"
+        ).fetchone()
+        if active:
+            return active, False
+        cursor = conn.execute(
+            """INSERT INTO prediction_markets
+               (title, description, market_type, options_json, end_at, betting_closes_at, created_by, created_at)
+               VALUES (?, ?, 'choice', ?, 0, 0, 'dronebet', ?)""",
+            (
+                "Как долго продлится угроза БПЛА?",
+                "Рынок создан автоматически по данным Sirius Radar. Ставки принимаются до отбоя угрозы.",
+                json.dumps(options, ensure_ascii=False),
+                now,
+            ),
+        )
+        market_id = int(cursor.lastrowid)
+        conn.execute(
+            """INSERT INTO drone_alerts
+               (radar_event_id, market_id, started_at, source_message, source_url, updated_at, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (radar_event_id, market_id, started_at, source_message, source_url, now, now),
+        )
+        alert = conn.execute("SELECT * FROM drone_alerts WHERE market_id=?", (market_id,)).fetchone()
+        return alert, True
+
+
+def get_active_drone_alert() -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM drone_alerts WHERE status='active' ORDER BY started_at DESC LIMIT 1"
+        ).fetchone()
+
+
+def set_drone_radar_state(active: bool, changed_at: int, message: str = "") -> None:
+    now = int(time.time())
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO drone_radar_state (id, active, changed_at, message, updated_at)
+               VALUES (1, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET
+                 active=excluded.active, changed_at=excluded.changed_at,
+                 message=excluded.message, updated_at=excluded.updated_at""",
+            (int(active), changed_at, message, now),
+        )
+
+
+def get_drone_radar_state() -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM drone_radar_state WHERE id=1").fetchone()
+
+
+def get_drone_alerts(limit: int = 20, include_active: bool = False) -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        query = "SELECT * FROM drone_alerts"
+        if not include_active:
+            query += " WHERE status != 'active'"
+        query += " ORDER BY started_at DESC LIMIT ?"
+        return conn.execute(query, (limit,)).fetchall()
+
+
+def finish_drone_alert(alert_id: int, ended_at: int, result_option: str) -> None:
+    with get_conn() as conn:
+        alert = conn.execute("SELECT started_at FROM drone_alerts WHERE id=?", (alert_id,)).fetchone()
+        if not alert:
+            return
+        duration = max(0, ended_at - int(alert["started_at"]))
+        conn.execute(
+            """UPDATE drone_alerts
+               SET status='resolved', ended_at=?, duration_seconds=?, result_option=?, updated_at=?
+               WHERE id=?""",
+            (ended_at, duration, result_option, int(time.time()), alert_id),
+        )
 
 
 def spend_coin(uid: str) -> bool:

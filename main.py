@@ -21,6 +21,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import config as app_config
+import dronebet
 import poller
 import storage
 from sirius_api import EventInfo, SiriusClient, token_expiry, parse_sirius_time, classify_subscribe_result, clean_description
@@ -324,6 +325,7 @@ async def lifespan(app: FastAPI):
     reminder_task = asyncio.create_task(
         poller.run_reminder_checker(web_notify, _now)
     ) if _sirius_client else None
+    dronebet_task = asyncio.create_task(dronebet.run_dronebet_monitor(web_notify))
 
     app.state.ready = True
     try:
@@ -331,7 +333,7 @@ async def lifespan(app: FastAPI):
     finally:
         # Nginx turns this 503 into the shared maintenance page immediately.
         app.state.ready = False
-        for t in [poller_task, reminder_task]:
+        for t in [poller_task, reminder_task, dronebet_task]:
             if t:
                 t.cancel()
         if _sirius_client:
@@ -832,6 +834,13 @@ async def polymarket_page(request: Request):
     return _render("polymarket.html", request)
 
 
+@app.get("/dronebet", response_class=HTMLResponse)
+async def dronebet_page(request: Request):
+    if not get_user_id(request):
+        return RedirectResponse(url="/")
+    return _render("dronebet.html", request)
+
+
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_page(request: Request):
     user_id = get_user_id(request)
@@ -1132,6 +1141,23 @@ def _prediction_market_view(market, viewer_uid: str) -> dict:
     return view
 
 
+def _drone_alert_view(alert, viewer_uid: str) -> dict:
+    market = storage.get_prediction_market(int(alert["market_id"]))
+    source_url = str(alert["source_url"] or "")
+    if not source_url.startswith(("https://", "http://")):
+        source_url = ""
+    return {
+        "id": alert["id"],
+        "started_at": alert["started_at"],
+        "ended_at": alert["ended_at"],
+        "duration_seconds": alert["duration_seconds"],
+        "result_option": alert["result_option"],
+        "source_message": alert["source_message"],
+        "source_url": source_url,
+        "market": _prediction_market_view(market, viewer_uid) if market else None,
+    }
+
+
 @app.get("/api/polymarket")
 async def api_polymarket(request: Request):
     user_id = get_user_id(request)
@@ -1145,6 +1171,30 @@ async def api_polymarket(request: Request):
         "coins": storage.get_coins(uid),
         "is_admin": storage.is_admin(uid),
         "markets": [_prediction_market_view(market, uid) for market in storage.get_prediction_markets()],
+    })
+
+
+@app.get("/api/dronebet")
+async def api_dronebet(request: Request):
+    user_id = get_user_id(request)
+    if not user_id:
+        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
+    uid = _session_uid(user_id)
+    if not uid:
+        return JSONResponse({"ok": False, "error": "Токен не задан"}, status_code=400)
+    active = storage.get_active_drone_alert()
+    radar_state = storage.get_drone_radar_state()
+    history = storage.get_drone_alerts()
+    return JSONResponse({
+        "ok": True,
+        "coins": storage.get_coins(uid),
+        "status": {
+            "active": bool(radar_state["active"]) if radar_state else bool(active),
+            "since": radar_state["changed_at"] if radar_state else (active["started_at"] if active else 0),
+            "message": radar_state["message"] if radar_state else (active["source_message"] if active else ""),
+        },
+        "current": _drone_alert_view(active, uid) if active else None,
+        "history": [_drone_alert_view(alert, uid) for alert in history],
     })
 
 
@@ -1260,6 +1310,8 @@ async def api_resolve_polymarket(market_id: int, request: Request):
     market = storage.get_prediction_market(market_id)
     if not market:
         return JSONResponse({"ok": False, "error": "Рынок не найден"}, status_code=404)
+    if market["created_by"] == "dronebet":
+        return JSONResponse({"ok": False, "error": "ДронБет рассчитывается только по данным Sirius Radar"}, status_code=400)
     try:
         data = await request.json()
     except json.JSONDecodeError:
@@ -1301,6 +1353,9 @@ async def api_delete_polymarket(market_id: int, request: Request):
     admin_uid, denied = _require_admin(request)
     if denied:
         return denied
+    market = storage.get_prediction_market(market_id)
+    if market and market["created_by"] == "dronebet":
+        return JSONResponse({"ok": False, "error": "Автоматический рынок ДронБета нельзя удалить вручную"}, status_code=400)
     ok, error = storage.delete_prediction_market(market_id)
     if not ok:
         return JSONResponse({"ok": False, "error": error}, status_code=400)
@@ -1315,6 +1370,8 @@ async def api_cancel_polymarket(market_id: int, request: Request):
     market = storage.get_prediction_market(market_id)
     if not market:
         return JSONResponse({"ok": False, "error": "Рынок не найден"}, status_code=404)
+    if market["created_by"] == "dronebet":
+        return JSONResponse({"ok": False, "error": "Автоматический рынок ДронБета нельзя отменить вручную"}, status_code=400)
     ok, error, refunds = storage.cancel_prediction_market(market_id)
     if not ok:
         return JSONResponse({"ok": False, "error": error}, status_code=400)

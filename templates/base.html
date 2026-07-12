@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Пирожковый Диспетчер{% endblock %}</title>
     <link rel="icon" href="/static/sirius.png">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260713-2">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260713-3">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
 </head>
 <body>
@@ -27,6 +27,7 @@
                     <a href="/watchlist" class="header__nav-link">Слежка</a>
                     <a href="/coins-info" class="header__nav-link">🪙 {{ coins_balance }}</a>
                     <a href="/polymarket" class="header__nav-link">Полимаркет</a>
+                    <a href="/dronebet" class="header__nav-link">ДронБет</a>
                 </nav>
                 <button class="header__menu-btn" onclick="toggleMobileMenu()" aria-label="Меню">
                     <span class="material-symbols-outlined">menu</span>
@@ -57,6 +58,7 @@
                 <a href="/watchlist" class="header__mobile-nav-link">Слежка</a>
                 <a href="/coins-info" class="header__mobile-nav-link">🪙 Сириус Коины ({{ coins_balance }})</a>
                 <a href="/polymarket" class="header__mobile-nav-link">Полимаркет</a>
+                <a href="/dronebet" class="header__mobile-nav-link">ДронБет</a>
                 <a href="#" class="header__mobile-nav-link" onclick="showChangelog(true);toggleMobileMenu();return false">Что нового</a>
                 <a href="/howto" class="header__mobile-nav-link">Как получить токен</a>
                 <a href="/help" class="header__mobile-nav-link">Справка</a>

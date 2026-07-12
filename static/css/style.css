@@ -2151,6 +2151,58 @@ body.dark-theme .badge-muted {
     margin-top: 14px;
 }
 
+.drone-status {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 126px;
+    margin-bottom: 22px;
+    padding: 20px 24px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    isolation: isolate;
+}
+.drone-status--clear { background: #dff6e9; border-color: #8dcbaa; color: #145c38; }
+.drone-status--active { background: #ffe1e1; border-color: #e89b9b; color: #8d2025; }
+.drone-status__icon { margin-right: 14px; font-size: 38px; }
+.drone-status > div,
+.drone-status > .drone-status__icon { position: relative; z-index: 1; }
+.drone-status__title { font-size: 22px; font-weight: 700; }
+.drone-status__timer { margin-top: 4px; font-size: 15px; }
+.drone-status__message { max-width: 640px; margin-top: 8px; font-size: 13px; line-height: 1.4; }
+.drone-status__drone { display: none; }
+.drone-status--active .drone-status__drone {
+    display: block;
+    position: absolute;
+    right: 42px;
+    top: 16px;
+    z-index: 0;
+    opacity: .16;
+    font-size: 80px;
+    transform: rotate(-20deg);
+}
+.drone-status--active .drone-status__drone--second { right: 128px; top: 58px; font-size: 47px; transform: rotate(16deg); }
+.dronebet-section { margin-top: 24px; }
+.dronebet-section__head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+.dronebet-section__head h2 { margin: 0; font-size: 18px; }
+.dronebet-section__meta { color: var(--text-muted); font-size: 13px; white-space: nowrap; }
+.dronebet-current,
+.dronebet-history__item,
+.dronebet-empty { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-card); box-shadow: var(--shadow); }
+.dronebet-current { padding: 16px; }
+.dronebet-current__hint { margin: 0 0 14px; color: var(--text-muted); font-size: 13px; }
+.dronebet-my-bets { margin-top: 14px; color: var(--text-muted); font-size: 13px; }
+.dronebet-empty { display: flex; align-items: center; gap: 12px; padding: 20px; color: var(--text-muted); }
+.dronebet-empty p { margin: 0; }
+.dronebet-empty .material-symbols-outlined { font-size: 28px; }
+.dronebet-history { display: grid; gap: 8px; }
+.dronebet-history__item { display: flex; gap: 12px; padding: 13px 15px; }
+.dronebet-history__item > .material-symbols-outlined { color: var(--text-muted); }
+.dronebet-history__item strong { font-size: 14px; }
+.dronebet-history__item p { margin: 4px 0; color: var(--text-muted); font-size: 13px; }
+.dronebet-history__item a { font-size: 12px; }
+
 @media (max-width: 720px) {
     .polymarket-page .page__header { align-items: flex-start; }
     .polymarket-balance { align-self: flex-start; }
@@ -2161,6 +2213,11 @@ body.dark-theme .badge-muted {
     .polymarket-options { grid-template-columns: 1fr; }
     .polymarket-number-bet { max-width: none; }
     .polymarket-heat__legend { font-size: 11px; }
+    .drone-status { min-height: 116px; padding: 18px; }
+    .drone-status__title { font-size: 20px; }
+    .drone-status--active .drone-status__drone { right: 12px; font-size: 60px; }
+    .drone-status--active .drone-status__drone--second { right: 75px; top: 63px; font-size: 36px; }
+    .dronebet-section__head { align-items: flex-start; flex-direction: column; gap: 4px; }
     .feedback-message { max-width: 94%; }
     .feedback-reply-form { flex-direction: column; }
     .feedback-reply-form .btn { align-self: flex-end; }

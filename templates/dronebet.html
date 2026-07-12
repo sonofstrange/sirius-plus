@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}ДронБет — Пирожковый Диспетчер{% endblock %}
+{% block content %}
+<div class="page dronebet-page">
+    <div class="page__header">
+        <div>
+            <h1 class="page__title">ДронБет</h1>
+            <p class="polymarket-page__subtitle">Прогноз длительности угрозы БПЛА по данным Sirius Radar.</p>
+        </div>
+        <div class="polymarket-balance">Доступно: <strong id="dronebet-balance">—</strong> 🪙</div>
+    </div>
+
+    <section id="drone-status" class="drone-status drone-status--clear">
+        <span class="material-symbols-outlined drone-status__icon">shield</span>
+        <div>
+            <div id="drone-status-title" class="drone-status__title">Чисто</div>
+            <div id="drone-status-timer" class="drone-status__timer">Обновляю статус...</div>
+            <div id="drone-status-message" class="drone-status__message"></div>
+        </div>
+        <span class="material-symbols-outlined drone-status__drone" aria-hidden="true">drone</span>
+        <span class="material-symbols-outlined drone-status__drone drone-status__drone--second" aria-hidden="true">drone</span>
+    </section>
+
+    <section class="dronebet-section" aria-labelledby="dronebet-market-title">
+        <div class="dronebet-section__head">
+            <h2 id="dronebet-market-title">Текущая ставка</h2>
+            <span id="dronebet-market-meta" class="dronebet-section__meta"></span>
+        </div>
+        <div id="dronebet-current" class="dronebet-current">
+            <div class="loading">Загрузка ДронБета...</div>
+        </div>
+    </section>
+
+    <section class="dronebet-section" aria-labelledby="dronebet-history-title">
+        <div class="dronebet-section__head">
+            <h2 id="dronebet-history-title">История угроз</h2>
+        </div>
+        <div id="dronebet-history" class="dronebet-history"></div>
+    </section>
+</div>
+
+<script>
+let dronebetData = null;
+
+function esc(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
+}
+
+function duration(seconds) {
+    seconds = Math.max(0, Math.floor(seconds || 0));
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const rest = seconds % 60;
+    return hours ? `${hours}ч ${minutes}м` : `${minutes}м ${String(rest).padStart(2, '0')}с`;
+}
+
+function formatDate(timestamp) {
+    return new Date(timestamp * 1000).toLocaleString('ru-RU', {
+        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+    });
+}
+
+function updateStatus() {
+    if (!dronebetData) return;
+    const status = dronebetData.status;
+    const root = document.getElementById('drone-status');
+    const elapsed = status.since ? Math.floor(Date.now() / 1000) - status.since : 0;
+    root.className = `drone-status ${status.active ? 'drone-status--active' : 'drone-status--clear'}`;
+    document.getElementById('drone-status-title').textContent = status.active ? 'Атака БПЛА' : 'Чисто';
+    document.getElementById('drone-status-timer').textContent = status.since
+        ? (status.active ? `Угроза длится ${duration(elapsed)}` : `Без угроз уже ${duration(elapsed)}`)
+        : 'Ожидаю первый сигнал Sirius Radar';
+    document.getElementById('drone-status-message').textContent = status.active ? (status.message || 'Sirius Radar сообщил об угрозе.') : '';
+}
+
+function renderMarket(market) {
+    if (!market) {
+        document.getElementById('dronebet-current').innerHTML = `
+            <div class="dronebet-empty"><span class="material-symbols-outlined">shield</span><p>Сейчас угрозы нет. Новый рынок появится автоматически при сигнале Radar.</p></div>`;
+        document.getElementById('dronebet-market-meta').textContent = '';
+        return;
+    }
+    document.getElementById('dronebet-market-meta').textContent = `${market.total_pool} 🪙 в пуле · ${market.bet_count} ставок`;
+    const disabled = market.betting_open ? '' : ' disabled';
+    const myBets = market.my_bets.length ? `<div class="dronebet-my-bets">Твои ставки: ${market.my_bets.map(bet => `${esc(bet.selection)} · ${bet.amount} 🪙`).join(' · ')}</div>` : '';
+    document.getElementById('dronebet-current').innerHTML = `
+        <p class="dronebet-current__hint">Ставки принимаются до отбоя. После него рынок рассчитывается автоматически.</p>
+        <div class="polymarket-options">${market.options.map(option => `
+            <button class="polymarket-option" data-choice="${esc(option.name)}"${disabled}>
+                <span class="polymarket-option__name">${esc(option.name)}</span>
+                <span class="polymarket-option__stats"><strong>×${option.multiplier.toFixed(2)}</strong><small>${option.pool} 🪙</small></span>
+            </button>`).join('')}</div>${myBets}`;
+    document.querySelectorAll('#dronebet-current [data-choice]').forEach(button => {
+        button.addEventListener('click', () => placeBet(market.id, button.dataset.choice));
+    });
+}
+
+function renderHistory(history) {
+    const root = document.getElementById('dronebet-history');
+    if (!history.length) {
+        root.innerHTML = '<div class="dronebet-empty"><span class="material-symbols-outlined">history</span><p>Завершённых угроз пока нет.</p></div>';
+        return;
+    }
+    root.innerHTML = history.map(item => {
+        const market = item.market;
+        const payout = market && market.my_bets.length ? market.my_bets.map(bet => `Твоя выплата: ${bet.payout} 🪙`).join(' · ') : '';
+        const source = item.source_url ? `<a href="${esc(item.source_url)}" target="_blank" rel="noopener">Источник</a>` : '';
+        return `<article class="dronebet-history__item">
+            <span class="material-symbols-outlined">history</span>
+            <div><strong>${formatDate(item.started_at)} · ${duration(item.duration_seconds)}</strong>
+                <p>Правильный вариант: <b>${esc(item.result_option)}</b>${payout ? ` · ${payout}` : ''}</p>${source}</div>
+        </article>`;
+    }).join('');
+}
+
+async function placeBet(marketId, selection) {
+    const answer = await dlgPrompt('Ставка ДронБет', 'Сколько Сириус Коинов поставить?', '1', {type: 'number', value: '1'});
+    if (answer === null || answer === '') return;
+    try {
+        const response = await fetch(`/api/polymarket/${marketId}/bet`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({selection, amount: Number(answer)})
+        });
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error || 'Не удалось поставить');
+        await loadDronebet();
+    } catch (error) {
+        dlgAlert('Ставка не принята', error.message);
+    }
+}
+
+async function loadDronebet() {
+    try {
+        const response = await fetch('/api/dronebet');
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error || 'Не удалось загрузить ДронБет');
+        dronebetData = data;
+        document.getElementById('dronebet-balance').textContent = data.coins;
+        updateStatus();
+        renderMarket(data.current && data.current.market);
+        renderHistory(data.history || []);
+    } catch (error) {
+        document.getElementById('dronebet-current').innerHTML = `<div class="alert alert-error">${esc(error.message)}</div>`;
+    }
+}
+
+loadDronebet();
+setInterval(updateStatus, 1000);
+setInterval(loadDronebet, 10000);
+</script>
+{% endblock %}
