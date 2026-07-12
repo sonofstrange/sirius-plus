@@ -23,4 +23,8 @@ docker compose up -d --build
 
 Python 3.12, FastAPI, Jinja2, SQLite, Playwright и Docker.
 
+## Масштаб проекта
+
+`10 252` строк собственного исходного кода в 25 файлах: Python, HTML, CSS и JavaScript. Тесты, README, зависимости и медиафайлы в это число не входят.
+
 Создатель: Николай Русанов. Контакты: [Telegram](https://t.me/sonofstrange), [Discord](https://discord.com/users/891370219866583091), [GitHub](https://github.com/sonofstrange).

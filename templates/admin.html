@@ -82,7 +82,7 @@ async function loadFeedback() {
             return;
         }
         container.innerHTML = messages.map(m => `
-            <div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:10px;background:${m.is_read ? 'transparent' : 'color-mix(in srgb, var(--primary) 10%, var(--bg-card))'}">
+            <div class="admin-feedback-card" style="background:${m.is_read ? 'transparent' : 'color-mix(in srgb, var(--primary) 10%, var(--bg-card))'}">
                 <div style="display:flex;gap:8px;align-items:flex-start;justify-content:space-between;margin-bottom:8px">
                     <div>
                         <strong>${escapeHtml(m.name || m.user_id || 'Аноним')}</strong>
@@ -94,10 +94,12 @@ async function loadFeedback() {
                         <button class="btn btn-sm btn-outline" onclick="deleteFeedback(${m.id})">Удалить</button>
                     </div>
                 </div>
-                <div style="white-space:pre-wrap;line-height:1.5">${escapeHtml(m.message)}</div>
-                ${m.answer ? '<div style="margin-top:10px;padding:10px 12px;border-left:3px solid var(--success);background:color-mix(in srgb, var(--success) 8%, transparent);border-radius:var(--radius-sm)"><div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Ответ ' + (m.answered_at ? fmtDate(m.answered_at) : '') + '</div><div style="white-space:pre-wrap;line-height:1.5">' + escapeHtml(m.answer) + '</div></div>' : ''}
-                <div style="display:flex;gap:8px;margin-top:10px;align-items:flex-start">
-                    <textarea class="form-textarea" id="answer-${m.id}" rows="2" placeholder="Ответ пользователю..." style="flex:1;min-height:42px">${m.answer ? escapeHtml(m.answer) : ''}</textarea>
+                <div class="feedback-thread">
+                    <div class="feedback-message feedback-message--user"><div class="feedback-message__meta">${escapeHtml(m.name || 'Пользователь')} · ${fmtDate(m.created_at)}</div><div>${escapeHtml(m.message)}</div></div>
+                    ${(m.replies || []).map(reply => `<div class="feedback-message feedback-message--${reply.sender_type}"><div class="feedback-message__meta">${escapeHtml(reply.sender_name || (reply.sender_type === 'admin' ? 'Администратор' : 'Пользователь'))} · ${fmtDate(reply.created_at)}</div><div>${escapeHtml(reply.message)}</div></div>`).join('')}
+                </div>
+                <div class="feedback-reply-form">
+                    <textarea class="form-textarea" id="answer-${m.id}" rows="2" placeholder="Написать пользователю..."></textarea>
                     <button class="btn btn-primary btn-sm" onclick="answerFeedback(${m.id})">Ответить</button>
                 </div>
             </div>

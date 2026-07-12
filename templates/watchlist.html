@@ -97,7 +97,7 @@ async function changeWatchPriority(eventId, priority, selectEl) {
         const data = await resp.json();
         if (!data.ok) {
             selectEl.value = oldValue;
-            dlgAlert('Ошибка', data.error || 'Не удалось поменять приоритет');
+            dlgAlert(resp.status === 402 ? 'Не хватает Сириус Коинов' : 'Ошибка', data.error || 'Не удалось поменять приоритет');
             return;
         }
         selectEl.dataset.prev = priority;

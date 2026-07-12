@@ -217,6 +217,20 @@ def init_db():
                 created_at   INTEGER NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS feedback_replies (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                feedback_id    INTEGER NOT NULL,
+                sender_type    TEXT NOT NULL,
+                sender_name    TEXT NOT NULL DEFAULT '',
+                sender_user_id TEXT NOT NULL DEFAULT '',
+                message        TEXT NOT NULL,
+                created_at     INTEGER NOT NULL,
+                FOREIGN KEY (feedback_id) REFERENCES feedback_messages(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_feedback_replies_feedback
+                ON feedback_replies(feedback_id, created_at);
+
             CREATE TABLE IF NOT EXISTS token_verifications (
                 user_id      TEXT PRIMARY KEY,
                 token_hash   TEXT NOT NULL,
@@ -231,6 +245,7 @@ def init_db():
                 options_json      TEXT NOT NULL DEFAULT '[]',
                 min_value         REAL,
                 max_value         REAL,
+                unit              TEXT NOT NULL DEFAULT '',
                 end_at            INTEGER NOT NULL DEFAULT 0,
                 betting_closes_at INTEGER NOT NULL DEFAULT 0,
                 status            TEXT NOT NULL DEFAULT 'open',
@@ -307,6 +322,10 @@ def init_db():
             conn.execute("ALTER TABLE feedback_messages ADD COLUMN user_hidden INTEGER NOT NULL DEFAULT 0")
         if "admin_hidden" not in feedback_cols:
             conn.execute("ALTER TABLE feedback_messages ADD COLUMN admin_hidden INTEGER NOT NULL DEFAULT 0")
+
+        market_cols = [r["name"] for r in conn.execute("PRAGMA table_info(prediction_markets)").fetchall()]
+        if "unit" not in market_cols:
+            conn.execute("ALTER TABLE prediction_markets ADD COLUMN unit TEXT NOT NULL DEFAULT ''")
 
 
 @contextmanager
@@ -498,7 +517,7 @@ def set_user_uid(user_id: str, uid: str):
             return uid
         # Переносим данные во всех таблицах на UID
         tables_with_user_id = [
-            "watchlist", "custom_events", "notifications",
+            "watchlist", "custom_events", "notifications", "feedback_messages",
             "schedule_cache", "schedule_reminders", "event_snapshots",
             "sessions",
         ]
@@ -538,7 +557,7 @@ def set_user_uid(user_id: str, uid: str):
 def migrate_user_data(from_user_id: str, to_user_id: str):
     """Move all data from one user_id to another. Skips conflicts (keeps existing data)."""
     tables = [
-        "watchlist", "custom_events", "notifications",
+        "watchlist", "custom_events", "notifications", "feedback_messages",
         "schedule_cache", "schedule_reminders", "event_snapshots",
     ]
     with get_conn() as conn:
@@ -907,6 +926,54 @@ def get_user_feedback_messages(user_id: str, limit: int = 50) -> list[sqlite3.Ro
         ).fetchall()
 
 
+def get_user_feedback_message(user_id: str, feedback_id: int) -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM feedback_messages WHERE id=? AND user_id=? AND user_hidden=0",
+            (feedback_id, user_id),
+        ).fetchone()
+
+
+def get_feedback_replies(feedback_id: int) -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT sender_type, sender_name, sender_user_id, message, created_at
+               FROM feedback_replies WHERE feedback_id=? ORDER BY created_at, id""",
+            (feedback_id,),
+        ).fetchall()
+
+
+def add_feedback_reply(
+    feedback_id: int,
+    sender_type: str,
+    sender_name: str,
+    sender_user_id: str,
+    message: str,
+) -> sqlite3.Row | None:
+    now = int(time.time())
+    with get_conn() as conn:
+        row = conn.execute("SELECT user_id FROM feedback_messages WHERE id=?", (feedback_id,)).fetchone()
+        if not row:
+            return None
+        conn.execute(
+            """INSERT INTO feedback_replies
+               (feedback_id, sender_type, sender_name, sender_user_id, message, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (feedback_id, sender_type, sender_name, sender_user_id, message, now),
+        )
+        conn.execute("UPDATE feedback_messages SET is_read=? WHERE id=?", (0 if sender_type == "user" else 1, feedback_id))
+        return row
+
+
+def get_known_name(uid: str) -> str:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT full_name FROM known_uids WHERE uid=? OR user_id=? ORDER BY updated_at DESC LIMIT 1",
+            (uid, uid),
+        ).fetchone()
+        return row["full_name"] if row and row["full_name"] else ""
+
+
 def mark_feedback_read(feedback_id: int, is_read: bool = True):
     with get_conn() as conn:
         conn.execute(
@@ -930,6 +997,7 @@ def answer_feedback(feedback_id: int, answer: str, answered_by: str) -> sqlite3.
 
 def delete_feedback(feedback_id: int):
     with get_conn() as conn:
+        conn.execute("DELETE FROM feedback_replies WHERE feedback_id=?", (feedback_id,))
         conn.execute("DELETE FROM feedback_messages WHERE id=?", (feedback_id,))
 
 
@@ -1163,16 +1231,18 @@ def create_prediction_market(
     end_at: int,
     betting_closes_at: int,
     created_by: str,
+    unit: str = "",
+    correct_value: float | None = None,
 ) -> int:
     now = int(time.time())
     with get_conn() as conn:
         cursor = conn.execute(
             """INSERT INTO prediction_markets
-               (title, description, market_type, options_json, min_value, max_value,
-                end_at, betting_closes_at, created_by, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (title, description, market_type, options_json, min_value, max_value,
-             end_at, betting_closes_at, created_by, now),
+               (title, description, market_type, options_json, min_value, max_value, unit,
+                end_at, betting_closes_at, correct_value, created_by, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (title, description, market_type, options_json, min_value, max_value, unit,
+             end_at, betting_closes_at, correct_value, created_by, now),
         )
         return int(cursor.lastrowid)
 
@@ -1319,6 +1389,20 @@ def cancel_prediction_market(market_id: int) -> tuple[bool, str, list[tuple[str,
             )
         conn.execute("UPDATE prediction_markets SET status='cancelled', resolved_at=? WHERE id=?", (now, market_id))
         return True, "", list(refunds.items())
+
+
+def delete_prediction_market(market_id: int) -> tuple[bool, str]:
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        market = conn.execute("SELECT status FROM prediction_markets WHERE id=?", (market_id,)).fetchone()
+        if not market:
+            return False, "Рынок не найден"
+        bet_count = conn.execute("SELECT COUNT(*) AS count FROM prediction_bets WHERE market_id=?", (market_id,)).fetchone()["count"]
+        if market["status"] == "open" and bet_count:
+            return False, "Сначала отмени рынок: ставки нужно вернуть участникам"
+        conn.execute("DELETE FROM prediction_bets WHERE market_id=?", (market_id,))
+        conn.execute("DELETE FROM prediction_markets WHERE id=?", (market_id,))
+        return True, ""
 
 
 def spend_coin(uid: str) -> bool:

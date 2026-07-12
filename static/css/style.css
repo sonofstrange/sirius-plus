@@ -64,7 +64,7 @@ body {
     height: 58px;
     display: flex;
     align-items: center;
-    gap: 24px;
+    gap: 12px;
 }
 .header__logo {
     display: flex;
@@ -72,7 +72,7 @@ body {
     gap: 10px;
     min-width: 0;
     align-self: stretch;
-    flex-shrink: 1;
+    flex: 0 1 auto;
     text-decoration: none;
     color: var(--text);
     font-weight: 700;
@@ -104,15 +104,18 @@ body {
 }
 .header__nav {
     display: flex;
-    gap: 8px;
+    flex: 1 1 auto;
+    gap: 2px;
+    min-width: 0;
 }
 .header__nav-link {
-    padding: 8px 16px;
+    padding: 8px 10px;
     border-radius: var(--radius-sm);
     text-decoration: none;
     color: var(--text);
     font-size: 14px;
     font-weight: 500;
+    white-space: nowrap;
     transition: background 0.15s, color 0.3s ease;
 }
 .header__nav-link:hover {
@@ -122,7 +125,12 @@ body {
     margin-left: auto;
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 10px;
+    flex-shrink: 0;
+}
+@media (max-width: 1150px) and (min-width: 769px) {
+    .header__token-status { display: none; }
+    .header__nav-link { padding: 8px 7px; font-size: 13px; }
 }
 .header__token-status {
     font-size: 13px;
@@ -1304,6 +1312,49 @@ body.dark-theme .badge-muted {
     justify-content: space-between;
     gap: 10px;
 }
+.feedback-thread {
+    display: grid;
+    gap: 8px;
+}
+.feedback-message {
+    max-width: min(88%, 680px);
+    padding: 9px 11px;
+    border-radius: var(--radius-sm);
+    white-space: pre-wrap;
+    line-height: 1.45;
+    font-size: 14px;
+}
+.feedback-message--user {
+    justify-self: start;
+    background: color-mix(in srgb, var(--bg) 72%, var(--border));
+    border: 1px solid var(--border);
+}
+.feedback-message--admin {
+    justify-self: end;
+    background: color-mix(in srgb, var(--primary) 13%, var(--bg-card));
+    border: 1px solid color-mix(in srgb, var(--primary) 34%, var(--border));
+}
+.feedback-message__meta {
+    margin-bottom: 3px;
+    color: var(--text-muted);
+    font-size: 11px;
+}
+.feedback-reply-form {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 10px;
+}
+.feedback-reply-form .form-textarea {
+    min-height: 42px;
+    flex: 1 1 auto;
+}
+.admin-feedback-card {
+    margin-bottom: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
 .profile-answer {
     padding: 8px 10px;
     border-left: 3px solid var(--success);
@@ -1972,6 +2023,7 @@ body.dark-theme .badge-muted {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
 }
+.polymarket-admin__grid[hidden] { display: none; }
 .form-hint {
     margin: -4px 0 14px;
     color: var(--text-muted);
@@ -2056,12 +2108,6 @@ body.dark-theme .badge-muted {
     border-radius: 3px;
     background: var(--border);
 }
-.polymarket-heat__bin {
-    flex: 1 1 0;
-    min-width: 0;
-    background: var(--heat);
-    transition: background-color .2s;
-}
 .polymarket-heat__labels,
 .polymarket-heat__legend {
     display: flex;
@@ -2115,4 +2161,7 @@ body.dark-theme .badge-muted {
     .polymarket-options { grid-template-columns: 1fr; }
     .polymarket-number-bet { max-width: none; }
     .polymarket-heat__legend { font-size: 11px; }
+    .feedback-message { max-width: 94%; }
+    .feedback-reply-form { flex-direction: column; }
+    .feedback-reply-form .btn { align-self: flex-end; }
 }

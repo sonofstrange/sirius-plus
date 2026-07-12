@@ -77,6 +77,21 @@ class PolymarketStorageTests(unittest.TestCase):
         self.assertEqual(storage.get_coins("alice"), 10)
         self.assertEqual(storage.get_coins("bob"), 10)
 
+    def test_delete_market_keeps_open_bets_safe(self):
+        empty_market = storage.create_prediction_market(
+            "Пустой", "", "number", "[]", 0, 100, 0, 0, "admin", "см", 42
+        )
+        self.assertTrue(storage.delete_prediction_market(empty_market)[0])
+
+        market_id = storage.create_prediction_market(
+            "Ставка", "", "choice", '["A", "B"]', None, None, 0, 0, "admin"
+        )
+        storage.place_prediction_bet("alice", market_id, "A", None, 1)
+        ok, error = storage.delete_prediction_market(market_id)
+
+        self.assertFalse(ok)
+        self.assertEqual(error, "Сначала отмени рынок: ставки нужно вернуть участникам")
+
 
 if __name__ == "__main__":
     unittest.main()

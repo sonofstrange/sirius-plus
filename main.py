@@ -1048,6 +1048,7 @@ def _prediction_market_view(market, viewer_uid: str) -> dict:
     except (TypeError, json.JSONDecodeError):
         options = []
     bets = storage.get_prediction_bets(int(market["id"]))
+    is_admin_viewer = storage.is_admin(viewer_uid)
     total_pool = sum(int(bet["amount"]) for bet in bets)
     now = int(time.time())
     betting_open = (
@@ -1064,8 +1065,8 @@ def _prediction_market_view(market, viewer_uid: str) -> dict:
         "end_at": market["end_at"],
         "betting_closes_at": market["betting_closes_at"],
         "created_at": market["created_at"],
-        "correct_option": market["correct_option"],
-        "correct_value": market["correct_value"],
+        "correct_option": market["correct_option"] if market["status"] == "resolved" else "",
+        "correct_value": market["correct_value"] if market["status"] == "resolved" else None,
         "total_pool": total_pool,
         "bet_count": len(bets),
         "betting_open": betting_open,
@@ -1105,6 +1106,9 @@ def _prediction_market_view(market, viewer_uid: str) -> dict:
         view.update({
             "min_value": minimum,
             "max_value": maximum,
+            "unit": market["unit"],
+            "heat_max_pool": busiest,
+            "preset_correct_value": market["correct_value"] if is_admin_viewer and market["status"] == "open" else None,
             "heat_bins": [
                 {"pool": amount, "density": round(amount / busiest, 3) if busiest else 0}
                 for amount in bins
@@ -1200,7 +1204,7 @@ async def api_create_polymarket(request: Request):
     if end_at and betting_closes_at and betting_closes_at > end_at:
         return JSONResponse({"ok": False, "error": "Приём ставок не может закончиться позже рынка"}, status_code=400)
 
-    options_json, minimum, maximum = "[]", None, None
+    options_json, minimum, maximum, unit, correct_value = "[]", None, None, "", None
     if market_type == "choice":
         options = [str(option).strip() for option in data.get("options", []) if str(option).strip()]
         if len(options) < 2 or len(options) > 10 or len(set(options)) != len(options):
@@ -1214,9 +1218,21 @@ async def api_create_polymarket(request: Request):
             return JSONResponse({"ok": False, "error": "Укажи числовой диапазон"}, status_code=400)
         if not math.isfinite(minimum) or not math.isfinite(maximum) or minimum >= maximum:
             return JSONResponse({"ok": False, "error": "Минимум должен быть меньше максимума"}, status_code=400)
+        unit = str(data.get("unit", "")).strip()
+        if len(unit) > 24:
+            return JSONResponse({"ok": False, "error": "Единица измерения слишком длинная"}, status_code=400)
+        preset = data.get("correct_value")
+        if preset not in (None, ""):
+            try:
+                correct_value = float(preset)
+            except (ValueError, TypeError):
+                return JSONResponse({"ok": False, "error": "Некорректный правильный ответ"}, status_code=400)
+            if not math.isfinite(correct_value) or correct_value < minimum or correct_value > maximum:
+                return JSONResponse({"ok": False, "error": "Правильный ответ вне диапазона"}, status_code=400)
 
     market_id = storage.create_prediction_market(
-        title, description, market_type, options_json, minimum, maximum, end_at, betting_closes_at, admin_uid
+        title, description, market_type, options_json, minimum, maximum, end_at, betting_closes_at,
+        admin_uid, unit, correct_value
     )
     return JSONResponse({"ok": True, "market_id": market_id})
 
@@ -1243,8 +1259,9 @@ async def api_resolve_polymarket(market_id: int, request: Request):
         if option not in options:
             return JSONResponse({"ok": False, "error": "Выбери правильный вариант"}, status_code=400)
     else:
+        preset = data.get("correct_value", market["correct_value"])
         try:
-            value = float(data.get("correct_value"))
+            value = float(preset)
         except (ValueError, TypeError):
             return JSONResponse({"ok": False, "error": "Укажи правильное число"}, status_code=400)
         if not math.isfinite(value) or value < float(market["min_value"]) or value > float(market["max_value"]):
@@ -1261,6 +1278,17 @@ async def api_resolve_polymarket(market_id: int, request: Request):
             )
             await web_notify(recipient, text)
             storage.add_notification(recipient, text)
+    return JSONResponse({"ok": True})
+
+
+@app.delete("/api/admin/polymarket/{market_id}")
+async def api_delete_polymarket(market_id: int, request: Request):
+    admin_uid, denied = _require_admin(request)
+    if denied:
+        return denied
+    ok, error = storage.delete_prediction_market(market_id)
+    if not ok:
+        return JSONResponse({"ok": False, "error": error}, status_code=400)
     return JSONResponse({"ok": True})
 
 
@@ -1424,6 +1452,25 @@ async def api_admin_set_admin(request: Request):
     return JSONResponse({"ok": True, "is_admin": make_admin})
 
 
+def _feedback_replies_view(message) -> list[dict]:
+    replies = []
+    if message["answer"]:
+        legacy_name = storage.get_known_name(message["answered_by"]) or "Администратор"
+        replies.append({
+            "sender_type": "admin",
+            "sender_name": legacy_name,
+            "message": message["answer"],
+            "created_at": message["answered_at"],
+        })
+    replies.extend({
+        "sender_type": reply["sender_type"],
+        "sender_name": reply["sender_name"],
+        "message": reply["message"],
+        "created_at": reply["created_at"],
+    } for reply in storage.get_feedback_replies(message["id"]))
+    return replies
+
+
 @app.get("/api/admin/feedback")
 async def api_admin_feedback(request: Request):
     admin_uid, denied = _require_admin(request)
@@ -1441,6 +1488,7 @@ async def api_admin_feedback(request: Request):
                 "message": m["message"],
                 "answer": m["answer"],
                 "answered_at": m["answered_at"],
+                "replies": _feedback_replies_view(m),
                 "is_read": bool(m["is_read"]),
                 "created_at": m["created_at"],
             }
@@ -1468,12 +1516,15 @@ async def api_admin_feedback_answer(feedback_id: int, request: Request):
     answer = data.get("answer", "").strip()
     if not answer:
         return JSONResponse({"ok": False, "error": "Ответ не может быть пустым"}, status_code=400)
-    row = storage.answer_feedback(feedback_id, answer, admin_uid)
+    admin_name = storage.get_known_name(admin_uid) or "Администратор"
+    row = storage.add_feedback_reply(feedback_id, "admin", admin_name, admin_uid, answer)
     if not row:
         return JSONResponse({"ok": False, "error": "Обращение не найдено"}, status_code=404)
     target_user_id = row["user_id"]
     if target_user_id:
-        await web_notify(target_user_id, f"💬 Ответ на обращение:\n{answer}")
+        text = f"💬 {admin_name}:\n{answer}"
+        await web_notify(target_user_id, text)
+        storage.add_notification(target_user_id, text)
     return JSONResponse({"ok": True})
 
 
@@ -1510,6 +1561,7 @@ async def api_my_feedback(request: Request):
                 "answer": m["answer"],
                 "answered_at": m["answered_at"],
                 "created_at": m["created_at"],
+                "replies": _feedback_replies_view(m),
             }
             for m in messages
         ],
@@ -1522,6 +1574,28 @@ async def api_my_feedback_hide(feedback_id: int, request: Request):
     if not user_id:
         return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
     storage.hide_feedback_for_user(user_id, feedback_id)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/feedback/{feedback_id}/reply")
+async def api_my_feedback_reply(feedback_id: int, request: Request):
+    user_id = get_user_id(request)
+    if not user_id:
+        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return JSONResponse({"ok": False, "error": "Тело запроса должно быть JSON"}, status_code=400)
+    message = str(data.get("message", "")).strip()
+    if not message:
+        return JSONResponse({"ok": False, "error": "Сообщение не может быть пустым"}, status_code=400)
+    if len(message) > 4000:
+        return JSONResponse({"ok": False, "error": "Сообщение слишком длинное"}, status_code=400)
+    if not storage.get_user_feedback_message(user_id, feedback_id):
+        return JSONResponse({"ok": False, "error": "Обращение не найдено"}, status_code=404)
+    sender_uid = _session_uid(user_id) or ""
+    sender_name = storage.get_known_name(sender_uid) or "Ты"
+    storage.add_feedback_reply(feedback_id, "user", sender_name, user_id, message)
     return JSONResponse({"ok": True})
 
 

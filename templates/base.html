@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Пирожковый Диспетчер{% endblock %}</title>
     <link rel="icon" href="/static/sirius.png">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260713-1">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260713-2">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
 </head>
 <body>
@@ -604,12 +604,19 @@
                     <div class="profile-list-item profile-list-item--stack">
                         <div class="profile-feedback-head">
                             <div class="profile-list-item__main">
-                                <div class="profile-list-item__title">${escapeHtml(m.message || 'Обращение')}</div>
+                                <div class="profile-list-item__title">Обращение</div>
                                 <div class="profile-list-item__meta">${profileDateTime(m.created_at)}</div>
                             </div>
                             <button class="btn btn-danger-text btn-sm" onclick="hideMyFeedback(${m.id})">Скрыть</button>
                         </div>
-                        ${m.answer ? '<div class="profile-answer"><div class="profile-answer__meta">Ответ ' + profileDateTime(m.answered_at) + '</div><div>' + escapeHtml(m.answer) + '</div></div>' : '<div class="profile-empty">Ответа пока нет</div>'}
+                        <div class="feedback-thread">
+                            <div class="feedback-message feedback-message--user"><div class="feedback-message__meta">Ты · ${profileDateTime(m.created_at)}</div><div>${escapeHtml(m.message || '')}</div></div>
+                            ${(m.replies || []).map(reply => `<div class="feedback-message feedback-message--${reply.sender_type}"><div class="feedback-message__meta">${escapeHtml(reply.sender_name || (reply.sender_type === 'admin' ? 'Администратор' : 'Ты'))} · ${profileDateTime(reply.created_at)}</div><div>${escapeHtml(reply.message)}</div></div>`).join('')}
+                        </div>
+                        <div class="feedback-reply-form">
+                            <textarea class="form-textarea" id="feedback-reply-${m.id}" rows="2" placeholder="Написать сообщение..."></textarea>
+                            <button class="btn btn-outline btn-sm" onclick="replyMyFeedback(${m.id})">Отправить</button>
+                        </div>
                     </div>
                 `).join('');
             } catch (e) {
@@ -627,6 +634,24 @@
                 return;
             }
             loadMyFeedback();
+        }
+
+        async function replyMyFeedback(id) {
+            const textarea = document.getElementById('feedback-reply-' + id);
+            const message = (textarea?.value || '').trim();
+            if (!message) return;
+            try {
+                const resp = await fetch('/api/feedback/' + id + '/reply', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message}),
+                });
+                const data = await resp.json();
+                if (!data.ok) throw new Error(data.error || 'Не удалось отправить сообщение');
+                loadMyFeedback();
+            } catch (e) {
+                dlgAlert('Ошибка', e.message);
+            }
         }
 
         async function createLoginCode() {

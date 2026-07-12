@@ -374,6 +374,7 @@ async function toggleWatch(btn) {
             const resp = await fetch('/api/watch', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({event_id: eventId, event_name: eventName, event_start: eventStart, snipe_priority: snipePriority})});
             const data = await resp.json();
             if (data.ok) { _watching.add(eventId); btn.innerHTML = '<span class="material-symbols-outlined">notifications_active</span> Слежу'; }
+            else if (resp.status === 402) { dlgAlert('Не хватает Сириус Коинов', data.error || 'Для этой скорости автозаписи не хватает коинов.'); }
             else { dlgAlert('Ошибка', data.error || 'Не удалось добавить в слежку'); }
         }
     } catch (e) { alert('Ошибка: ' + e); }

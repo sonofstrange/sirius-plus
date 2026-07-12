@@ -53,6 +53,14 @@
                     <label class="form-label" for="market-max">Максимум</label>
                     <input class="form-input" id="market-max" type="number" step="any" placeholder="100">
                 </div>
+                <div class="form-group">
+                    <label class="form-label" for="market-unit">Единица измерения</label>
+                    <input class="form-input" id="market-unit" maxlength="24" placeholder="минуты, см, баллы">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="market-correct-value">Правильный ответ</label>
+                    <input class="form-input" id="market-correct-value" type="number" step="any" placeholder="Необязательно">
+                </div>
             </div>
             <button class="btn btn-primary" onclick="createMarket()">Создать рынок</button>
             <div class="alert" id="market-create-result" hidden></div>
@@ -89,7 +97,7 @@ function marketStatus(market) {
 function renderMyBets(market) {
     if (!market.my_bets.length) return '';
     const items = market.my_bets.map(bet => {
-        const target = market.type === 'number' ? bet.value : bet.selection;
+        const target = market.type === 'number' ? `${bet.value}${market.unit ? ' ' + market.unit : ''}` : bet.selection;
         const result = market.status === 'resolved' ? ` → ${bet.payout} 🪙` : '';
         return `<span>${esc(target)}: ${bet.amount} 🪙${result}</span>`;
     }).join('');
@@ -107,29 +115,31 @@ function renderChoiceMarket(market) {
 }
 
 function renderNumberMarket(market) {
-    const heat = market.heat_bins.map(bin => {
-        const lightness = Math.round(78 - bin.density * 42);
-        const saturation = Math.round(24 + bin.density * 58);
-        return `<span class="polymarket-heat__bin" style="--heat:hsl(204 ${saturation}% ${lightness}%)" title="В этой части диапазона поставили ${bin.pool} 🪙"></span>`;
-    }).join('');
+    const heat = market.heat_bins.map((bin, index) => {
+        const hue = Math.round(bin.density * 120);
+        const point = Math.round(index * 100 / (market.heat_bins.length - 1));
+        return `hsl(${hue} 68% 43%) ${point}%`;
+    }).join(', ');
+    const unit = market.unit ? ` ${esc(market.unit)}` : '';
     const controls = market.betting_open ? `
         <div class="polymarket-number-bet">
-            <input class="form-input" id="number-value-${market.id}" type="number" min="${market.min_value}" max="${market.max_value}" step="any" placeholder="${market.min_value}–${market.max_value}">
+            <input class="form-input" id="number-value-${market.id}" type="number" min="${market.min_value}" max="${market.max_value}" step="any" placeholder="${market.min_value}–${market.max_value}${unit}">
             <button class="btn btn-primary btn-sm" data-number-market="${market.id}">Поставить</button>
         </div>` : '';
     return `<div class="polymarket-number">
-        <div class="polymarket-heat">${heat}</div>
-        <div class="polymarket-heat__labels"><span>${market.min_value}</span><span>${market.max_value}</span></div>
-        <div class="polymarket-heat__legend"><span>Мало поставили</span><span>Много поставили</span></div>
+        <div class="polymarket-heat" style="background:linear-gradient(90deg, ${heat})" title="Распределение Сириус Коинов по диапазону"></div>
+        <div class="polymarket-heat__labels"><span>${market.min_value}${unit}</span><span>${market.max_value}${unit}</span></div>
+        <div class="polymarket-heat__legend"><span>Красный · 0 🪙</span><span>Зелёный · ${market.heat_max_pool} 🪙</span></div>
         ${controls}
     </div>`;
 }
 
 function adminActions(market) {
-    if (!window.IS_POLYMARKET_ADMIN || market.status !== 'open') return '';
+    if (!window.IS_POLYMARKET_ADMIN) return '';
     return `<div class="polymarket-card__admin-actions">
-        <button class="btn btn-outline btn-sm" data-resolve-market="${market.id}">Рассчитать</button>
-        <button class="btn btn-outline btn-sm" data-cancel-market="${market.id}">Отменить и вернуть</button>
+        ${market.status === 'open' ? `<button class="btn btn-outline btn-sm" data-resolve-market="${market.id}">Рассчитать</button>
+        <button class="btn btn-outline btn-sm" data-cancel-market="${market.id}">Отменить и вернуть</button>` : ''}
+        <button class="btn btn-danger-text btn-sm" data-delete-market="${market.id}">Удалить</button>
     </div>`;
 }
 
@@ -143,8 +153,9 @@ function renderMarkets(markets) {
         const deadline = market.betting_closes_at
             ? `Ставки до ${formatDate(market.betting_closes_at)}`
             : market.end_at ? `Рынок до ${formatDate(market.end_at)}` : 'Срок не задан';
+        const resultValue = market.type === 'choice' ? market.correct_option : `${market.correct_value}${market.unit ? ' ' + market.unit : ''}`;
         const result = market.status === 'resolved'
-            ? `<div class="polymarket-card__result">Ответ: <strong>${esc(market.type === 'choice' ? market.correct_option : market.correct_value)}</strong></div>`
+            ? `<div class="polymarket-card__result">Ответ: <strong>${esc(resultValue)}</strong></div>`
             : '';
         return `<article class="polymarket-card">
             <div class="polymarket-card__head">
@@ -167,6 +178,9 @@ function renderMarkets(markets) {
     });
     container.querySelectorAll('[data-cancel-market]').forEach(button => {
         button.addEventListener('click', () => cancelMarket(Number(button.dataset.cancelMarket)));
+    });
+    container.querySelectorAll('[data-delete-market]').forEach(button => {
+        button.addEventListener('click', () => deleteMarket(Number(button.dataset.deleteMarket)));
     });
 }
 
@@ -236,6 +250,8 @@ async function createMarket() {
         options: document.getElementById('market-options').value.split('\n'),
         min_value: document.getElementById('market-min').value,
         max_value: document.getElementById('market-max').value,
+        unit: document.getElementById('market-unit').value.trim(),
+        correct_value: document.getElementById('market-correct-value').value,
     };
     const result = document.getElementById('market-create-result');
     result.hidden = false;
@@ -252,6 +268,8 @@ async function createMarket() {
         document.getElementById('market-title').value = '';
         document.getElementById('market-description').value = '';
         document.getElementById('market-options').value = '';
+        document.getElementById('market-unit').value = '';
+        document.getElementById('market-correct-value').value = '';
         await loadMarkets();
     } catch (error) {
         result.className = 'alert alert-error';
@@ -262,9 +280,18 @@ async function createMarket() {
 async function resolveMarket(marketId) {
     const market = currentMarkets.find(item => item.id === marketId);
     if (!market) return;
+    if (market.type === 'number' && market.preset_correct_value !== null) {
+        const ok = await dlgConfirm('Рассчитать рынок', `Использовать заранее указанный ответ: ${market.preset_correct_value}${market.unit ? ' ' + market.unit : ''}?`);
+        if (!ok) return;
+        return submitMarketResult(marketId, {correct_value: market.preset_correct_value});
+    }
     const answer = await dlgPrompt('Рассчитать рынок', market.type === 'choice' ? 'Введи правильный вариант:' : 'Введи правильное число:', 'Ответ');
     if (answer === null || answer === '') return;
     const payload = market.type === 'choice' ? {correct_option: answer.trim()} : {correct_value: Number(answer)};
+    return submitMarketResult(marketId, payload);
+}
+
+async function submitMarketResult(marketId, payload) {
     try {
         const response = await fetch(`/api/admin/polymarket/${marketId}/resolve`, {
             method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
@@ -286,6 +313,18 @@ async function cancelMarket(marketId) {
         await loadMarkets();
     } catch (error) {
         dlgAlert('Ошибка отмены', error.message);
+    }
+}
+
+async function deleteMarket(marketId) {
+    if (!await dlgConfirm('Удалить рынок', 'Рынок и его история будут удалены. Открытый рынок со ставками сначала нужно отменить.')) return;
+    try {
+        const response = await fetch(`/api/admin/polymarket/${marketId}`, {method: 'DELETE'});
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error || 'Не удалось удалить рынок');
+        await loadMarkets();
+    } catch (error) {
+        dlgAlert('Ошибка удаления', error.message);
     }
 }
 
