@@ -353,15 +353,20 @@ templates.env.filters["nl2br"] = lambda v: v.replace("\n", "<br>\n")
 
 @app.middleware("http")
 async def origin_guard(request: Request, call_next):
-    """Stops a copied production compose setup from working without explicit setup."""
-    if not app_config.DEVELOPMENT_MODE:
-        host = (request.url.hostname or "").lower()
-        if host != app_config.CANONICAL_HOST:
-            return HTMLResponse(
-                "<h1>Этот экземпляр не настроен</h1>"
-                "<p>Откройте оригинальный сервис через его официальный домен.</p>",
-                status_code=403,
-            )
+    """Require the private activation file and the official host."""
+    if not app_config.instance_seal_is_valid():
+        return HTMLResponse(
+            "<h1>Экземпляр не активирован</h1>"
+            "<p>Откройте официальный сервис через его домен.</p>",
+            status_code=503,
+        )
+    host = (request.url.hostname or "").lower()
+    if host != app_config.CANONICAL_HOST:
+        return HTMLResponse(
+            "<h1>Этот экземпляр не настроен</h1>"
+            "<p>Откройте официальный сервис через его домен.</p>",
+            status_code=403,
+        )
     return await call_next(request)
 
 def fmt_ts(ts: int) -> str:
