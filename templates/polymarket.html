@@ -108,8 +108,9 @@ function renderChoiceMarket(market) {
 
 function renderNumberMarket(market) {
     const heat = market.heat_bins.map(bin => {
-        const hue = Math.round(((bin.bonus - 1) / 2) * 120);
-        return `<span class="polymarket-heat__bin" style="--heat:hsl(${hue} 66% 44%)" title="В пуле ${bin.pool} 🪙 · потенциальный бонус ×${bin.bonus.toFixed(2)}"></span>`;
+        const lightness = Math.round(78 - bin.density * 42);
+        const saturation = Math.round(24 + bin.density * 58);
+        return `<span class="polymarket-heat__bin" style="--heat:hsl(204 ${saturation}% ${lightness}%)" title="В этой части диапазона поставили ${bin.pool} 🪙"></span>`;
     }).join('');
     const controls = market.betting_open ? `
         <div class="polymarket-number-bet">
@@ -119,7 +120,7 @@ function renderNumberMarket(market) {
     return `<div class="polymarket-number">
         <div class="polymarket-heat">${heat}</div>
         <div class="polymarket-heat__labels"><span>${market.min_value}</span><span>${market.max_value}</span></div>
-        <div class="polymarket-heat__legend"><span>Много ставок · ×1</span><span>Редкая позиция · до ×3</span></div>
+        <div class="polymarket-heat__legend"><span>Мало поставили</span><span>Много поставили</span></div>
         ${controls}
     </div>`;
 }

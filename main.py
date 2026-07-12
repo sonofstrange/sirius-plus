@@ -1094,7 +1094,7 @@ def _prediction_market_view(market, viewer_uid: str) -> dict:
     else:
         minimum = float(market["min_value"])
         maximum = float(market["max_value"])
-        bin_count = 20
+        bin_count = 60
         bins = [0] * bin_count
         span = maximum - minimum
         for bet in bets:
@@ -1106,7 +1106,7 @@ def _prediction_market_view(market, viewer_uid: str) -> dict:
             "min_value": minimum,
             "max_value": maximum,
             "heat_bins": [
-                {"pool": amount, "bonus": round(1 + 2 * (1 - amount / busiest), 2) if busiest else 3.0}
+                {"pool": amount, "density": round(amount / busiest, 3) if busiest else 0}
                 for amount in bins
             ],
         })

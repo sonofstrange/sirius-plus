@@ -2060,9 +2060,8 @@ body.dark-theme .badge-muted {
     flex: 1 1 0;
     min-width: 0;
     background: var(--heat);
-    border-right: 1px solid color-mix(in srgb, var(--bg-card) 35%, transparent);
+    transition: background-color .2s;
 }
-.polymarket-heat__bin:last-child { border-right: 0; }
 .polymarket-heat__labels,
 .polymarket-heat__legend {
     display: flex;

@@ -1269,17 +1269,11 @@ def resolve_prediction_market(market_id: int, correct_option: str = "", correct_
             if correct_value is None:
                 return False, "Укажи правильное число", []
             span = max(float(market["max_value"]) - float(market["min_value"]), 1.0)
-            amounts_by_value: dict[float, int] = {}
-            for bet in bets:
-                amounts_by_value[float(bet["value"])] = amounts_by_value.get(float(bet["value"]), 0) + int(bet["amount"])
-            busiest_value = max(amounts_by_value.values(), default=1)
             weights = []
             for bet in bets:
                 distance = abs(float(bet["value"]) - correct_value) / span
                 closeness = max(0.15, 1 - distance)
-                crowding = amounts_by_value[float(bet["value"])] / busiest_value
-                rarity_bonus = 1 + 2 * (1 - crowding)
-                weights.append(float(bet["amount"]) * closeness * rarity_bonus)
+                weights.append(float(bet["amount"]) * closeness)
             payouts = _split_prediction_pool(bets, weights, total_pool)
             result_option, result_value = "", correct_value
 
