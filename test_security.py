@@ -60,6 +60,20 @@ class SecurityTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    async def test_coins_transfer_uses_saved_token_payload(self):
+        storage.save_token("sender-uid", "not-a-jwt")
+        storage.set_user_uid("sender-uid", "sender-uid")
+        storage.ensure_coins("sender-uid")
+        session_id = storage.create_session_for_user("sender-uid")
+        request = _Request({"to_uid": "receiver-uid", "amount": 2})
+        request.cookies = {"session_id": session_id}
+
+        response = await main.api_coins_transfer(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(json.loads(response.body), {"ok": True, "new_balance": 1})
+        self.assertEqual(storage.get_coins("receiver-uid"), 2)
+
     async def test_api_documentation_is_disabled(self):
         self.assertIsNone(main.app.docs_url)
         self.assertIsNone(main.app.redoc_url)

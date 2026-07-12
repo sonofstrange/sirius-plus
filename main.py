@@ -1070,6 +1070,7 @@ async def api_coins_transfer(request: Request):
     if available < amount:
         return JSONResponse({"ok": False, "error": f"Недостаточно коинов. Доступно: {available}"}, status_code=402)
 
+    payload = _decode_jwt(storage.get_token(user_id) or "") or {}
     sender_name = " ".join(filter(None, [payload.get("lastName"), payload.get("firstName")]))
     if not sender_name:
         sender_name = from_uid[:8] + "..."

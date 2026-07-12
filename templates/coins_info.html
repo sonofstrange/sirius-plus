@@ -90,7 +90,10 @@ async function doTransfer() {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({to_uid: toUid.trim(), amount: parseInt(amount)}),
         });
-        const data = await resp.json();
+        const data = await resp.json().catch(() => ({
+            ok: false,
+            error: 'Сервер временно вернул ошибку ' + resp.status + '. Попробуй ещё раз.'
+        }));
         if (data.ok) {
             dlgAlert('Готово', 'Переведено! Твой новый баланс: ' + data.new_balance);
             loadCoins();
