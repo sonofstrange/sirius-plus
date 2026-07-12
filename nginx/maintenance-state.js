@@ -1,0 +1,1 @@
+window.MAINTENANCE_STARTED_AT = 0;
