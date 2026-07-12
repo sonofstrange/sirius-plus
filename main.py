@@ -318,7 +318,13 @@ async def lifespan(app: FastAPI):
         await _sirius_client.stop()
 
 
-app = FastAPI(title="Пирожковый Диспетчер", lifespan=lifespan)
+app = FastAPI(
+    title="Пирожковый Диспетчер",
+    lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 jinja_env = jinja2.Environment(
     loader=jinja2.FileSystemLoader(str(BASE_DIR / "templates")),
@@ -357,13 +363,37 @@ async def service_worker():
     )
 
 
+@app.get("/healthz", include_in_schema=False, status_code=204)
+async def health_check():
+    return Response(status_code=204)
+
+
 def _decode_jwt(token: str) -> dict | None:
+    """Decode claims for display only; never use them as standalone authentication."""
     try:
         payload_b64 = token.split(".")[1]
         padded = payload_b64 + "=" * (-len(payload_b64) % 4)
         return json.loads(base64.urlsafe_b64decode(padded))
     except Exception:
         return None
+
+
+def _session_uid(user_id: str) -> str | None:
+    if not storage.get_token(user_id):
+        return None
+    return storage.get_user_uid(user_id)
+
+
+def _require_admin(request: Request) -> tuple[str | None, JSONResponse | None]:
+    user_id = get_user_id(request)
+    if not user_id:
+        return None, JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
+    uid = _session_uid(user_id)
+    if not uid:
+        return None, JSONResponse({"ok": False, "error": "Токен не задан"}, status_code=400)
+    if not storage.is_admin(uid):
+        return None, JSONResponse({"ok": False, "error": "Доступ запрещён"}, status_code=403)
+    return uid, None
 
 
 def _resolve_uid_session(request: Request, uid: str, current_user_id: str, session_id: str | None = None):
@@ -409,11 +439,12 @@ def _render(template: str, request: Request, **kwargs):
     if user_id and user_id in _notification_queue:
         notifications = _notification_queue.pop(user_id, [])
     user_info = _decode_jwt(token) if token else None
+    session_uid = _session_uid(user_id) if user_id else None
     coins_balance = 0
     is_admin = False
-    if user_info and user_info.get("id"):
-        coins_balance = storage.get_coins(user_info["id"])
-        is_admin = storage.is_admin(user_info["id"])
+    if session_uid:
+        coins_balance = storage.get_coins(session_uid)
+        is_admin = storage.is_admin(session_uid)
     login_type = storage.get_login_type(user_id)
     return templates.TemplateResponse(request, template, {
         "user_id": user_id,
@@ -766,11 +797,8 @@ async def admin_page(request: Request):
     user_id = get_user_id(request)
     if not user_id:
         return RedirectResponse(url="/")
-    token = storage.get_token(user_id)
-    if not token:
-        return _render("login.html", request, error="Войди, чтобы продолжить")
-    uid = _decode_jwt(token).get("id") if _decode_jwt(token) else None
-    if not uid or not storage.is_admin(uid):
+    admin_uid, denied = _require_admin(request)
+    if denied or not admin_uid:
         return _render("admin_denied.html", request)
     return _render("admin.html", request)
 
@@ -780,14 +808,8 @@ async def admin_page(request: Request):
 @app.post("/api/token")
 async def api_set_token(request: Request):
     user_id = get_user_id(request)
-    session_id = None
-    if not user_id:
-        session_id, user_id = storage.create_session()
-        response = JSONResponse({"ok": True, "token_set": True})
-        response.set_cookie(key="session_id", value=session_id, max_age=86400 * 365, httponly=True)
-    else:
-        response = JSONResponse({"ok": True, "token_set": True})
-        session_id = request.cookies.get("session_id")
+    is_new_session = user_id is None
+    session_id = request.cookies.get("session_id") if user_id else None
 
     data = await request.json()
     token = data.get("token", "").strip()
@@ -798,18 +820,34 @@ async def api_set_token(request: Request):
     if not exp:
         return JSONResponse({"ok": False, "error": "Неверный формат токена"}, status_code=400)
 
+    if not _sirius_client:
+        return JSONResponse({"ok": False, "error": "Sirius клиент не запущен"}, status_code=503)
+    try:
+        await _sirius_client.fetch_schedule(token=token)
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Sirius не подтвердил этот токен"}, status_code=401)
+
     payload = _decode_jwt(token)
-    if payload and payload.get("id"):
-        uid = payload["id"]
+    if not payload or not payload.get("id"):
+        return JSONResponse({"ok": False, "error": "Не удалось определить аккаунт Sirius"}, status_code=400)
+
+    uid = payload["id"]
+    if is_new_session:
+        user_id = storage.get_user_by_uid(uid) or uid
+    else:
         user_id = _resolve_uid_session(request, uid, user_id, session_id)
     storage.save_token(user_id, token)
+    storage.set_user_uid(user_id, uid)
     storage.set_login_type(user_id, "token")
 
-    if payload and payload.get("id"):
-        storage.ensure_coins(uid)
-        full_name = " ".join(filter(None, [payload.get("lastName"), payload.get("firstName"), payload.get("middleName")]))
-        storage.save_known_uid(uid, user_id, full_name)
+    storage.ensure_coins(uid)
+    full_name = " ".join(filter(None, [payload.get("lastName"), payload.get("firstName"), payload.get("middleName")]))
+    storage.save_known_uid(uid, user_id, full_name)
 
+    response = JSONResponse({"ok": True, "token_set": True})
+    if is_new_session:
+        session_id = storage.create_session_for_user(user_id)
+        response.set_cookie(key="session_id", value=session_id, max_age=86400 * 365, httponly=True, samesite="lax")
     return response
 
 
@@ -860,6 +898,7 @@ async def api_login(request: Request):
         user_id = _resolve_uid_session(request, uid, user_id, session_id)
 
     storage.save_token(user_id, token)
+    storage.set_user_uid(user_id, uid)
     storage.save_login_credentials(user_id, email, password)
 
     storage.ensure_coins(uid)
@@ -973,13 +1012,9 @@ async def api_coins_balance(request: Request):
     user_id = get_user_id(request)
     if not user_id:
         return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
-    token = storage.get_token(user_id)
-    if not token:
-        return JSONResponse({"ok": False, "error": "Токен не задан"}, status_code=400)
-    payload = _decode_jwt(token)
-    uid = payload.get("id") if payload else None
+    uid = _session_uid(user_id)
     if not uid:
-        return JSONResponse({"ok": False, "error": "Не удалось получить UID"}, status_code=400)
+        return JSONResponse({"ok": False, "error": "Токен не задан"}, status_code=400)
     return JSONResponse({"ok": True, "coins": storage.get_coins(uid), "total": storage.get_coins_total(uid), "reserved": storage.get_coins_reserved(uid), "uid": uid})
 
 
@@ -988,13 +1023,9 @@ async def api_coins_transfer(request: Request):
     user_id = get_user_id(request)
     if not user_id:
         return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
-    token = storage.get_token(user_id)
-    if not token:
-        return JSONResponse({"ok": False, "error": "Токен не задан"}, status_code=400)
-    payload = _decode_jwt(token)
-    from_uid = payload.get("id") if payload else None
+    from_uid = _session_uid(user_id)
     if not from_uid:
-        return JSONResponse({"ok": False, "error": "Не удалось получить UID"}, status_code=400)
+        return JSONResponse({"ok": False, "error": "Токен не задан"}, status_code=400)
 
     data = await request.json()
     to_uid = data.get("to_uid", "").strip()
@@ -1037,16 +1068,9 @@ async def api_coins_transfer(request: Request):
 
 @app.get("/api/admin/users")
 async def api_admin_users(request: Request):
-    user_id = get_user_id(request)
-    if not user_id:
-        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
-    token = storage.get_token(user_id)
-    if not token:
-        return JSONResponse({"ok": False, "error": "Токен не задан"}, status_code=400)
-    payload = _decode_jwt(token)
-    admin_uid = payload.get("id") if payload else None
-    if not admin_uid or not storage.is_admin(admin_uid):
-        return JSONResponse({"ok": False, "error": "Доступ запрещён"}, status_code=403)
+    admin_uid, denied = _require_admin(request)
+    if denied:
+        return denied
 
     users = storage.get_all_known_uids()
     return JSONResponse({
@@ -1066,16 +1090,9 @@ async def api_admin_users(request: Request):
 
 @app.post("/api/admin/grant-coins")
 async def api_admin_grant_coins(request: Request):
-    user_id = get_user_id(request)
-    if not user_id:
-        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
-    token = storage.get_token(user_id)
-    if not token:
-        return JSONResponse({"ok": False, "error": "Токен не задан"}, status_code=400)
-    payload = _decode_jwt(token)
-    admin_uid = payload.get("id") if payload else None
-    if not admin_uid or not storage.is_admin(admin_uid):
-        return JSONResponse({"ok": False, "error": "Доступ запрещён"}, status_code=403)
+    admin_uid, denied = _require_admin(request)
+    if denied:
+        return denied
 
     data = await request.json()
     target_uid = data.get("uid", "").strip()
@@ -1091,16 +1108,9 @@ async def api_admin_grant_coins(request: Request):
 
 @app.post("/api/admin/set-trust")
 async def api_admin_set_trust(request: Request):
-    user_id = get_user_id(request)
-    if not user_id:
-        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
-    token = storage.get_token(user_id)
-    if not token:
-        return JSONResponse({"ok": False, "error": "Токен не задан"}, status_code=400)
-    payload = _decode_jwt(token)
-    admin_uid = payload.get("id") if payload else None
-    if not admin_uid or not storage.is_admin(admin_uid):
-        return JSONResponse({"ok": False, "error": "Доступ запрещён"}, status_code=403)
+    admin_uid, denied = _require_admin(request)
+    if denied:
+        return denied
 
     data = await request.json()
     target_uid = data.get("uid", "").strip()
@@ -1117,16 +1127,9 @@ async def api_admin_set_trust(request: Request):
 
 @app.post("/api/admin/set-admin")
 async def api_admin_set_admin(request: Request):
-    user_id = get_user_id(request)
-    if not user_id:
-        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
-    token = storage.get_token(user_id)
-    if not token:
-        return JSONResponse({"ok": False, "error": "Токен не задан"}, status_code=400)
-    payload = _decode_jwt(token)
-    admin_uid = payload.get("id") if payload else None
-    if not admin_uid or not storage.is_admin(admin_uid):
-        return JSONResponse({"ok": False, "error": "Доступ запрещён"}, status_code=403)
+    admin_uid, denied = _require_admin(request)
+    if denied:
+        return denied
 
     data = await request.json()
     target_uid = data.get("uid", "").strip()
@@ -1145,16 +1148,9 @@ async def api_admin_set_admin(request: Request):
 
 @app.get("/api/admin/feedback")
 async def api_admin_feedback(request: Request):
-    user_id = get_user_id(request)
-    if not user_id:
-        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
-    token = storage.get_token(user_id)
-    if not token:
-        return JSONResponse({"ok": False, "error": "Токен не задан"}, status_code=400)
-    payload = _decode_jwt(token)
-    admin_uid = payload.get("id") if payload else None
-    if not admin_uid or not storage.is_admin(admin_uid):
-        return JSONResponse({"ok": False, "error": "Доступ запрещён"}, status_code=403)
+    admin_uid, denied = _require_admin(request)
+    if denied:
+        return denied
 
     messages = storage.get_feedback_messages()
     return JSONResponse({
@@ -1177,14 +1173,9 @@ async def api_admin_feedback(request: Request):
 
 @app.post("/api/admin/feedback/{feedback_id}/read")
 async def api_admin_feedback_read(feedback_id: int, request: Request):
-    user_id = get_user_id(request)
-    if not user_id:
-        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
-    token = storage.get_token(user_id)
-    payload = _decode_jwt(token) if token else None
-    admin_uid = payload.get("id") if payload else None
-    if not admin_uid or not storage.is_admin(admin_uid):
-        return JSONResponse({"ok": False, "error": "Доступ запрещён"}, status_code=403)
+    admin_uid, denied = _require_admin(request)
+    if denied:
+        return denied
     data = await request.json()
     storage.mark_feedback_read(feedback_id, bool(data.get("is_read", True)))
     return JSONResponse({"ok": True})
@@ -1192,14 +1183,9 @@ async def api_admin_feedback_read(feedback_id: int, request: Request):
 
 @app.post("/api/admin/feedback/{feedback_id}/answer")
 async def api_admin_feedback_answer(feedback_id: int, request: Request):
-    user_id = get_user_id(request)
-    if not user_id:
-        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
-    token = storage.get_token(user_id)
-    payload = _decode_jwt(token) if token else None
-    admin_uid = payload.get("id") if payload else None
-    if not admin_uid or not storage.is_admin(admin_uid):
-        return JSONResponse({"ok": False, "error": "Доступ запрещён"}, status_code=403)
+    admin_uid, denied = _require_admin(request)
+    if denied:
+        return denied
     data = await request.json()
     answer = data.get("answer", "").strip()
     if not answer:
@@ -1215,28 +1201,18 @@ async def api_admin_feedback_answer(feedback_id: int, request: Request):
 
 @app.delete("/api/admin/feedback/{feedback_id}")
 async def api_admin_feedback_delete(feedback_id: int, request: Request):
-    user_id = get_user_id(request)
-    if not user_id:
-        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
-    token = storage.get_token(user_id)
-    payload = _decode_jwt(token) if token else None
-    admin_uid = payload.get("id") if payload else None
-    if not admin_uid or not storage.is_admin(admin_uid):
-        return JSONResponse({"ok": False, "error": "Доступ запрещён"}, status_code=403)
+    admin_uid, denied = _require_admin(request)
+    if denied:
+        return denied
     storage.delete_feedback(feedback_id)
     return JSONResponse({"ok": True})
 
 
 @app.post("/api/admin/feedback/{feedback_id}/hide")
 async def api_admin_feedback_hide(feedback_id: int, request: Request):
-    user_id = get_user_id(request)
-    if not user_id:
-        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
-    token = storage.get_token(user_id)
-    payload = _decode_jwt(token) if token else None
-    admin_uid = payload.get("id") if payload else None
-    if not admin_uid or not storage.is_admin(admin_uid):
-        return JSONResponse({"ok": False, "error": "Доступ запрещён"}, status_code=403)
+    admin_uid, denied = _require_admin(request)
+    if denied:
+        return denied
     storage.hide_feedback_for_admin(feedback_id)
     return JSONResponse({"ok": True})
 
@@ -1378,8 +1354,7 @@ async def api_watch(request: Request):
             log.warning("Failed to fetch schedule for watch validation: %s", e)
             return JSONResponse({"ok": False, "error": "Не удалось проверить актуальность события"}, status_code=503)
 
-        payload = _decode_jwt(token)
-        uid = payload.get("id") if payload else ""
+        uid = storage.get_user_uid(user_id) or ""
         if uid and not storage.reserve_coins(uid, coin_cost):
             return JSONResponse({"ok": False, "error": f"Недостаточно Сириус Коинов. Нужно: {coin_cost}. Получи их на странице «Как получить Сириус Коины»."}, status_code=402)
 
@@ -1417,11 +1392,7 @@ async def api_watch_priority(request: Request):
 
     old_cost = watch["coin_cost"] if "coin_cost" in watch.keys() else storage.snipe_priority_cost(watch["snipe_priority"])
     new_cost = storage.snipe_priority_cost(snipe_priority)
-    token = storage.get_token(user_id)
-    uid = ""
-    if token:
-        payload = _decode_jwt(token)
-        uid = payload.get("id") if payload else ""
+    uid = _session_uid(user_id) or ""
 
     if uid and new_cost > old_cost:
         if not storage.reserve_coins(uid, new_cost - old_cost):
@@ -1462,12 +1433,9 @@ async def api_unwatch(request: Request):
     coin_cost = watch["coin_cost"] if watch and "coin_cost" in watch.keys() else 1
     storage.remove_watch(user_id, event_id)
 
-    token = storage.get_token(user_id)
-    if token:
-        payload = _decode_jwt(token)
-        uid = payload.get("id") if payload else ""
-        if uid:
-            storage.release_coins(uid, coin_cost)
+    uid = _session_uid(user_id)
+    if uid:
+        storage.release_coins(uid, coin_cost)
 
     return JSONResponse({"ok": True})
 
@@ -1868,6 +1836,7 @@ async def api_user_info(request: Request):
     payload = _decode_jwt(token)
     if not payload:
         return JSONResponse({"ok": False, "error": "Не удалось декодировать токен"}, status_code=400)
+    payload["id"] = storage.get_user_uid(user_id) or ""
 
     exp_ts = payload.get("exp")
     iat_ts = payload.get("iat")
@@ -1975,6 +1944,8 @@ async def api_delete_reminder(reminder_id: int, request: Request):
 @app.post("/api/feedback")
 async def api_feedback(request: Request):
     user_id = get_user_id(request)
+    if not user_id:
+        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
     data = await request.json()
     msg = data.get("message", "").strip()
     if not msg:

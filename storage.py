@@ -215,6 +215,11 @@ def init_db():
                 is_read      INTEGER NOT NULL DEFAULT 0,
                 created_at   INTEGER NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS app_meta (
+                key          TEXT PRIMARY KEY,
+                value        TEXT NOT NULL
+            );
         """)
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(watchlist)").fetchall()]
         if "event_start" not in cols:
@@ -264,6 +269,17 @@ def init_db():
             conn.execute("ALTER TABLE feedback_messages ADD COLUMN user_hidden INTEGER NOT NULL DEFAULT 0")
         if "admin_hidden" not in feedback_cols:
             conn.execute("ALTER TABLE feedback_messages ADD COLUMN admin_hidden INTEGER NOT NULL DEFAULT 0")
+
+        security_fix = conn.execute(
+            "SELECT value FROM app_meta WHERE key='sessions_invalidated_after_token_validation'"
+        ).fetchone()
+        if not security_fix:
+            conn.execute("DELETE FROM sessions")
+            conn.execute("DELETE FROM login_codes")
+            conn.execute(
+                "INSERT INTO app_meta (key, value) VALUES (?, ?)",
+                ("sessions_invalidated_after_token_validation", str(int(time.time()))),
+            )
 
 
 @contextmanager
@@ -416,6 +432,14 @@ def get_user_by_uid(uid: str) -> str | None:
             (uid, uid),
         ).fetchone()
         return row["user_id"] if row else None
+
+
+def get_user_uid(user_id: str) -> str | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT user_id, uid FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if not row:
+            return None
+        return row["uid"] or row["user_id"]
 
 
 def set_user_uid(user_id: str, uid: str):

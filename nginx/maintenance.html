@@ -11,14 +11,44 @@
     h1 { margin: 0 0 14px; font-size: 28px; }
     p { margin: 0 0 10px; line-height: 1.55; color: #526277; }
     a { color: #1769e0; }
-    @media (prefers-color-scheme: dark) { body { background: #111827; color: #f3f4f6; } p { color: #b7c0cf; } a { color: #78adff; } }
+    .progress { height: 8px; margin: 24px 0 10px; overflow: hidden; border-radius: 4px; background: #dce5f2; }
+    .progress__bar { width: 2%; height: 100%; border-radius: inherit; background: #1769e0; transition: width 1s linear; }
+    #status { font-size: 13px; }
+    @media (prefers-color-scheme: dark) { body { background: #111827; color: #f3f4f6; } p { color: #b7c0cf; } a { color: #78adff; } .progress { background: #293548; } .progress__bar { background: #78adff; } }
   </style>
 </head>
 <body>
   <main>
     <h1>Пирожковый Диспетчер перезагружается</h1>
     <p>Сайт временно недоступен или обновляется. Подожди минуту и попробуй ещё раз.</p>
+    <div class="progress" role="progressbar" aria-label="Перезапуск сайта"><div class="progress__bar" id="progress"></div></div>
+    <p id="status">Перезапускаю сервис...</p>
     <p>Если проблема не проходит, напиши в <a href="https://t.me/sonofstrange">Telegram</a> или <a href="https://discord.com/users/891370219866583091">Discord</a>.</p>
   </main>
+  <script>
+    const restartWindowMs = 150000;
+    const startedAt = Date.now();
+    const progress = document.getElementById('progress');
+    const status = document.getElementById('status');
+
+    function updateProgress() {
+      const elapsed = Date.now() - startedAt;
+      const value = Math.min(95, 2 + (elapsed / restartWindowMs) * 93);
+      progress.style.width = value + '%';
+      if (elapsed >= restartWindowMs) status.textContent = 'Сервис ещё запускается, продолжаю ждать...';
+    }
+
+    async function checkHealth() {
+      try {
+        const response = await fetch('/healthz', {cache: 'no-store'});
+        if (response.status === 204) window.location.replace('/');
+      } catch (error) {}
+    }
+
+    updateProgress();
+    checkHealth();
+    setInterval(updateProgress, 1000);
+    setInterval(checkHealth, 3000);
+  </script>
 </body>
 </html>
