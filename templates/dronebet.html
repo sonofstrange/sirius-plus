@@ -4,21 +4,23 @@
 <div class="page dronebet-page">
     <div class="page__header">
         <div>
-            <h1 class="page__title">ДронБет</h1>
+            <h1 class="page__title">Сириус Полимаркет</h1>
             <p class="polymarket-page__subtitle">Прогноз длительности угрозы БПЛА по данным Sirius Radar.</p>
         </div>
         <div class="polymarket-balance">Доступно: <strong id="dronebet-balance">—</strong> 🪙</div>
     </div>
+    <nav class="market-subtabs" aria-label="Раздел Полимаркета">
+        <a class="market-subtabs__item" href="/polymarket">Полимаркет</a>
+        <a class="market-subtabs__item market-subtabs__item--active" href="/polymarket?tab=dronebet">ДронБет</a>
+    </nav>
 
     <section id="drone-status" class="drone-status drone-status--clear">
-        <span class="material-symbols-outlined drone-status__icon">shield</span>
-        <div>
-            <div id="drone-status-title" class="drone-status__title">Чисто</div>
+        <div class="drone-status__content">
+            <div class="drone-status__eyebrow"><span id="drone-status-icon" class="material-symbols-outlined">shield</span><span id="drone-status-title">Чисто</span></div>
             <div id="drone-status-timer" class="drone-status__timer">Обновляю статус...</div>
             <div id="drone-status-message" class="drone-status__message"></div>
         </div>
-        <span class="material-symbols-outlined drone-status__drone" aria-hidden="true">drone</span>
-        <span class="material-symbols-outlined drone-status__drone drone-status__drone--second" aria-hidden="true">drone</span>
+        <div class="drone-status__art" aria-hidden="true"><span class="material-symbols-outlined">drone</span><span class="material-symbols-outlined">drone</span><span class="material-symbols-outlined">drone</span></div>
     </section>
 
     <section class="dronebet-section" aria-labelledby="dronebet-market-title">
@@ -66,6 +68,7 @@ function updateStatus() {
     const root = document.getElementById('drone-status');
     const elapsed = status.since ? Math.floor(Date.now() / 1000) - status.since : 0;
     root.className = `drone-status ${status.active ? 'drone-status--active' : 'drone-status--clear'}`;
+    document.getElementById('drone-status-icon').textContent = status.active ? 'drone' : 'shield';
     document.getElementById('drone-status-title').textContent = status.active ? 'Атака БПЛА' : 'Чисто';
     document.getElementById('drone-status-timer').textContent = status.since
         ? (status.active ? `Угроза длится ${duration(elapsed)}` : `Без угроз уже ${duration(elapsed)}`)
@@ -86,9 +89,10 @@ function renderMarket(market) {
     document.getElementById('dronebet-current').innerHTML = `
         <p class="dronebet-current__hint">Ставки принимаются до отбоя. После него рынок рассчитывается автоматически.</p>
         <div class="polymarket-options">${market.options.map(option => `
-            <button class="polymarket-option" data-choice="${esc(option.name)}"${disabled}>
-                <span class="polymarket-option__name">${esc(option.name)}</span>
-                <span class="polymarket-option__stats"><strong>×${option.multiplier.toFixed(2)}</strong><small>${option.pool} 🪙</small></span>
+            <button class="dronebet-option" data-choice="${esc(option.name)}"${disabled}>
+                <span class="dronebet-option__name">${esc(option.name)}</span>
+                <span class="dronebet-option__odds">×${option.multiplier.toFixed(2)}</span>
+                <span class="dronebet-option__pool">${option.pool} 🪙</span>
             </button>`).join('')}</div>${myBets}`;
     document.querySelectorAll('#dronebet-current [data-choice]').forEach(button => {
         button.addEventListener('click', () => placeBet(market.id, button.dataset.choice));

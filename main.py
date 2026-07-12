@@ -831,14 +831,14 @@ async def coins_info_page(request: Request):
 async def polymarket_page(request: Request):
     if not get_user_id(request):
         return RedirectResponse(url="/")
+    if request.query_params.get("tab") == "dronebet":
+        return _render("dronebet.html", request)
     return _render("polymarket.html", request)
 
 
 @app.get("/dronebet", response_class=HTMLResponse)
 async def dronebet_page(request: Request):
-    if not get_user_id(request):
-        return RedirectResponse(url="/")
-    return _render("dronebet.html", request)
+    return RedirectResponse(url="/polymarket?tab=dronebet", status_code=303)
 
 
 @app.get("/admin", response_class=HTMLResponse)
