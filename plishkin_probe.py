@@ -4,28 +4,23 @@
 from __future__ import annotations
 
 import asyncio
+import os
 
-from playwright.async_api import async_playwright
-
-from plishkin_parser import PLISHKIN_URL, detect_bpla_status
+from plishkin_parser import detect_latest_bpla_status, fetch_recent_vk_posts
 
 
 async def main() -> int:
-    async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(headless=True)
-        try:
-            page = await browser.new_page()
-            await page.goto(PLISHKIN_URL, wait_until="domcontentloaded", timeout=45_000)
-            await page.wait_for_timeout(4_000)
-            text = await page.locator("body").inner_text()
-        finally:
-            await browser.close()
+    token = os.environ.get("VK_PLISHKIN_TOKEN")
+    if not token:
+        print("VK_PLISHKIN_TOKEN is not set; cannot read the VK wall reliably.")
+        return 2
 
-    status = detect_bpla_status(text)
+    posts = await asyncio.to_thread(fetch_recent_vk_posts, token)
+    status = detect_latest_bpla_status(posts)
     if status:
         print(f"Plishkin BPLA signal: {status}")
     else:
-        print("No current BPLA signal was found in the visible VK page text.")
+        print("No BPLA signal was found in the latest VK posts.")
     return 0
 
 
