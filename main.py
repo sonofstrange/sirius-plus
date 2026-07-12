@@ -944,7 +944,7 @@ async def api_refresh_token(request: Request):
             return JSONResponse({"ok": False, "error": f"Ошибка входа: {_friendly_error(e)}"}, status_code=500)
 
         if not token:
-            return JSONResponse({"ok": False, "error": "Не удалось войти. Возможно, пароль изменился."}, status_code=401)
+            return JSONResponse({"ok": False, "error": "Sirius не успел завершить вход. Возможно, сайт отвечает медленно — попробуй ещё раз."}, status_code=503)
 
         storage.save_token(user_id, token)
         storage.set_last_token_refresh(user_id)

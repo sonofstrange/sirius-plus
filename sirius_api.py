@@ -18,6 +18,10 @@ NGENIX_CHALLENGE_MARKER = "js-challenge-script"
 SCHEDULE_URL = "https://my.sirius.online/api/activity/v0/schedule/student/record"
 SUBSCRIBE_URL = "https://my.sirius.online/api/activity/v0/schedule/student/record/subscribe"
 SCHEDULE_DAY_URL = "https://my.sirius.online/api/activity/v0/schedule/student"
+AUTH_NAVIGATION_TIMEOUT_MS = 60_000
+AUTH_FORM_TIMEOUT_MS = 45_000
+AUTH_CHALLENGE_POLL_ATTEMPTS = 240
+AUTH_COMPLETION_POLL_ATTEMPTS = 240
 
 BASE_HEADERS = {
     "accept": "application/json;charset=utf-8",
@@ -544,7 +548,7 @@ class SiriusClient:
         login_url = "https://auth.sirius.online/password"
         log.info("login: перехожу на %s", login_url)
         try:
-            await page.goto(login_url, wait_until="domcontentloaded", timeout=20000)
+            await page.goto(login_url, wait_until="domcontentloaded", timeout=AUTH_NAVIGATION_TIMEOUT_MS)
         except Exception as e:
             log.warning("login: не удалось открыть страницу — %s", e)
             return None
@@ -552,7 +556,7 @@ class SiriusClient:
         log.info("login: страница загружена, url=%s", page.url)
 
         # Wait for ngenix challenge to resolve if present
-        for _ in range(80):
+        for _ in range(AUTH_CHALLENGE_POLL_ATTEMPTS):
             try:
                 url = page.url
                 cookies = await page.context.cookies()
@@ -574,7 +578,7 @@ class SiriusClient:
             log.info("login: таймаут ожидания ngenix, url=%s", page.url)
             # Force-reload the login page now that ngenix cookies should be set
             try:
-                await page.goto(login_url, wait_until="domcontentloaded", timeout=15000)
+                await page.goto(login_url, wait_until="domcontentloaded", timeout=AUTH_NAVIGATION_TIMEOUT_MS)
                 await asyncio.sleep(0.5)
                 log.info("login: перезагрузил страницу логина, url=%s", page.url)
             except Exception:
@@ -653,7 +657,7 @@ class SiriusClient:
         # Wait for email field
         log.info("login: жду input[name=email]")
         try:
-            await page.wait_for_selector('input[name="email"]', timeout=20000)
+            await page.wait_for_selector('input[name="email"]', timeout=AUTH_FORM_TIMEOUT_MS)
             log.info("login: input[name=email] найден")
         except Exception:
             log.warning("login: input[name=email] НЕ найден на %s", page.url)
@@ -718,7 +722,7 @@ class SiriusClient:
         # Now wait for password field to appear
         log.info("login: жду input[name=password]")
         try:
-            await page.wait_for_selector('input[name="password"]', timeout=10000)
+            await page.wait_for_selector('input[name="password"]', timeout=AUTH_FORM_TIMEOUT_MS)
             log.info("login: input[name=password] найден")
         except Exception:
             log.warning("login: input[name=password] НЕ найден после «По паролю»")
@@ -751,7 +755,7 @@ class SiriusClient:
 
         # Wait for auth to complete (URL changes: /password -> /auth/callback -> /)
         # Also wait for ngenix challenge to resolve
-        for _ in range(120):
+        for _ in range(AUTH_COMPLETION_POLL_ATTEMPTS):
             await asyncio.sleep(0.25)
             try:
                 url = page.url
@@ -807,9 +811,9 @@ class SiriusClient:
         # Fallback: navigate to my.sirius.online to trigger token propagation
         log.info("login: не нашёл токен на auth.sirius.online, пробую my.sirius.online")
         try:
-            await page.goto("https://my.sirius.online/", wait_until="domcontentloaded", timeout=20000)
+            await page.goto("https://my.sirius.online/", wait_until="domcontentloaded", timeout=AUTH_NAVIGATION_TIMEOUT_MS)
             # Wait for ngenix to pass
-            for _ in range(40):
+            for _ in range(AUTH_CHALLENGE_POLL_ATTEMPTS):
                 await asyncio.sleep(0.25)
                 cookies = await page.context.cookies()
                 if any(c["name"].startswith("ngenix_jscv_") for c in cookies):
