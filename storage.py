@@ -1,5 +1,6 @@
 import os
 import hashlib
+import math
 import secrets
 import sqlite3
 import time
@@ -221,6 +222,41 @@ def init_db():
                 token_hash   TEXT NOT NULL,
                 verified_at  INTEGER NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS prediction_markets (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                title             TEXT NOT NULL,
+                description       TEXT NOT NULL DEFAULT '',
+                market_type       TEXT NOT NULL,
+                options_json      TEXT NOT NULL DEFAULT '[]',
+                min_value         REAL,
+                max_value         REAL,
+                end_at            INTEGER NOT NULL DEFAULT 0,
+                betting_closes_at INTEGER NOT NULL DEFAULT 0,
+                status            TEXT NOT NULL DEFAULT 'open',
+                correct_option    TEXT NOT NULL DEFAULT '',
+                correct_value     REAL,
+                created_by        TEXT NOT NULL,
+                created_at        INTEGER NOT NULL,
+                resolved_at       INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS prediction_bets (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                market_id   INTEGER NOT NULL,
+                uid         TEXT NOT NULL,
+                selection   TEXT NOT NULL DEFAULT '',
+                value       REAL,
+                amount      INTEGER NOT NULL,
+                payout      INTEGER NOT NULL DEFAULT 0,
+                created_at  INTEGER NOT NULL,
+                FOREIGN KEY (market_id) REFERENCES prediction_markets(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_prediction_bets_market
+                ON prediction_bets(market_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_prediction_bets_user
+                ON prediction_bets(uid, market_id);
 
         """)
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(watchlist)").fetchall()]
@@ -1115,6 +1151,180 @@ def add_coins(uid: str, amount: int) -> int:
             (new_balance, now, uid),
         )
         return new_balance
+
+
+def create_prediction_market(
+    title: str,
+    description: str,
+    market_type: str,
+    options_json: str,
+    min_value: float | None,
+    max_value: float | None,
+    end_at: int,
+    betting_closes_at: int,
+    created_by: str,
+) -> int:
+    now = int(time.time())
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """INSERT INTO prediction_markets
+               (title, description, market_type, options_json, min_value, max_value,
+                end_at, betting_closes_at, created_by, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (title, description, market_type, options_json, min_value, max_value,
+             end_at, betting_closes_at, created_by, now),
+        )
+        return int(cursor.lastrowid)
+
+
+def get_prediction_market(market_id: int) -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM prediction_markets WHERE id=?", (market_id,)).fetchone()
+
+
+def get_prediction_markets() -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM prediction_markets ORDER BY CASE status WHEN 'open' THEN 0 ELSE 1 END, created_at DESC"
+        ).fetchall()
+
+
+def get_prediction_bets(market_id: int) -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM prediction_bets WHERE market_id=? ORDER BY created_at, id",
+            (market_id,),
+        ).fetchall()
+
+
+def place_prediction_bet(uid: str, market_id: int, selection: str, value: float | None, amount: int) -> tuple[bool, str, int]:
+    """Deducts a bet and appends it to the market in one SQLite transaction."""
+    if amount < 1:
+        return False, "Количество должно быть больше нуля", 0
+    now = int(time.time())
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        market = conn.execute("SELECT * FROM prediction_markets WHERE id=?", (market_id,)).fetchone()
+        if not market:
+            return False, "Рынок не найден", 0
+        if market["status"] != "open":
+            return False, "Этот рынок уже завершён", 0
+        if market["end_at"] and now >= market["end_at"]:
+            return False, "Время события уже наступило", 0
+        if market["betting_closes_at"] and now >= market["betting_closes_at"]:
+            return False, "Приём ставок уже закрыт", 0
+
+        coin_row = conn.execute(
+            "SELECT coins, reserved_coins FROM sirius_coins WHERE uid=?", (uid,)
+        ).fetchone()
+        available = (coin_row["coins"] - coin_row["reserved_coins"]) if coin_row else 0
+        if available < amount:
+            return False, f"Недостаточно коинов. Доступно: {available}", available
+
+        conn.execute(
+            "UPDATE sirius_coins SET coins=coins-?, updated_at=? WHERE uid=?",
+            (amount, now, uid),
+        )
+        conn.execute(
+            """INSERT INTO prediction_bets (market_id, uid, selection, value, amount, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (market_id, uid, selection, value, amount, now),
+        )
+        return True, "", available - amount
+
+
+def _split_prediction_pool(bets: list[sqlite3.Row], weights: list[float], total_pool: int) -> dict[int, int]:
+    total_weight = sum(weights)
+    if total_pool <= 0 or total_weight <= 0:
+        return {int(bet["id"]): 0 for bet in bets}
+    raw = [total_pool * weight / total_weight for weight in weights]
+    payouts = [math.floor(value) for value in raw]
+    remaining = total_pool - sum(payouts)
+    order = sorted(range(len(bets)), key=lambda index: (raw[index] - payouts[index], -bets[index]["id"]), reverse=True)
+    for index in order[:remaining]:
+        payouts[index] += 1
+    return {int(bet["id"]): payout for bet, payout in zip(bets, payouts)}
+
+
+def resolve_prediction_market(market_id: int, correct_option: str = "", correct_value: float | None = None) -> tuple[bool, str, list[tuple[str, int]]]:
+    """Settles an open market exactly once and returns non-zero payouts by user."""
+    now = int(time.time())
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        market = conn.execute("SELECT * FROM prediction_markets WHERE id=?", (market_id,)).fetchone()
+        if not market:
+            return False, "Рынок не найден", []
+        if market["status"] != "open":
+            return False, "Рынок уже рассчитан или отменён", []
+        bets = conn.execute(
+            "SELECT * FROM prediction_bets WHERE market_id=? ORDER BY id", (market_id,)
+        ).fetchall()
+        total_pool = sum(int(bet["amount"]) for bet in bets)
+
+        if market["market_type"] == "choice":
+            winners = [bet for bet in bets if bet["selection"] == correct_option]
+            payouts = _split_prediction_pool(winners, [float(bet["amount"]) for bet in winners], total_pool)
+            result_option, result_value = correct_option, None
+        else:
+            if correct_value is None:
+                return False, "Укажи правильное число", []
+            span = max(float(market["max_value"]) - float(market["min_value"]), 1.0)
+            amounts_by_value: dict[float, int] = {}
+            for bet in bets:
+                amounts_by_value[float(bet["value"])] = amounts_by_value.get(float(bet["value"]), 0) + int(bet["amount"])
+            busiest_value = max(amounts_by_value.values(), default=1)
+            weights = []
+            for bet in bets:
+                distance = abs(float(bet["value"]) - correct_value) / span
+                closeness = max(0.15, 1 - distance)
+                crowding = amounts_by_value[float(bet["value"])] / busiest_value
+                rarity_bonus = 1 + 2 * (1 - crowding)
+                weights.append(float(bet["amount"]) * closeness * rarity_bonus)
+            payouts = _split_prediction_pool(bets, weights, total_pool)
+            result_option, result_value = "", correct_value
+
+        totals_by_user: dict[str, int] = {bet["uid"]: 0 for bet in bets}
+        for bet in bets:
+            payout = payouts.get(int(bet["id"]), 0)
+            conn.execute("UPDATE prediction_bets SET payout=? WHERE id=?", (payout, bet["id"]))
+            if payout:
+                totals_by_user[bet["uid"]] = totals_by_user.get(bet["uid"], 0) + payout
+        for uid, payout in totals_by_user.items():
+            if payout:
+                conn.execute(
+                    "UPDATE sirius_coins SET coins=coins+?, updated_at=? WHERE uid=?",
+                    (payout, now, uid),
+                )
+        conn.execute(
+            """UPDATE prediction_markets
+               SET status='resolved', correct_option=?, correct_value=?, resolved_at=?
+               WHERE id=?""",
+            (result_option, result_value, now, market_id),
+        )
+        return True, "", list(totals_by_user.items())
+
+
+def cancel_prediction_market(market_id: int) -> tuple[bool, str, list[tuple[str, int]]]:
+    """Cancels an open market and returns every stake."""
+    now = int(time.time())
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        market = conn.execute("SELECT status FROM prediction_markets WHERE id=?", (market_id,)).fetchone()
+        if not market:
+            return False, "Рынок не найден", []
+        if market["status"] != "open":
+            return False, "Можно отменить только открытый рынок", []
+        bets = conn.execute("SELECT uid, amount FROM prediction_bets WHERE market_id=?", (market_id,)).fetchall()
+        refunds: dict[str, int] = {}
+        for bet in bets:
+            refunds[bet["uid"]] = refunds.get(bet["uid"], 0) + int(bet["amount"])
+        for uid, refund in refunds.items():
+            conn.execute(
+                "UPDATE sirius_coins SET coins=coins+?, updated_at=? WHERE uid=?",
+                (refund, now, uid),
+            )
+        conn.execute("UPDATE prediction_markets SET status='cancelled', resolved_at=? WHERE id=?", (now, market_id))
+        return True, "", list(refunds.items())
 
 
 def spend_coin(uid: str) -> bool:

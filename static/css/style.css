@@ -1931,3 +1931,189 @@ body.dark-theme .badge-muted {
         margin-top: 5px;
     }
 }
+
+.polymarket-page__subtitle {
+    margin: 4px 0 0;
+    color: var(--text-muted);
+    font-size: 14px;
+}
+.polymarket-balance {
+    align-self: center;
+    color: var(--text-muted);
+    font-size: 14px;
+    white-space: nowrap;
+}
+.polymarket-balance strong {
+    color: var(--accent);
+    font-size: 18px;
+}
+.polymarket-admin {
+    margin-bottom: 18px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-card);
+}
+.polymarket-admin summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 13px 16px;
+    cursor: pointer;
+    font-weight: 600;
+    list-style: none;
+}
+.polymarket-admin summary::-webkit-details-marker { display: none; }
+.polymarket-admin__body {
+    padding: 0 16px 16px;
+    border-top: 1px solid var(--border);
+}
+.polymarket-admin__grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+.form-hint {
+    margin: -4px 0 14px;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+.polymarket-list {
+    display: grid;
+    gap: 14px;
+}
+.polymarket-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    background: var(--bg-card);
+    box-shadow: var(--shadow);
+}
+.polymarket-card__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+.polymarket-card h2 {
+    margin: 0;
+    font-size: 18px;
+    line-height: 1.3;
+}
+.polymarket-card__head p {
+    margin: 6px 0 0;
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.45;
+}
+.polymarket-card__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    margin: 14px 0;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+.polymarket-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px;
+}
+.polymarket-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 58px;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    text-align: left;
+    transition: border-color .15s, background .15s;
+}
+.polymarket-option:hover:not(:disabled) {
+    border-color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+.polymarket-option:disabled { cursor: default; opacity: .72; }
+.polymarket-option__name { overflow-wrap: anywhere; }
+.polymarket-option__stats {
+    display: grid;
+    justify-items: end;
+    flex: 0 0 auto;
+    color: var(--primary);
+}
+.polymarket-option__stats small { color: var(--text-muted); }
+.polymarket-number {
+    padding-top: 2px;
+}
+.polymarket-heat {
+    display: flex;
+    height: 14px;
+    overflow: hidden;
+    border-radius: 3px;
+    background: var(--border);
+}
+.polymarket-heat__bin {
+    flex: 1 1 0;
+    min-width: 0;
+    background: var(--heat);
+    border-right: 1px solid color-mix(in srgb, var(--bg-card) 35%, transparent);
+}
+.polymarket-heat__bin:last-child { border-right: 0; }
+.polymarket-heat__labels,
+.polymarket-heat__legend {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+.polymarket-heat__labels { margin-top: 4px; }
+.polymarket-heat__legend { margin-top: 10px; }
+.polymarket-number-bet {
+    display: flex;
+    gap: 8px;
+    max-width: 360px;
+    margin-top: 14px;
+}
+.polymarket-number-bet .form-input { min-width: 0; }
+.polymarket-card__my-bets {
+    display: flex;
+    gap: 7px;
+    align-items: flex-start;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 13px;
+}
+.polymarket-card__my-bets > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+}
+.polymarket-card__result {
+    margin-top: 14px;
+    color: var(--success);
+}
+.polymarket-card__admin-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+@media (max-width: 720px) {
+    .polymarket-page .page__header { align-items: flex-start; }
+    .polymarket-balance { align-self: flex-start; }
+    .polymarket-admin__grid { grid-template-columns: 1fr; gap: 0; }
+    .polymarket-card { padding: 14px; }
+    .polymarket-card__head { display: block; }
+    .polymarket-card__head .badge { display: inline-flex; margin-top: 10px; }
+    .polymarket-options { grid-template-columns: 1fr; }
+    .polymarket-number-bet { max-width: none; }
+    .polymarket-heat__legend { font-size: 11px; }
+}

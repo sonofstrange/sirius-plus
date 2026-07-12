@@ -5,6 +5,7 @@ import base64
 import datetime as dt
 import json
 import logging
+import math
 import os
 import time
 import urllib.parse
@@ -809,6 +810,13 @@ async def coins_info_page(request: Request):
     return _render("coins_info.html", request)
 
 
+@app.get("/polymarket", response_class=HTMLResponse)
+async def polymarket_page(request: Request):
+    if not get_user_id(request):
+        return RedirectResponse(url="/")
+    return _render("polymarket.html", request)
+
+
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_page(request: Request):
     user_id = get_user_id(request)
@@ -1032,6 +1040,248 @@ async def api_refresh_token(request: Request):
 
     else:
         return JSONResponse({"ok": False, "error": "Неизвестный тип входа"}, status_code=400)
+
+
+def _prediction_market_view(market, viewer_uid: str) -> dict:
+    try:
+        options = json.loads(market["options_json"])
+    except (TypeError, json.JSONDecodeError):
+        options = []
+    bets = storage.get_prediction_bets(int(market["id"]))
+    total_pool = sum(int(bet["amount"]) for bet in bets)
+    now = int(time.time())
+    betting_open = (
+        market["status"] == "open"
+        and (not market["end_at"] or now < market["end_at"])
+        and (not market["betting_closes_at"] or now < market["betting_closes_at"])
+    )
+    view = {
+        "id": market["id"],
+        "title": market["title"],
+        "description": market["description"],
+        "type": market["market_type"],
+        "status": market["status"],
+        "end_at": market["end_at"],
+        "betting_closes_at": market["betting_closes_at"],
+        "created_at": market["created_at"],
+        "correct_option": market["correct_option"],
+        "correct_value": market["correct_value"],
+        "total_pool": total_pool,
+        "bet_count": len(bets),
+        "betting_open": betting_open,
+        "my_bets": [
+            {
+                "selection": bet["selection"],
+                "value": bet["value"],
+                "amount": bet["amount"],
+                "payout": bet["payout"],
+            }
+            for bet in bets if bet["uid"] == viewer_uid
+        ],
+    }
+    if market["market_type"] == "choice":
+        totals = {option: 0 for option in options}
+        for bet in bets:
+            totals[bet["selection"]] = totals.get(bet["selection"], 0) + int(bet["amount"])
+        view["options"] = [
+            {
+                "name": option,
+                "pool": totals.get(option, 0),
+                "multiplier": round(total_pool / totals[option], 2) if totals.get(option, 0) else 1.0,
+            }
+            for option in options
+        ]
+    else:
+        minimum = float(market["min_value"])
+        maximum = float(market["max_value"])
+        bin_count = 20
+        bins = [0] * bin_count
+        span = maximum - minimum
+        for bet in bets:
+            value = float(bet["value"])
+            index = min(bin_count - 1, max(0, int((value - minimum) / span * bin_count)))
+            bins[index] += int(bet["amount"])
+        busiest = max(bins, default=0)
+        view.update({
+            "min_value": minimum,
+            "max_value": maximum,
+            "heat_bins": [
+                {"pool": amount, "bonus": round(1 + 2 * (1 - amount / busiest), 2) if busiest else 3.0}
+                for amount in bins
+            ],
+        })
+    return view
+
+
+@app.get("/api/polymarket")
+async def api_polymarket(request: Request):
+    user_id = get_user_id(request)
+    if not user_id:
+        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
+    uid = _session_uid(user_id)
+    if not uid:
+        return JSONResponse({"ok": False, "error": "Токен не задан"}, status_code=400)
+    return JSONResponse({
+        "ok": True,
+        "coins": storage.get_coins(uid),
+        "is_admin": storage.is_admin(uid),
+        "markets": [_prediction_market_view(market, uid) for market in storage.get_prediction_markets()],
+    })
+
+
+@app.post("/api/polymarket/{market_id}/bet")
+async def api_place_polymarket_bet(market_id: int, request: Request):
+    user_id = get_user_id(request)
+    if not user_id:
+        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
+    uid = _session_uid(user_id)
+    if not uid:
+        return JSONResponse({"ok": False, "error": "Токен не задан"}, status_code=400)
+    market = storage.get_prediction_market(market_id)
+    if not market:
+        return JSONResponse({"ok": False, "error": "Рынок не найден"}, status_code=404)
+    try:
+        data = await request.json()
+        amount = int(data.get("amount", 0))
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return JSONResponse({"ok": False, "error": "Некорректная ставка"}, status_code=400)
+
+    selection = ""
+    value = None
+    if market["market_type"] == "choice":
+        selection = str(data.get("selection", "")).strip()
+        try:
+            options = json.loads(market["options_json"])
+        except json.JSONDecodeError:
+            options = []
+        if selection not in options:
+            return JSONResponse({"ok": False, "error": "Выбери вариант из списка"}, status_code=400)
+    else:
+        try:
+            value = float(data.get("value"))
+        except (ValueError, TypeError):
+            return JSONResponse({"ok": False, "error": "Введи число"}, status_code=400)
+        if not math.isfinite(value) or value < float(market["min_value"]) or value > float(market["max_value"]):
+            return JSONResponse({"ok": False, "error": "Число вне допустимого диапазона"}, status_code=400)
+        selection = f"{value:g}"
+
+    ok, error, balance = storage.place_prediction_bet(uid, market_id, selection, value, amount)
+    if not ok:
+        return JSONResponse({"ok": False, "error": error}, status_code=400)
+    return JSONResponse({"ok": True, "new_balance": balance})
+
+
+@app.post("/api/admin/polymarket")
+async def api_create_polymarket(request: Request):
+    admin_uid, denied = _require_admin(request)
+    if denied:
+        return denied
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return JSONResponse({"ok": False, "error": "Тело запроса должно быть JSON"}, status_code=400)
+    title = str(data.get("title", "")).strip()
+    description = str(data.get("description", "")).strip()
+    market_type = data.get("type")
+    if not title or len(title) > 180:
+        return JSONResponse({"ok": False, "error": "Укажи вопрос до 180 символов"}, status_code=400)
+    if market_type not in ("choice", "number"):
+        return JSONResponse({"ok": False, "error": "Неизвестный тип рынка"}, status_code=400)
+    try:
+        end_at = int(data.get("end_at") or 0)
+        betting_closes_at = int(data.get("betting_closes_at") or 0)
+    except (ValueError, TypeError):
+        return JSONResponse({"ok": False, "error": "Некорректное время"}, status_code=400)
+    now = int(time.time())
+    if end_at and end_at <= now:
+        return JSONResponse({"ok": False, "error": "Время окончания должно быть в будущем"}, status_code=400)
+    if betting_closes_at and betting_closes_at <= now:
+        return JSONResponse({"ok": False, "error": "Время приёма ставок должно быть в будущем"}, status_code=400)
+    if end_at and betting_closes_at and betting_closes_at > end_at:
+        return JSONResponse({"ok": False, "error": "Приём ставок не может закончиться позже рынка"}, status_code=400)
+
+    options_json, minimum, maximum = "[]", None, None
+    if market_type == "choice":
+        options = [str(option).strip() for option in data.get("options", []) if str(option).strip()]
+        if len(options) < 2 or len(options) > 10 or len(set(options)) != len(options):
+            return JSONResponse({"ok": False, "error": "Добавь от 2 до 10 уникальных вариантов"}, status_code=400)
+        options_json = json.dumps(options, ensure_ascii=False)
+    else:
+        try:
+            minimum = float(data.get("min_value"))
+            maximum = float(data.get("max_value"))
+        except (ValueError, TypeError):
+            return JSONResponse({"ok": False, "error": "Укажи числовой диапазон"}, status_code=400)
+        if not math.isfinite(minimum) or not math.isfinite(maximum) or minimum >= maximum:
+            return JSONResponse({"ok": False, "error": "Минимум должен быть меньше максимума"}, status_code=400)
+
+    market_id = storage.create_prediction_market(
+        title, description, market_type, options_json, minimum, maximum, end_at, betting_closes_at, admin_uid
+    )
+    return JSONResponse({"ok": True, "market_id": market_id})
+
+
+@app.post("/api/admin/polymarket/{market_id}/resolve")
+async def api_resolve_polymarket(market_id: int, request: Request):
+    admin_uid, denied = _require_admin(request)
+    if denied:
+        return denied
+    market = storage.get_prediction_market(market_id)
+    if not market:
+        return JSONResponse({"ok": False, "error": "Рынок не найден"}, status_code=404)
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return JSONResponse({"ok": False, "error": "Тело запроса должно быть JSON"}, status_code=400)
+    option, value = "", None
+    if market["market_type"] == "choice":
+        option = str(data.get("correct_option", "")).strip()
+        try:
+            options = json.loads(market["options_json"])
+        except json.JSONDecodeError:
+            options = []
+        if option not in options:
+            return JSONResponse({"ok": False, "error": "Выбери правильный вариант"}, status_code=400)
+    else:
+        try:
+            value = float(data.get("correct_value"))
+        except (ValueError, TypeError):
+            return JSONResponse({"ok": False, "error": "Укажи правильное число"}, status_code=400)
+        if not math.isfinite(value) or value < float(market["min_value"]) or value > float(market["max_value"]):
+            return JSONResponse({"ok": False, "error": "Правильное число вне диапазона"}, status_code=400)
+    ok, error, payouts = storage.resolve_prediction_market(market_id, option, value)
+    if not ok:
+        return JSONResponse({"ok": False, "error": error}, status_code=400)
+    for uid, payout in payouts:
+        recipient = storage.get_user_by_uid(uid)
+        if recipient:
+            text = (
+                f"📈 Рынок «{market['title']}» рассчитан. Ты получил {payout} Сириус Коин(ов)."
+                if payout else f"📉 Рынок «{market['title']}» рассчитан. Эта ставка не принесла коинов."
+            )
+            await web_notify(recipient, text)
+            storage.add_notification(recipient, text)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/admin/polymarket/{market_id}/cancel")
+async def api_cancel_polymarket(market_id: int, request: Request):
+    admin_uid, denied = _require_admin(request)
+    if denied:
+        return denied
+    market = storage.get_prediction_market(market_id)
+    if not market:
+        return JSONResponse({"ok": False, "error": "Рынок не найден"}, status_code=404)
+    ok, error, refunds = storage.cancel_prediction_market(market_id)
+    if not ok:
+        return JSONResponse({"ok": False, "error": error}, status_code=400)
+    for uid, refund in refunds:
+        recipient = storage.get_user_by_uid(uid)
+        if recipient:
+            text = f"↩️ Рынок «{market['title']}» отменён. Возвращено {refund} Сириус Коин(ов)."
+            await web_notify(recipient, text)
+            storage.add_notification(recipient, text)
+    return JSONResponse({"ok": True})
 
 
 @app.get("/api/coins/balance")

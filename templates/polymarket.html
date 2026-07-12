@@ -1,0 +1,294 @@
+{% extends "base.html" %}
+{% block title %}Сириус Полимаркет — Пирожковый Диспетчер{% endblock %}
+{% block content %}
+<div class="page polymarket-page">
+    <div class="page__header">
+        <div>
+            <h1 class="page__title">Сириус Полимаркет</h1>
+            <p class="polymarket-page__subtitle">Ставки Сириус Коинами на прогнозы участников.</p>
+        </div>
+        <div class="polymarket-balance">Доступно: <strong id="polymarket-balance">—</strong> 🪙</div>
+    </div>
+
+    {% if is_admin %}
+    <details class="polymarket-admin" id="market-admin">
+        <summary><span class="material-symbols-outlined">add_chart</span> Создать рынок</summary>
+        <div class="polymarket-admin__body">
+            <div class="form-group">
+                <label class="form-label" for="market-title">Вопрос</label>
+                <input class="form-input" id="market-title" maxlength="180" placeholder="Например: Во сколько закончится мероприятие?">
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="market-description">Описание</label>
+                <textarea class="form-textarea" id="market-description" rows="2" placeholder="Необязательно"></textarea>
+            </div>
+            <div class="polymarket-admin__grid">
+                <div class="form-group">
+                    <label class="form-label" for="market-type">Тип</label>
+                    <select class="form-select" id="market-type" onchange="toggleMarketType()">
+                        <option value="choice">Выбор варианта</option>
+                        <option value="number">Число</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="market-end">Окончание рынка</label>
+                    <input class="form-input" id="market-end" type="datetime-local">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="market-betting-close">Закрыть ставки</label>
+                    <input class="form-input" id="market-betting-close" type="datetime-local">
+                </div>
+            </div>
+            <p class="form-hint">Время необязательно. Без него рынок завершит админ вручную.</p>
+            <div id="choice-settings" class="form-group">
+                <label class="form-label" for="market-options">Варианты, по одному на строку</label>
+                <textarea class="form-textarea" id="market-options" rows="4" placeholder="Да&#10;Нет"></textarea>
+            </div>
+            <div id="number-settings" class="polymarket-admin__grid" hidden>
+                <div class="form-group">
+                    <label class="form-label" for="market-min">Минимум</label>
+                    <input class="form-input" id="market-min" type="number" step="any" placeholder="0">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="market-max">Максимум</label>
+                    <input class="form-input" id="market-max" type="number" step="any" placeholder="100">
+                </div>
+            </div>
+            <button class="btn btn-primary" onclick="createMarket()">Создать рынок</button>
+            <div class="alert" id="market-create-result" hidden></div>
+        </div>
+    </details>
+    {% endif %}
+
+    <div id="markets-list" class="polymarket-list">
+        <div class="loading">Загрузка рынков...</div>
+    </div>
+</div>
+
+<script>
+let currentMarkets = [];
+
+function esc(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
+}
+
+function formatDate(timestamp) {
+    if (!timestamp) return 'без срока';
+    return new Date(timestamp * 1000).toLocaleString('ru-RU', {
+        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+    });
+}
+
+function marketStatus(market) {
+    if (market.status === 'resolved') return '<span class="badge badge-success">Рассчитан</span>';
+    if (market.status === 'cancelled') return '<span class="badge badge-danger">Отменён</span>';
+    if (!market.betting_open) return '<span class="badge badge-warning">Ставки закрыты</span>';
+    return '<span class="badge badge-primary">Ставки открыты</span>';
+}
+
+function renderMyBets(market) {
+    if (!market.my_bets.length) return '';
+    const items = market.my_bets.map(bet => {
+        const target = market.type === 'number' ? bet.value : bet.selection;
+        const result = market.status === 'resolved' ? ` → ${bet.payout} 🪙` : '';
+        return `<span>${esc(target)}: ${bet.amount} 🪙${result}</span>`;
+    }).join('');
+    return `<div class="polymarket-card__my-bets"><span class="material-symbols-outlined">account_circle</span><div>${items}</div></div>`;
+}
+
+function renderChoiceMarket(market) {
+    const disabled = market.betting_open ? '' : ' disabled';
+    return `<div class="polymarket-options">${market.options.map(option => `
+        <button class="polymarket-option" data-market-id="${market.id}" data-choice="${esc(option.name)}"${disabled}>
+            <span class="polymarket-option__name">${esc(option.name)}</span>
+            <span class="polymarket-option__stats"><strong>×${option.multiplier.toFixed(2)}</strong><small>${option.pool} 🪙</small></span>
+        </button>
+    `).join('')}</div>`;
+}
+
+function renderNumberMarket(market) {
+    const heat = market.heat_bins.map(bin => {
+        const hue = Math.round(((bin.bonus - 1) / 2) * 120);
+        return `<span class="polymarket-heat__bin" style="--heat:hsl(${hue} 66% 44%)" title="В пуле ${bin.pool} 🪙 · потенциальный бонус ×${bin.bonus.toFixed(2)}"></span>`;
+    }).join('');
+    const controls = market.betting_open ? `
+        <div class="polymarket-number-bet">
+            <input class="form-input" id="number-value-${market.id}" type="number" min="${market.min_value}" max="${market.max_value}" step="any" placeholder="${market.min_value}–${market.max_value}">
+            <button class="btn btn-primary btn-sm" data-number-market="${market.id}">Поставить</button>
+        </div>` : '';
+    return `<div class="polymarket-number">
+        <div class="polymarket-heat">${heat}</div>
+        <div class="polymarket-heat__labels"><span>${market.min_value}</span><span>${market.max_value}</span></div>
+        <div class="polymarket-heat__legend"><span>Много ставок · ×1</span><span>Редкая позиция · до ×3</span></div>
+        ${controls}
+    </div>`;
+}
+
+function adminActions(market) {
+    if (!window.IS_POLYMARKET_ADMIN || market.status !== 'open') return '';
+    return `<div class="polymarket-card__admin-actions">
+        <button class="btn btn-outline btn-sm" data-resolve-market="${market.id}">Рассчитать</button>
+        <button class="btn btn-outline btn-sm" data-cancel-market="${market.id}">Отменить и вернуть</button>
+    </div>`;
+}
+
+function renderMarkets(markets) {
+    const container = document.getElementById('markets-list');
+    if (!markets.length) {
+        container.innerHTML = '<div class="empty-state"><span class="material-symbols-outlined">query_stats</span><h3>Рынков пока нет</h3><p>Первый прогноз может создать администратор.</p></div>';
+        return;
+    }
+    container.innerHTML = markets.map(market => {
+        const deadline = market.betting_closes_at
+            ? `Ставки до ${formatDate(market.betting_closes_at)}`
+            : market.end_at ? `Рынок до ${formatDate(market.end_at)}` : 'Срок не задан';
+        const result = market.status === 'resolved'
+            ? `<div class="polymarket-card__result">Ответ: <strong>${esc(market.type === 'choice' ? market.correct_option : market.correct_value)}</strong></div>`
+            : '';
+        return `<article class="polymarket-card">
+            <div class="polymarket-card__head">
+                <div><h2>${esc(market.title)}</h2>${market.description ? `<p>${esc(market.description)}</p>` : ''}</div>
+                ${marketStatus(market)}
+            </div>
+            <div class="polymarket-card__meta"><span>${deadline}</span><span>Пул ${market.total_pool} 🪙</span><span>${market.bet_count} ставок</span></div>
+            ${market.type === 'choice' ? renderChoiceMarket(market) : renderNumberMarket(market)}
+            ${result}${renderMyBets(market)}${adminActions(market)}
+        </article>`;
+    }).join('');
+    container.querySelectorAll('[data-market-id]').forEach(button => {
+        button.addEventListener('click', () => placeChoice(Number(button.dataset.marketId), button.dataset.choice));
+    });
+    container.querySelectorAll('[data-number-market]').forEach(button => {
+        button.addEventListener('click', () => placeNumber(Number(button.dataset.numberMarket)));
+    });
+    container.querySelectorAll('[data-resolve-market]').forEach(button => {
+        button.addEventListener('click', () => resolveMarket(Number(button.dataset.resolveMarket)));
+    });
+    container.querySelectorAll('[data-cancel-market]').forEach(button => {
+        button.addEventListener('click', () => cancelMarket(Number(button.dataset.cancelMarket)));
+    });
+}
+
+async function loadMarkets() {
+    const container = document.getElementById('markets-list');
+    try {
+        const response = await fetch('/api/polymarket');
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error || 'Не удалось загрузить рынки');
+        currentMarkets = data.markets || [];
+        window.IS_POLYMARKET_ADMIN = Boolean(data.is_admin);
+        document.getElementById('polymarket-balance').textContent = data.coins;
+        renderMarkets(currentMarkets);
+    } catch (error) {
+        container.innerHTML = `<div class="alert alert-error">${esc(error.message)}</div>`;
+    }
+}
+
+async function placeBet(marketId, payload) {
+    const amount = await dlgPrompt('Ставка', 'Сколько Сириус Коинов поставить?', '1', {type: 'number', value: '1'});
+    if (!amount) return;
+    payload.amount = Number(amount);
+    try {
+        const response = await fetch(`/api/polymarket/${marketId}/bet`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error || 'Не удалось поставить');
+        await loadMarkets();
+    } catch (error) {
+        dlgAlert('Ставка не принята', error.message);
+    }
+}
+
+function placeChoice(marketId, selection) {
+    placeBet(marketId, {selection});
+}
+
+function placeNumber(marketId) {
+    const input = document.getElementById(`number-value-${marketId}`);
+    if (!input.value) {
+        dlgAlert('Нужно число', 'Введи значение для прогноза.');
+        return;
+    }
+    placeBet(marketId, {value: Number(input.value)});
+}
+
+function toggleMarketType() {
+    const isNumber = document.getElementById('market-type').value === 'number';
+    document.getElementById('choice-settings').hidden = isNumber;
+    document.getElementById('number-settings').hidden = !isNumber;
+}
+
+function unixFromInput(id) {
+    const value = document.getElementById(id).value;
+    return value ? Math.floor(new Date(value).getTime() / 1000) : 0;
+}
+
+async function createMarket() {
+    const type = document.getElementById('market-type').value;
+    const payload = {
+        title: document.getElementById('market-title').value.trim(),
+        description: document.getElementById('market-description').value.trim(),
+        type,
+        end_at: unixFromInput('market-end'),
+        betting_closes_at: unixFromInput('market-betting-close'),
+        options: document.getElementById('market-options').value.split('\n'),
+        min_value: document.getElementById('market-min').value,
+        max_value: document.getElementById('market-max').value,
+    };
+    const result = document.getElementById('market-create-result');
+    result.hidden = false;
+    result.className = 'alert';
+    result.textContent = 'Создаю рынок...';
+    try {
+        const response = await fetch('/api/admin/polymarket', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error || 'Не удалось создать рынок');
+        result.className = 'alert alert-success';
+        result.textContent = 'Рынок создан.';
+        document.getElementById('market-title').value = '';
+        document.getElementById('market-description').value = '';
+        document.getElementById('market-options').value = '';
+        await loadMarkets();
+    } catch (error) {
+        result.className = 'alert alert-error';
+        result.textContent = error.message;
+    }
+}
+
+async function resolveMarket(marketId) {
+    const market = currentMarkets.find(item => item.id === marketId);
+    if (!market) return;
+    const answer = await dlgPrompt('Рассчитать рынок', market.type === 'choice' ? 'Введи правильный вариант:' : 'Введи правильное число:', 'Ответ');
+    if (answer === null || answer === '') return;
+    const payload = market.type === 'choice' ? {correct_option: answer.trim()} : {correct_value: Number(answer)};
+    try {
+        const response = await fetch(`/api/admin/polymarket/${marketId}/resolve`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error || 'Не удалось рассчитать рынок');
+        await loadMarkets();
+    } catch (error) {
+        dlgAlert('Ошибка расчёта', error.message);
+    }
+}
+
+async function cancelMarket(marketId) {
+    if (!await dlgConfirm('Отменить рынок', 'Все ставки будут возвращены участникам.')) return;
+    try {
+        const response = await fetch(`/api/admin/polymarket/${marketId}/cancel`, {method: 'POST'});
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error || 'Не удалось отменить рынок');
+        await loadMarkets();
+    } catch (error) {
+        dlgAlert('Ошибка отмены', error.message);
+    }
+}
+
+loadMarkets();
+setInterval(loadMarkets, 30000);
+</script>
+{% endblock %}
