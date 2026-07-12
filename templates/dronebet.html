@@ -2,12 +2,12 @@
 {% block title %}ДронБет — Пирожковый Диспетчер{% endblock %}
 {% block content %}
 <div class="page dronebet-page">
-    <div class="page__header">
+    <div class="dronebet-topbar">
         <div>
-            <h1 class="page__title">Сириус Полимаркет</h1>
-            <p class="polymarket-page__subtitle">Прогноз длительности угрозы БПЛА по данным Sirius Radar.</p>
+            <span class="dronebet-topbar__eyebrow">Полимаркет</span>
+            <h1 class="page__title">ДронБет</h1>
         </div>
-        <div class="polymarket-balance">Доступно: <strong id="dronebet-balance">—</strong> 🪙</div>
+        <div class="dronebet-balance"><span>Баланс</span><strong id="dronebet-balance">—</strong><span>🪙</span></div>
     </div>
     <nav class="market-subtabs" aria-label="Раздел Полимаркета">
         <a class="market-subtabs__item" href="/polymarket">Полимаркет</a>
@@ -15,34 +15,50 @@
     </nav>
 
     <section id="drone-status" class="drone-status drone-status--clear">
+        <div class="drone-status__grid" aria-hidden="true"></div>
         <div class="drone-status__content">
-            <div class="drone-status__eyebrow"><span id="drone-status-icon" class="material-symbols-outlined">shield</span><span id="drone-status-title">Чисто</span></div>
-            <div id="drone-status-timer" class="drone-status__timer">Обновляю статус...</div>
+            <div class="drone-status__eyebrow"><span id="drone-status-icon" class="material-symbols-outlined">shield</span><span id="drone-status-title">Небо чистое</span></div>
+            <div id="drone-status-timer" class="drone-status__timer">Синхронизация...</div>
             <div id="drone-status-message" class="drone-status__message"></div>
         </div>
         <div class="drone-status__art" aria-hidden="true"><span class="material-symbols-outlined">drone</span><span class="material-symbols-outlined">drone</span><span class="material-symbols-outlined">drone</span></div>
     </section>
 
-    <section class="dronebet-section" aria-labelledby="dronebet-market-title">
-        <div class="dronebet-section__head">
-            <h2 id="dronebet-market-title">Текущая ставка</h2>
-            <span id="dronebet-market-meta" class="dronebet-section__meta"></span>
-        </div>
-        <div id="dronebet-current" class="dronebet-current">
-            <div class="loading">Загрузка ДронБета...</div>
-        </div>
-    </section>
+    <div class="dronebet-board">
+        <section class="dronebet-market" aria-labelledby="dronebet-market-title">
+            <div class="dronebet-section__head">
+                <div><span class="dronebet-section__kicker">Прогноз</span><h2 id="dronebet-market-title">Длительность угрозы</h2></div>
+                <span id="dronebet-market-meta" class="dronebet-section__meta"></span>
+            </div>
+            <div id="dronebet-current" class="dronebet-current">
+                <div class="loading">Загрузка ДронБета...</div>
+            </div>
+        </section>
 
-    <section class="dronebet-section" aria-labelledby="dronebet-history-title">
-        <div class="dronebet-section__head">
-            <h2 id="dronebet-history-title">История угроз</h2>
-        </div>
-        <div id="dronebet-history" class="dronebet-history"></div>
-    </section>
+        <section class="dronebet-history-panel" aria-labelledby="dronebet-history-title">
+            <div class="dronebet-section__head">
+                <div><span class="dronebet-section__kicker">Архив</span><h2 id="dronebet-history-title">Последние угрозы</h2></div>
+            </div>
+            <div id="dronebet-history" class="dronebet-history"></div>
+        </section>
+    </div>
 </div>
+
+<div id="dronebet-bet-overlay" class="dronebet-bet-overlay" hidden></div>
+<section id="dronebet-bet-sheet" class="dronebet-bet-sheet" aria-label="Оформление ставки" hidden>
+    <div class="dronebet-bet-sheet__handle"></div>
+    <button class="dronebet-bet-sheet__close" type="button" onclick="closeBetSheet()" aria-label="Закрыть"><span class="material-symbols-outlined">close</span></button>
+    <span class="dronebet-section__kicker">Ставка на</span>
+    <h2 id="dronebet-bet-choice">—</h2>
+    <label class="dronebet-bet-sheet__label" for="dronebet-bet-amount">Сириус Коины</label>
+    <div class="dronebet-bet-sheet__input"><input id="dronebet-bet-amount" type="number" min="1" value="1" inputmode="numeric"><span>🪙</span></div>
+    <div class="dronebet-bet-sheet__quick"><button type="button" data-amount="1">1</button><button type="button" data-amount="3">3</button><button type="button" data-amount="5">5</button></div>
+    <button id="dronebet-bet-submit" class="btn btn-primary btn-block" type="button" onclick="submitBet()">Поставить</button>
+</section>
 
 <script>
 let dronebetData = null;
+let betSelection = null;
 
 function esc(value) {
     return String(value ?? '').replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
@@ -53,13 +69,11 @@ function duration(seconds) {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const rest = seconds % 60;
-    return hours ? `${hours}ч ${minutes}м` : `${minutes}м ${String(rest).padStart(2, '0')}с`;
+    return hours ? `${hours}ч ${String(minutes).padStart(2, '0')}м` : `${minutes}м ${String(rest).padStart(2, '0')}с`;
 }
 
 function formatDate(timestamp) {
-    return new Date(timestamp * 1000).toLocaleString('ru-RU', {
-        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
-    });
+    return new Date(timestamp * 1000).toLocaleString('ru-RU', {day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'});
 }
 
 function updateStatus() {
@@ -69,66 +83,90 @@ function updateStatus() {
     const elapsed = status.since ? Math.floor(Date.now() / 1000) - status.since : 0;
     root.className = `drone-status ${status.active ? 'drone-status--active' : 'drone-status--clear'}`;
     document.getElementById('drone-status-icon').textContent = status.active ? 'drone' : 'shield';
-    document.getElementById('drone-status-title').textContent = status.active ? 'Атака БПЛА' : 'Чисто';
+    document.getElementById('drone-status-title').textContent = status.active ? 'Угроза БПЛА' : 'Небо чистое';
     document.getElementById('drone-status-timer').textContent = status.since
-        ? (status.active ? `Угроза длится ${duration(elapsed)}` : `Без угроз уже ${duration(elapsed)}`)
-        : 'Ожидаю первый сигнал Sirius Radar';
+        ? (status.active ? `Идёт ${duration(elapsed)}` : `Без угроз ${duration(elapsed)}`)
+        : 'Ожидаю данные Radar';
     document.getElementById('drone-status-message').textContent = status.active ? (status.message || 'Sirius Radar сообщил об угрозе.') : '';
 }
 
 function renderMarket(market) {
+    const root = document.getElementById('dronebet-current');
     if (!market) {
-        document.getElementById('dronebet-current').innerHTML = `
-            <div class="dronebet-empty"><span class="material-symbols-outlined">shield</span><p>Сейчас угрозы нет. Новый рынок появится автоматически при сигнале Radar.</p></div>`;
+        root.innerHTML = '<div class="dronebet-empty"><span class="material-symbols-outlined">hourglass_empty</span><strong>Нет активного рынка</strong></div>';
         document.getElementById('dronebet-market-meta').textContent = '';
         return;
     }
-    document.getElementById('dronebet-market-meta').textContent = `${market.total_pool} 🪙 в пуле · ${market.bet_count} ставок`;
+    document.getElementById('dronebet-market-meta').textContent = `${market.total_pool} 🪙 · ${market.bet_count} ставок`;
+    const mySelections = new Set(market.my_bets.map(bet => bet.selection));
     const disabled = market.betting_open ? '' : ' disabled';
-    const myBets = market.my_bets.length ? `<div class="dronebet-my-bets">Твои ставки: ${market.my_bets.map(bet => `${esc(bet.selection)} · ${bet.amount} 🪙`).join(' · ')}</div>` : '';
-    document.getElementById('dronebet-current').innerHTML = `
-        <p class="dronebet-current__hint">Ставки принимаются до отбоя. После него рынок рассчитывается автоматически.</p>
-        <div class="polymarket-options">${market.options.map(option => `
-            <button class="dronebet-option" data-choice="${esc(option.name)}"${disabled}>
-                <span class="dronebet-option__name">${esc(option.name)}</span>
-                <span class="dronebet-option__odds">×${option.multiplier.toFixed(2)}</span>
-                <span class="dronebet-option__pool">${option.pool} 🪙</span>
-            </button>`).join('')}</div>${myBets}`;
-    document.querySelectorAll('#dronebet-current [data-choice]').forEach(button => {
-        button.addEventListener('click', () => placeBet(market.id, button.dataset.choice));
+    const options = market.options.map(option => `
+        <button class="dronebet-option${mySelections.has(option.name) ? ' dronebet-option--mine' : ''}" data-choice="${esc(option.name)}"${disabled}>
+            <span class="dronebet-option__name">${esc(option.name)}</span>
+            <span class="dronebet-option__odds">×${option.multiplier.toFixed(2)}</span>
+            <span class="dronebet-option__pool">${option.pool} 🪙</span>
+        </button>`).join('');
+    const myBets = market.my_bets.length ? `<div class="dronebet-my-bets"><span class="material-symbols-outlined">person</span>${market.my_bets.map(bet => `${esc(bet.selection)} · ${bet.amount} 🪙`).join('<span class="dronebet-my-bets__dot">•</span>')}</div>` : '';
+    root.innerHTML = `<p class="dronebet-current__hint">Выбери диапазон и поставь Сириус Коины до отбоя.</p><div class="dronebet-options">${options}</div>${myBets}`;
+    root.querySelectorAll('[data-choice]').forEach(button => {
+        button.addEventListener('click', () => openBetSheet(market.id, button.dataset.choice));
     });
 }
 
 function renderHistory(history) {
     const root = document.getElementById('dronebet-history');
     if (!history.length) {
-        root.innerHTML = '<div class="dronebet-empty"><span class="material-symbols-outlined">history</span><p>Завершённых угроз пока нет.</p></div>';
+        root.innerHTML = '<div class="dronebet-history__empty">История появится после первой завершённой угрозы.</div>';
         return;
     }
     root.innerHTML = history.map(item => {
         const market = item.market;
-        const payout = market && market.my_bets.length ? market.my_bets.map(bet => `Твоя выплата: ${bet.payout} 🪙`).join(' · ') : '';
-        const source = item.source_url ? `<a href="${esc(item.source_url)}" target="_blank" rel="noopener">Источник</a>` : '';
+        const payout = market && market.my_bets.length ? market.my_bets.reduce((sum, bet) => sum + bet.payout, 0) : null;
         return `<article class="dronebet-history__item">
-            <span class="material-symbols-outlined">history</span>
-            <div><strong>${formatDate(item.started_at)} · ${duration(item.duration_seconds)}</strong>
-                <p>Правильный вариант: <b>${esc(item.result_option)}</b>${payout ? ` · ${payout}` : ''}</p>${source}</div>
+            <span class="dronebet-history__dot"></span>
+            <div class="dronebet-history__main"><strong>${formatDate(item.started_at)}</strong><span>${duration(item.duration_seconds)}</span></div>
+            <div class="dronebet-history__result"><span>${esc(item.result_option)}</span>${payout !== null ? `<b class="${payout ? 'is-win' : ''}">${payout ? '+' : ''}${payout} 🪙</b>` : ''}</div>
         </article>`;
     }).join('');
 }
 
-async function placeBet(marketId, selection) {
-    const answer = await dlgPrompt('Ставка ДронБет', 'Сколько Сириус Коинов поставить?', '1', {type: 'number', value: '1'});
-    if (answer === null || answer === '') return;
+function openBetSheet(marketId, choice) {
+    betSelection = {marketId, choice};
+    document.getElementById('dronebet-bet-choice').textContent = choice;
+    document.getElementById('dronebet-bet-amount').value = '1';
+    document.getElementById('dronebet-bet-overlay').hidden = false;
+    document.getElementById('dronebet-bet-sheet').hidden = false;
+    requestAnimationFrame(() => document.getElementById('dronebet-bet-sheet').classList.add('is-open'));
+}
+
+function closeBetSheet() {
+    document.getElementById('dronebet-bet-sheet').classList.remove('is-open');
+    document.getElementById('dronebet-bet-overlay').hidden = true;
+    setTimeout(() => document.getElementById('dronebet-bet-sheet').hidden = true, 180);
+    betSelection = null;
+}
+
+async function submitBet() {
+    if (!betSelection) return;
+    const amount = Number(document.getElementById('dronebet-bet-amount').value);
+    if (!Number.isInteger(amount) || amount < 1) {
+        dlgAlert('Проверь ставку', 'Укажи целое число больше нуля.');
+        return;
+    }
+    const button = document.getElementById('dronebet-bet-submit');
+    button.disabled = true;
     try {
-        const response = await fetch(`/api/polymarket/${marketId}/bet`, {
-            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({selection, amount: Number(answer)})
+        const response = await fetch(`/api/polymarket/${betSelection.marketId}/bet`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({selection: betSelection.choice, amount})
         });
         const data = await response.json();
         if (!data.ok) throw new Error(data.error || 'Не удалось поставить');
+        closeBetSheet();
         await loadDronebet();
     } catch (error) {
         dlgAlert('Ставка не принята', error.message);
+    } finally {
+        button.disabled = false;
     }
 }
 
@@ -147,6 +185,11 @@ async function loadDronebet() {
     }
 }
 
+document.getElementById('dronebet-bet-overlay').addEventListener('click', closeBetSheet);
+document.querySelectorAll('[data-amount]').forEach(button => button.addEventListener('click', () => {
+    document.getElementById('dronebet-bet-amount').value = button.dataset.amount;
+}));
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && betSelection) closeBetSheet(); });
 loadDronebet();
 setInterval(updateStatus, 1000);
 setInterval(loadDronebet, 10000);
