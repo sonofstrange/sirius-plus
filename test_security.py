@@ -74,16 +74,29 @@ class SecurityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(admin_uid)
         self.assertEqual(denied.status_code, 403)
 
-    async def test_security_migration_invalidates_existing_sessions_once(self):
+    async def test_verified_admin_session_keeps_access(self):
+        token = "trusted-token"
+        storage.save_token("admin", token)
+        storage.set_user_uid("admin", "admin")
+        storage.add_admin("admin")
+        storage.mark_token_verified("admin", token)
+        session_id = storage.create_session_for_user("admin")
+        request = _Request({})
+        request.cookies = {"session_id": session_id}
+
+        admin_uid, denied = main._require_admin(request)
+
+        self.assertEqual(admin_uid, "admin")
+        self.assertIsNone(denied)
+
+    async def test_security_update_preserves_existing_sessions(self):
         session_id, _ = storage.create_session()
         login_code, _ = storage.create_login_code("legacy-user")
-        with storage.get_conn() as conn:
-            conn.execute("DELETE FROM app_meta WHERE key='sessions_invalidated_after_token_validation'")
 
         storage.init_db()
 
-        self.assertIsNone(storage.get_user_by_session(session_id))
-        self.assertIsNone(storage.consume_login_code(login_code))
+        self.assertIsNotNone(storage.get_user_by_session(session_id))
+        self.assertEqual(storage.consume_login_code(login_code), "legacy-user")
 
 
 if __name__ == "__main__":

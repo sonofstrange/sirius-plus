@@ -115,6 +115,19 @@ async def web_notify(user_id: str, text: str, ntype: str = "info"):
     log.info("NOTIFY %s [%s]: %s", user_id, ntype, text)
 
 
+async def _verify_existing_admin_tokens(client: SiriusClient):
+    """Trust pre-existing admin sessions only after Sirius accepts their stored token."""
+    for user_id in storage.get_admin_users_with_tokens():
+        token = storage.get_token(user_id)
+        if not token:
+            continue
+        try:
+            await asyncio.wait_for(client.fetch_schedule(token=token), timeout=15)
+            storage.mark_token_verified(user_id, token)
+        except Exception as e:
+            log.warning("Admin token verification failed for %s: %s", user_id, _friendly_error(e))
+
+
 def _get_cached(key: str) -> list | None:
     now = time.time()
     entry = _schedule_cache.get(key)
@@ -297,6 +310,7 @@ async def lifespan(app: FastAPI):
     try:
         await _sirius_client.start()
         log.info("Sirius браузер запущен")
+        await _verify_existing_admin_tokens(_sirius_client)
     except Exception as e:
         log.error("Не удалось запустить Sirius браузер: %s", e)
         _sirius_client = None
@@ -388,11 +402,14 @@ def _require_admin(request: Request) -> tuple[str | None, JSONResponse | None]:
     user_id = get_user_id(request)
     if not user_id:
         return None, JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
-    uid = _session_uid(user_id)
-    if not uid:
+    token = storage.get_token(user_id)
+    if not token:
         return None, JSONResponse({"ok": False, "error": "Токен не задан"}, status_code=400)
+    uid = storage.get_user_uid(user_id)
     if not storage.is_admin(uid):
         return None, JSONResponse({"ok": False, "error": "Доступ запрещён"}, status_code=403)
+    if not storage.is_token_verified(user_id, token):
+        return None, JSONResponse({"ok": False, "error": "Токен администратора ещё не подтверждён Sirius"}, status_code=403)
     return uid, None
 
 
@@ -838,6 +855,7 @@ async def api_set_token(request: Request):
         user_id = _resolve_uid_session(request, uid, user_id, session_id)
     storage.save_token(user_id, token)
     storage.set_user_uid(user_id, uid)
+    storage.mark_token_verified(user_id, token)
     storage.set_login_type(user_id, "token")
 
     storage.ensure_coins(uid)
@@ -899,6 +917,7 @@ async def api_login(request: Request):
 
     storage.save_token(user_id, token)
     storage.set_user_uid(user_id, uid)
+    storage.mark_token_verified(user_id, token)
     storage.save_login_credentials(user_id, email, password)
 
     storage.ensure_coins(uid)
@@ -986,6 +1005,7 @@ async def api_refresh_token(request: Request):
             return JSONResponse({"ok": False, "error": "Sirius не успел завершить вход. Возможно, сайт отвечает медленно — попробуй ещё раз."}, status_code=503)
 
         storage.save_token(user_id, token)
+        storage.mark_token_verified(user_id, token)
         storage.set_last_token_refresh(user_id)
         return JSONResponse({"ok": True, "method": "auto"})
 

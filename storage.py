@@ -216,10 +216,12 @@ def init_db():
                 created_at   INTEGER NOT NULL
             );
 
-            CREATE TABLE IF NOT EXISTS app_meta (
-                key          TEXT PRIMARY KEY,
-                value        TEXT NOT NULL
+            CREATE TABLE IF NOT EXISTS token_verifications (
+                user_id      TEXT PRIMARY KEY,
+                token_hash   TEXT NOT NULL,
+                verified_at  INTEGER NOT NULL
             );
+
         """)
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(watchlist)").fetchall()]
         if "event_start" not in cols:
@@ -269,17 +271,6 @@ def init_db():
             conn.execute("ALTER TABLE feedback_messages ADD COLUMN user_hidden INTEGER NOT NULL DEFAULT 0")
         if "admin_hidden" not in feedback_cols:
             conn.execute("ALTER TABLE feedback_messages ADD COLUMN admin_hidden INTEGER NOT NULL DEFAULT 0")
-
-        security_fix = conn.execute(
-            "SELECT value FROM app_meta WHERE key='sessions_invalidated_after_token_validation'"
-        ).fetchone()
-        if not security_fix:
-            conn.execute("DELETE FROM sessions")
-            conn.execute("DELETE FROM login_codes")
-            conn.execute(
-                "INSERT INTO app_meta (key, value) VALUES (?, ?)",
-                ("sessions_invalidated_after_token_validation", str(int(time.time()))),
-            )
 
 
 @contextmanager
@@ -384,6 +375,27 @@ def save_token(user_id: str, token: str):
                  token_saved_at=excluded.token_saved_at""",
             (user_id, encrypted, int(time.time()), int(time.time())),
         )
+        conn.execute("DELETE FROM token_verifications WHERE user_id=?", (user_id,))
+
+
+def mark_token_verified(user_id: str, token: str):
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO token_verifications (user_id, token_hash, verified_at)
+               VALUES (?, ?, ?)
+               ON CONFLICT(user_id) DO UPDATE SET
+                 token_hash=excluded.token_hash,
+                 verified_at=excluded.verified_at""",
+            (user_id, hashlib.sha256(token.encode()).hexdigest(), int(time.time())),
+        )
+
+
+def is_token_verified(user_id: str, token: str) -> bool:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT token_hash FROM token_verifications WHERE user_id=?", (user_id,)
+        ).fetchone()
+        return bool(row and secrets.compare_digest(row["token_hash"], hashlib.sha256(token.encode()).hexdigest()))
 
 
 def save_login_credentials(user_id: str, email: str, password: str):
@@ -635,6 +647,16 @@ def get_all_users_with_tokens() -> list[str]:
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT user_id FROM users WHERE sirius_token IS NOT NULL AND sirius_token != ''"
+        ).fetchall()
+        return [r["user_id"] for r in rows]
+
+
+def get_admin_users_with_tokens() -> list[str]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT u.user_id
+               FROM users u JOIN admins a ON a.uid=CASE WHEN u.uid!='' THEN u.uid ELSE u.user_id END
+               WHERE u.sirius_token IS NOT NULL AND u.sirius_token!=''"""
         ).fetchall()
         return [r["user_id"] for r in rows]
 

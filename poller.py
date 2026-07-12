@@ -409,6 +409,7 @@ async def poll_user_once(
                 new_token = await client.login(email, password)
                 if new_token:
                     storage.save_token(user_id, new_token)
+                    storage.mark_token_verified(user_id, new_token)
                     token = new_token
                     await notify(user_id, "🔄 Токен Sirius автоматически обновлён.")
                 else:

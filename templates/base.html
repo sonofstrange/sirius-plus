@@ -97,7 +97,7 @@
                     </a>
                 </div>
                 <div class="footer__copyright">
-                    © Пирожковый Диспетчер, 2026 · v1.4.0 · Создатель: Николай Русанов · <a href="https://t.me/sonofstrange" target="_blank" rel="noopener noreferrer">Telegram</a> · <a href="https://discord.com/users/891370219866583091" target="_blank" rel="noopener noreferrer">Discord</a> · <a href="https://github.com/sonofstrange/sirius-plus" target="_blank" rel="noopener noreferrer">Открытый исходный код</a>
+                    © Пирожковый Диспетчер, 2026 · v1.4.1 · Создатель: Николай Русанов · <a href="https://t.me/sonofstrange" target="_blank" rel="noopener noreferrer">Telegram</a> · <a href="https://discord.com/users/891370219866583091" target="_blank" rel="noopener noreferrer">Discord</a> · <a href="https://github.com/sonofstrange/sirius-plus" target="_blank" rel="noopener noreferrer">Открытый исходный код</a>
                 </div>
             </div>
         </footer>
@@ -199,6 +199,14 @@
             </div>
             <div class="modal__body">
                 <div class="changelog">
+                    <div class="changelog__release">
+                        <div class="changelog__version">Версия 1.4.1</div>
+                        <div class="changelog__date">Защита сервера</div>
+                        <ul class="changelog__list">
+                            <li>Порт приложения доступен только локальному Nginx.</li>
+                            <li>Токен администратора подтверждается Sirius без сброса сессий.</li>
+                        </ul>
+                    </div>
                     <div class="changelog__release">
                         <div class="changelog__version">Версия 1.4.0</div>
                         <div class="changelog__date">Безопасность и перезапуск</div>
@@ -367,7 +375,7 @@
 
     <script src="/static/js/app.js?v=20260708-7"></script>
     <script>
-        const CHANGELOG_VERSION = '1.4.0';
+        const CHANGELOG_VERSION = '1.4.1';
         const CHANGELOG_STORAGE_KEY = 'sirius_seen_changelog_version';
 
         {% if user_id %}
