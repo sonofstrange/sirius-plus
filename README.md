@@ -23,4 +23,4 @@ docker compose up -d --build
 
 Python 3.12, FastAPI, Jinja2, SQLite, Playwright и Docker.
 
-Создатель: Николай Русанов ([sonofstrange](https://github.com/sonofstrange)).
+Создатель: Николай Русанов. Контакты: [Telegram](https://t.me/sonofstrange), [Discord](https://discord.com/users/891370219866583091), [GitHub](https://github.com/sonofstrange).
