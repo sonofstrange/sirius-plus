@@ -19,7 +19,9 @@ class AppBonusTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_app_bonus_is_credited_once(self):
+        self.assertFalse(storage.has_claimed_app_usage_bonus("android-user"))
         self.assertTrue(storage.claim_app_usage_bonus("android-user"))
+        self.assertTrue(storage.has_claimed_app_usage_bonus("android-user"))
         self.assertEqual(storage.get_coins_total("android-user"), storage.STARTING_COINS + 2)
         self.assertFalse(storage.claim_app_usage_bonus("android-user"))
         self.assertEqual(storage.get_coins_total("android-user"), storage.STARTING_COINS + 2)

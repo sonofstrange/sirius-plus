@@ -851,7 +851,10 @@ async def help_page(request: Request):
 
 @app.get("/coins-info", response_class=HTMLResponse)
 async def coins_info_page(request: Request):
-    return _render("coins_info.html", request)
+    user_id = get_user_id(request)
+    uid = _session_uid(user_id) if user_id else None
+    return _render("coins_info.html", request,
+                   app_bonus_claimed=bool(uid and storage.has_claimed_app_usage_bonus(uid)))
 
 
 @app.get("/polymarket", response_class=HTMLResponse)
@@ -1453,8 +1456,6 @@ async def api_app_bonus(request: Request):
         return JSONResponse({"ok": False, "error": "Токен не задан"}, status_code=400)
     storage.ensure_coins(uid)
     claimed = storage.claim_app_usage_bonus(uid)
-    if claimed:
-        await web_notify(user_id, "📱 Бонус за использование приложения: +2 Сириус Коина.", "success")
     return JSONResponse({"ok": True, "claimed": claimed, "coins": storage.get_coins(uid)})
 
 

@@ -1,40 +1,66 @@
 package ru.sonofstrange.siriusplus;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.ConnectivityManager;
 import android.net.NetworkCapabilities;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Base64;
 import android.view.Gravity;
 import android.view.View;
-import android.webkit.WebResourceRequest;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import androidx.core.app.ActivityCompat;
+import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import org.json.JSONArray;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import javax.net.ssl.HttpsURLConnection;
 
 public class MainActivity extends android.app.Activity {
     private static final String APP_URL = "https://sirius.rusanoff.ru/";
+    private static final String HEALTH_URL = APP_URL + "healthz";
     private static final String LAST_PAGE_URL_FILE = "last_page_url.txt";
+    private static final String SNAPSHOT_PREFIX = "SIRIUS_PLUS_SNAPSHOT_V2\n";
+    private static final String NOTIFICATION_CHANNEL = "sirius_events";
+    private static final int NOTIFICATION_PERMISSION_REQUEST = 1001;
 
     private WebView webView;
     private TextView offlineBadge;
+    private LinearLayout offlineNotice;
     private SwipeRefreshLayout swipeRefresh;
+    private final ExecutorService probeExecutor = Executors.newSingleThreadExecutor();
     private boolean loadingOfflineSnapshot;
+    private boolean serverReachable;
+    private boolean offlineMode;
 
     @Override
     @SuppressLint("SetJavaScriptEnabled")
@@ -54,7 +80,9 @@ public class MainActivity extends android.app.Activity {
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setUserAgentString(settings.getUserAgentString() + " SiriusPlusAndroid/1.0");
         webView.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_YES);
+        webView.addJavascriptInterface(new NativeNotificationBridge(), "SiriusAndroid");
         webView.setWebViewClient(new SiriusWebViewClient());
+
         swipeRefresh = new SwipeRefreshLayout(this);
         swipeRefresh.setColorSchemeColors(Color.rgb(108, 92, 231));
         swipeRefresh.setOnRefreshListener(this::refreshCurrentPage);
@@ -67,26 +95,57 @@ public class MainActivity extends android.app.Activity {
 
         offlineBadge = new TextView(this);
         offlineBadge.setText("Оффлайн режим");
-        offlineBadge.setTextColor(Color.WHITE);
-        offlineBadge.setTextSize(14);
+        offlineBadge.setTextColor(Color.rgb(45, 49, 56));
+        offlineBadge.setTextSize(12);
         offlineBadge.setGravity(Gravity.CENTER);
-        offlineBadge.setPadding(dp(16), dp(8), dp(16), dp(8));
-        offlineBadge.setBackgroundColor(Color.rgb(49, 101, 190));
+        offlineBadge.setPadding(dp(12), dp(6), dp(12), dp(6));
+        offlineBadge.setBackgroundColor(Color.rgb(220, 223, 228));
+        offlineBadge.setVisibility(View.GONE);
         FrameLayout.LayoutParams badgeLayout = new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-            Gravity.TOP | Gravity.CENTER_HORIZONTAL
+            Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL
         );
-        badgeLayout.topMargin = dp(12);
+        badgeLayout.bottomMargin = dp(12);
         root.addView(offlineBadge, badgeLayout);
+
+        offlineNotice = new LinearLayout(this);
+        offlineNotice.setOrientation(LinearLayout.HORIZONTAL);
+        offlineNotice.setGravity(Gravity.CENTER_VERTICAL);
+        offlineNotice.setPadding(dp(14), dp(10), dp(8), dp(10));
+        offlineNotice.setBackgroundColor(Color.rgb(73, 78, 87));
+        TextView noticeText = new TextView(this);
+        noticeText.setText("Оффлайн режим\nМожно смотреть открытые ранее страницы. Запись, обновление, профиль и коины недоступны.");
+        noticeText.setTextColor(Color.WHITE);
+        noticeText.setTextSize(13);
+        noticeText.setLineSpacing(0, 1.1f);
+        offlineNotice.addView(noticeText, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        Button dismissNotice = new Button(this);
+        dismissNotice.setText("Понятно");
+        dismissNotice.setTextSize(12);
+        dismissNotice.setOnClickListener(view -> offlineNotice.setVisibility(View.GONE));
+        offlineNotice.addView(dismissNotice, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        offlineNotice.setVisibility(View.GONE);
+        FrameLayout.LayoutParams noticeLayout = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM
+        );
+        noticeLayout.leftMargin = dp(12);
+        noticeLayout.rightMargin = dp(12);
+        noticeLayout.bottomMargin = dp(48);
+        root.addView(offlineNotice, noticeLayout);
         setContentView(root);
 
+        createNotificationChannel();
+        requestNotificationPermission();
         loadApp(appUrlFromIntent());
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        if (webView != null) updateConnectionBadge();
+        if (webView != null && offlineMode) probeServer(webView.getUrl());
     }
 
     @Override
@@ -94,6 +153,12 @@ public class MainActivity extends android.app.Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         loadApp(appUrlFromIntent());
+    }
+
+    @Override
+    protected void onDestroy() {
+        probeExecutor.shutdownNow();
+        super.onDestroy();
     }
 
     @Override
@@ -114,59 +179,110 @@ public class MainActivity extends android.app.Activity {
         return url != null && url.startsWith(APP_URL);
     }
 
-    private void loadApp(String url) {
-        boolean online = isOnline();
-        offlineBadge.setVisibility(online ? View.GONE : View.VISIBLE);
-        if (online) {
-            loadingOfflineSnapshot = false;
-            webView.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
-            webView.loadUrl(isAppUrl(url) ? url : APP_URL);
-        } else {
-            loadOfflineSnapshot(isAppUrl(url) ? url : null);
-        }
+    private void loadApp(String requestedUrl) {
+        String url = isAppUrl(requestedUrl) ? requestedUrl : APP_URL;
+        if (hasSnapshot(url)) loadOfflineSnapshot(url);
+        probeServer(url);
     }
 
     private void refreshCurrentPage() {
-        String url = webView.getUrl();
-        loadApp(isAppUrl(url) ? url : APP_URL);
+        loadApp(webView.getUrl());
     }
 
-    private void updateConnectionBadge() {
-        offlineBadge.setVisibility(isOnline() ? View.GONE : View.VISIBLE);
+    private void probeServer(String url) {
+        probeExecutor.execute(() -> {
+            boolean reachable = canReachServer();
+            runOnUiThread(() -> {
+                serverReachable = reachable;
+                if (reachable) {
+                    leaveOfflineMode();
+                    loadingOfflineSnapshot = false;
+                    webView.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
+                    webView.loadUrl(url);
+                } else {
+                    enterOfflineMode();
+                    loadOfflineSnapshot(url);
+                }
+            });
+        });
     }
 
-    private boolean isOnline() {
-        ConnectivityManager manager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
-        if (manager == null) return false;
-        NetworkCapabilities capabilities = manager.getNetworkCapabilities(manager.getActiveNetwork());
-        return capabilities != null && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+    private boolean canReachServer() {
+        HttpsURLConnection connection = null;
+        try {
+            connection = (HttpsURLConnection) new URL(HEALTH_URL).openConnection();
+            connection.setConnectTimeout(2500);
+            connection.setReadTimeout(2500);
+            connection.setUseCaches(false);
+            connection.setRequestMethod("GET");
+            return connection.getResponseCode() == 204;
+        } catch (Exception ignored) {
+            return false;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    private void enterOfflineMode() {
+        boolean justEntered = !offlineMode;
+        offlineMode = true;
+        offlineBadge.setVisibility(View.VISIBLE);
+        if (justEntered) offlineNotice.setVisibility(View.VISIBLE);
+    }
+
+    private void leaveOfflineMode() {
+        offlineMode = false;
+        offlineBadge.setVisibility(View.GONE);
+        offlineNotice.setVisibility(View.GONE);
     }
 
     private void loadOfflineSnapshot(String requestedUrl) {
-        String url = requestedUrl == null ? readFile(LAST_PAGE_URL_FILE) : requestedUrl;
-        String html = url == null ? null : readFile(pageFile(url));
+        String url = isAppUrl(requestedUrl) ? requestedUrl : readFile(LAST_PAGE_URL_FILE);
+        String html = url == null ? null : readSnapshot(url);
         loadingOfflineSnapshot = true;
+        webView.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
         if (html == null || html.isEmpty()) {
             webView.loadUrl("file:///android_asset/offline.html");
             return;
         }
-        webView.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
         webView.loadDataWithBaseURL(url, html, "text/html", "UTF-8", url);
     }
 
     private void saveSnapshot(String url) {
-        if (!url.startsWith(APP_URL) || !isOnline()) return;
-        String script = "(function(){return btoa(unescape(encodeURIComponent(document.documentElement.outerHTML)));})()";
+        if (!isAppUrl(url) || loadingOfflineSnapshot) return;
+        String script = "(function(){const copy=document.documentElement.cloneNode(true);copy.querySelectorAll('script').forEach(node=>node.remove());return btoa(unescape(encodeURIComponent(copy.outerHTML));})()";
         webView.evaluateJavascript(script, value -> {
             try {
                 String encoded = new JSONArray("[" + value + "]").getString(0);
                 String html = new String(Base64.decode(encoded, Base64.DEFAULT), StandardCharsets.UTF_8);
-                writeFile(pageFile(url), html);
+                writeFile(pageFile(url), SNAPSHOT_PREFIX + html);
                 writeFile(LAST_PAGE_URL_FILE, url);
             } catch (Exception ignored) {
                 // A missing snapshot only affects offline browsing.
             }
         });
+    }
+
+    private void disableOfflineActions() {
+        webView.evaluateJavascript("""
+            (function(){
+                const style=document.createElement('style');
+                style.textContent='button,input,textarea,select,[onclick]{opacity:.45!important;pointer-events:none!important}';
+                document.head.appendChild(style);
+                document.querySelectorAll('button,input,textarea,select').forEach(node=>{node.disabled=true;node.title='Недоступно в оффлайн режиме';});
+                document.querySelectorAll('form').forEach(form=>form.addEventListener('submit',event=>event.preventDefault()));
+            })();
+        """, null);
+    }
+
+    private boolean hasSnapshot(String url) {
+        return readSnapshot(url) != null;
+    }
+
+    private String readSnapshot(String url) {
+        String stored = readFile(pageFile(url));
+        if (stored == null || !stored.startsWith(SNAPSHOT_PREFIX)) return null;
+        return stored.substring(SNAPSHOT_PREFIX.length());
     }
 
     private String readFile(String name) {
@@ -199,21 +315,78 @@ public class MainActivity extends android.app.Activity {
         }
     }
 
+    private void installNativeNotificationBridge() {
+        webView.evaluateJavascript("""
+            (function(){
+                if(window.__siriusAndroidNotifications)return;
+                const container=document.getElementById('notifications-live');
+                if(!container || !window.SiriusAndroid)return;
+                window.__siriusAndroidNotifications=true;
+                container.querySelectorAll('.notification__text').forEach(node=>node.dataset.androidReported='1');
+                const report=()=>container.querySelectorAll('.notification__text').forEach(node=>{
+                    if(!node.dataset.androidReported){node.dataset.androidReported='1';window.SiriusAndroid.notify(node.textContent);}
+                });
+                new MutationObserver(report).observe(container,{childList:true,subtree:true});
+                report();
+            })();
+        """, null);
+    }
+
+    private void createNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationChannel channel = new NotificationChannel(
+            NOTIFICATION_CHANNEL, "События Sirius", NotificationManager.IMPORTANCE_HIGH
+        );
+        channel.setDescription("Напоминания и изменения расписания");
+        channel.enableVibration(true);
+        ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).createNotificationChannel(channel);
+    }
+
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, NOTIFICATION_PERMISSION_REQUEST);
+        }
+    }
+
+    private void showNativeNotification(String message) {
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED) return;
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, NOTIFICATION_CHANNEL)
+            .setSmallIcon(R.drawable.sirius_logo)
+            .setContentTitle("Пирожковый Диспетчер")
+            .setContentText(message)
+            .setStyle(new NotificationCompat.BigTextStyle().bigText(message))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setDefaults(NotificationCompat.DEFAULT_SOUND | NotificationCompat.DEFAULT_VIBRATE)
+            .setAutoCancel(true);
+        ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).notify((int) System.currentTimeMillis(), builder.build());
+    }
+
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private final class NativeNotificationBridge {
+        @JavascriptInterface
+        public void notify(String message) {
+            runOnUiThread(() -> showNativeNotification(message));
+        }
     }
 
     private final class SiriusWebViewClient extends WebViewClient {
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             String url = request.getUrl().toString();
-            if (!isAppUrl(url)) return false;
-            if (!isOnline()) {
+            if (!isAppUrl(url)) {
+                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+                return true;
+            }
+            if (!serverReachable) {
+                enterOfflineMode();
                 loadOfflineSnapshot(url);
                 return true;
             }
-            // Let WebView handle online navigations itself: reloading here turns
-            // an HTML form POST into a GET request.
             return false;
         }
 
@@ -221,19 +394,33 @@ public class MainActivity extends android.app.Activity {
         public void onPageFinished(WebView view, String url) {
             super.onPageFinished(view, url);
             swipeRefresh.setRefreshing(false);
-            updateConnectionBadge();
-            if (!loadingOfflineSnapshot) {
-                saveSnapshot(url);
-                view.evaluateJavascript(
-                    "fetch('/api/app-bonus', {method: 'POST', credentials: 'same-origin'}).catch(function() {})",
-                    null
-                );
+            if (loadingOfflineSnapshot) {
+                disableOfflineActions();
+                return;
             }
+            leaveOfflineMode();
+            saveSnapshot(url);
+            installNativeNotificationBridge();
+            view.evaluateJavascript(
+                "fetch('/api/app-bonus', {method: 'POST', credentials: 'same-origin'}).catch(function() {})",
+                null
+            );
         }
 
         @Override
         public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-            if (request.isForMainFrame() && !isOnline()) {
+            if (request.isForMainFrame() && !loadingOfflineSnapshot) {
+                serverReachable = false;
+                enterOfflineMode();
+                loadOfflineSnapshot(request.getUrl().toString());
+            }
+        }
+
+        @Override
+        public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
+            if (request.isForMainFrame() && response.getStatusCode() >= 400 && !loadingOfflineSnapshot) {
+                serverReachable = false;
+                enterOfflineMode();
                 loadOfflineSnapshot(request.getUrl().toString());
             }
         }

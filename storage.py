@@ -1304,6 +1304,13 @@ def claim_app_usage_bonus(uid: str, amount: int = 2) -> bool:
         return True
 
 
+def has_claimed_app_usage_bonus(uid: str) -> bool:
+    with get_conn() as conn:
+        return bool(conn.execute(
+            "SELECT 1 FROM app_usage_bonuses WHERE uid=?", (uid,)
+        ).fetchone())
+
+
 # ---------- promo codes ----------
 
 def normalize_promo_code(code: str) -> str:

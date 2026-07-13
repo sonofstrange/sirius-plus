@@ -11,10 +11,12 @@
 
     {% if user_id %}
     <div class="auth-card__help" style="background:var(--bg-card);padding:24px;border-radius:var(--radius);box-shadow:var(--shadow);line-height:1.8">
+        {% if not app_bonus_claimed %}
         <div class="alert alert-success" style="margin-bottom:20px">
             <span class="material-symbols-outlined">phone_android</span>
-            <div><strong>Появилось Android-приложение.</strong> Оно сохраняет посещённые страницы для просмотра без интернета. <a href="https://github.com/sonofstrange/sirius-plus/releases/tag/android-v1.0.1" target="_blank" rel="noopener noreferrer">Скачать APK</a> и получи <strong>+2 Сириус Коина</strong> за первый вход через приложение.</div>
+            <div><strong>Появилось Android-приложение.</strong> Оно сохраняет посещённые страницы для просмотра без интернета. <a href="https://github.com/sonofstrange/sirius-plus/releases" target="_blank" rel="noopener noreferrer">Скачать APK</a> и получи <strong>+2 Сириус Коина</strong> за первый вход через приложение.</div>
         </div>
+        {% endif %}
         <h2 style="font-size:18px;margin-bottom:12px">Твой баланс</h2>
         <div style="font-size:28px;font-weight:700;margin-bottom:4px" id="coins-balance">—</div>
         <p style="color:var(--text-muted);font-size:14px;margin-bottom:20px">
@@ -52,6 +54,8 @@
         <p style="margin-bottom:16px;color:var(--text-muted)">
             <a href="https://t.me/sonofstrange" target="_blank" rel="noopener noreferrer">Telegram: @sonofstrange</a>
             ·
+            <a href="https://t.me/sirius_pirozhki" target="_blank" rel="noopener noreferrer">Telegram-канал</a>
+            ·
             <a href="https://discord.com/users/891370219866583091" target="_blank" rel="noopener noreferrer">Discord: @sonofstrange</a>
         </p>
 
@@ -60,10 +64,6 @@
             Группа <strong>БВ3</strong>, работаю над проектом от <strong>МТС</strong>.
         </p>
 
-        <div class="alert alert-warning" style="margin-top:20px">
-            <span class="material-symbols-outlined">info</span>
-            При регистрации на сайте тебе начисляется <strong>1 Сириус Коин</strong> бесплатно.
-        </div>
     </div>
     {% endif %}
 </div>
