@@ -92,6 +92,18 @@ class PolymarketStorageTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(error, "Сначала отмени рынок: ставки нужно вернуть участникам")
 
+    def test_retiring_dronebet_refunds_open_stakes(self):
+        market_id = storage.create_prediction_market(
+            "Legacy DroneBet", "", "choice", '["A", "B"]', None, None, 0, 0, "dronebet"
+        )
+        self.assertTrue(storage.place_prediction_bet("alice", market_id, "A", None, 2)[0])
+
+        storage.retire_dronebet_markets()
+
+        self.assertEqual(storage.get_prediction_market(market_id)["status"], "cancelled")
+        self.assertEqual(storage.get_coins("alice"), 10)
+        self.assertNotIn(market_id, [market["id"] for market in storage.get_prediction_markets()])
+
 
 if __name__ == "__main__":
     unittest.main()

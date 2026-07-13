@@ -4,12 +4,33 @@
 <div class="page">
     <div class="page__header">
         <h1 class="page__title">Сириус Коины</h1>
+        {% if coins_tab == 'coins' %}
         <div class="page__actions">
             <button class="btn btn-primary btn-sm" onclick="doTransfer()">🪙 Перевести</button>
         </div>
+        {% endif %}
     </div>
 
     {% if user_id %}
+    <div class="subtabs" aria-label="Раздел Сириус Коинов">
+        <a href="/coins-info" class="subtab {% if coins_tab == 'coins' %}subtab-active{% endif %}">Сириус Коины</a>
+        <a href="/coins-info?tab=dronebet" class="subtab {% if coins_tab == 'dronebet' %}subtab-active{% endif %}">DroneBet</a>
+    </div>
+
+    {% if coins_tab == 'dronebet' %}
+    <section class="partner-exchange" aria-labelledby="dronebet-exchange-title">
+        <div class="partner-exchange__brand">
+            <span class="material-symbols-outlined">swap_horiz</span>
+            <div><span>Партнёрский обмен</span><h2 id="dronebet-exchange-title">DroneBet</h2></div>
+        </div>
+        <div class="partner-exchange__rate"><strong>2000</strong><span>печенек</span><b>=</b><strong>1</strong><span>Сириус Коин</span></div>
+        <p>Обмен будет доступен в обе стороны после подключения API DroneBet.</p>
+        <div class="partner-exchange__actions">
+            <button class="btn btn-secondary" type="button" disabled>Печеньки → Коины</button>
+            <button class="btn btn-secondary" type="button" disabled>Коины → Печеньки</button>
+        </div>
+    </section>
+    {% else %}
     <div class="auth-card__help" style="background:var(--bg-card);padding:24px;border-radius:var(--radius);box-shadow:var(--shadow);line-height:1.8">
         {% if not app_bonus_claimed %}
         <div class="alert alert-success" style="margin-bottom:20px">
@@ -65,6 +86,7 @@
         </p>
 
     </div>
+    {% endif %}
     {% endif %}
 </div>
 
