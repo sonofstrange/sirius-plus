@@ -6,3 +6,6 @@ __pycache__
 *.sqlite3-journal
 encryption_key.txt
 .env
+
+# Android APK is built locally and is not part of the server image.
+android/

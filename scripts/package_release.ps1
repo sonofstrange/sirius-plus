@@ -14,6 +14,7 @@ $tarArgs = @(
     '--exclude=*.sqlite3',
     '--exclude=*.sqlite3-journal',
     '--exclude=.env',
+    '--exclude=android',
     '-C', $projectRoot, '.'
 )
 & tar.exe @tarArgs
