@@ -11,7 +11,6 @@ import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.util.Base64;
 import android.view.Gravity;
 import android.view.View;
 import android.webkit.JavascriptInterface;
@@ -33,8 +32,6 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.messaging.FirebaseMessaging;
 
-import org.json.JSONArray;
-
 import java.io.File;
 import java.io.FileOutputStream;
 import java.net.URL;
@@ -49,7 +46,6 @@ public class MainActivity extends android.app.Activity {
     private static final String APP_URL = "https://sirius.rusanoff.ru/";
     private static final String HEALTH_URL = APP_URL + "healthz";
     private static final String LAST_PAGE_URL_FILE = "last_page_url.txt";
-    private static final String SNAPSHOT_PREFIX = "SIRIUS_PLUS_SNAPSHOT_V2\n";
     private static final int NOTIFICATION_PERMISSION_REQUEST = 1001;
     static final String PUSH_PREFS = "sirius_push";
     static final String FCM_TOKEN_KEY = "fcm_token";
@@ -80,6 +76,7 @@ public class MainActivity extends android.app.Activity {
         settings.setDomStorageEnabled(true);
         settings.setDatabaseEnabled(true);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        settings.setAllowFileAccess(true);
         settings.setUserAgentString(settings.getUserAgentString() + " SiriusPlusAndroid/1.0");
         webView.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_YES);
         webView.addJavascriptInterface(new NativeNotificationBridge(), "SiriusAndroid");
@@ -115,7 +112,7 @@ public class MainActivity extends android.app.Activity {
         offlineNotice.setPadding(dp(14), dp(10), dp(8), dp(10));
         offlineNotice.setBackgroundColor(Color.rgb(73, 78, 87));
         TextView noticeText = new TextView(this);
-        noticeText.setText("Оффлайн режим\nМожно смотреть открытые ранее страницы. Запись, обновление, профиль и коины недоступны.");
+        noticeText.setText("Оффлайн режим\nМожно смотреть ранее открытые страницы. Запись, обновление и изменения недоступны.");
         noticeText.setTextColor(Color.WHITE);
         noticeText.setTextSize(13);
         noticeText.setLineSpacing(0, 1.1f);
@@ -231,7 +228,9 @@ public class MainActivity extends android.app.Activity {
             connection.setReadTimeout(2500);
             connection.setUseCaches(false);
             connection.setRequestMethod("GET");
-            return connection.getResponseCode() == 204;
+            int status = connection.getResponseCode();
+            // A proxy can block /healthz while the website is still reachable.
+            return status >= 200 && status < 500;
         } catch (Exception ignored) {
             return false;
         } finally {
@@ -261,30 +260,26 @@ public class MainActivity extends android.app.Activity {
 
     private void loadOfflineSnapshot(String requestedUrl) {
         String url = isAppUrl(requestedUrl) ? requestedUrl : readFile(LAST_PAGE_URL_FILE);
-        String html = url == null ? null : readSnapshot(url);
+        File archive = url == null ? null : snapshotArchive(url);
         loadingOfflineSnapshot = true;
-        webView.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
         webView.stopLoading();
-        if (html == null || html.isEmpty()) {
+        webView.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ONLY);
+        if (archive == null || !archive.isFile() || archive.length() == 0) {
             webView.loadUrl("file:///android_asset/offline.html");
             return;
         }
-        webView.loadDataWithBaseURL(url, html, "text/html", "UTF-8", url);
+        webView.loadUrl(Uri.fromFile(archive).toString());
     }
 
     private void saveSnapshot(String url) {
         if (!isAppUrl(url) || loadingOfflineSnapshot) return;
-        String script = "(function(){const copy=document.documentElement.cloneNode(true);copy.querySelectorAll('script').forEach(node=>node.remove());return btoa(unescape(encodeURIComponent(copy.outerHTML));})()";
-        webView.evaluateJavascript(script, value -> {
-            try {
-                String encoded = new JSONArray("[" + value + "]").getString(0);
-                String html = new String(Base64.decode(encoded, Base64.DEFAULT), StandardCharsets.UTF_8);
-                writeFile(pageFile(url), SNAPSHOT_PREFIX + html);
-                writeFile(LAST_PAGE_URL_FILE, url);
-            } catch (Exception ignored) {
-                // A missing snapshot only affects offline browsing.
-            }
-        });
+        File archive = snapshotArchive(url);
+        if (archive.exists() && !archive.delete()) return;
+        String archiveStyle = "(function(){const old=document.getElementById('sirius-archive-cleanup');if(old)old.remove();const style=document.createElement('style');style.id='sirius-archive-cleanup';style.textContent='.modal-overlay,.toast-container{display:none!important}';document.head.appendChild(style);})()";
+        webView.evaluateJavascript(archiveStyle, ignored -> webView.saveWebArchive(archive.getAbsolutePath(), false, savedPath -> {
+            webView.post(() -> webView.evaluateJavascript("(function(){var e=document.getElementById('sirius-archive-cleanup');if(e)e.remove();})()", null));
+            if (savedPath != null) writeFile(LAST_PAGE_URL_FILE, url);
+        }));
     }
 
     private void disableOfflineActions() {
@@ -300,13 +295,8 @@ public class MainActivity extends android.app.Activity {
     }
 
     private boolean hasSnapshot(String url) {
-        return readSnapshot(url) != null;
-    }
-
-    private String readSnapshot(String url) {
-        String stored = readFile(pageFile(url));
-        if (stored == null || !stored.startsWith(SNAPSHOT_PREFIX)) return null;
-        return stored.substring(SNAPSHOT_PREFIX.length());
+        File archive = snapshotArchive(url);
+        return archive.isFile() && archive.length() > 0;
     }
 
     private String readFile(String name) {
@@ -327,15 +317,15 @@ public class MainActivity extends android.app.Activity {
         }
     }
 
-    private String pageFile(String url) {
+    private File snapshotArchive(String url) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
                 .digest(url.getBytes(StandardCharsets.UTF_8));
             StringBuilder fileName = new StringBuilder("page_");
             for (byte value : digest) fileName.append(String.format("%02x", value));
-            return fileName.append(".html").toString();
+            return new File(getFilesDir(), fileName.append(".mht").toString());
         } catch (Exception ignored) {
-            return "page_fallback.html";
+            return new File(getFilesDir(), "page_fallback.mht");
         }
     }
 

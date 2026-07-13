@@ -252,11 +252,12 @@ function renderTable() {
             <td>${trustHtml}</td>
             <td>
                 <div class="admin-users-table__actions">
+                    <button class="btn btn-sm btn-outline admin-users-table__action-btn" onclick="startGrant('${safeUid}')" title="Выдать Сириус Коины" aria-label="Выдать Сириус Коины">
+                        <span class="material-symbols-outlined">paid</span>
+                    </button>
                     <button class="btn btn-sm ${u.is_admin ? 'btn-primary' : 'btn-outline'} admin-users-table__admin-btn" onclick="setAdmin('${safeUid}', ${u.is_admin ? 'false' : 'true'})" title="${u.is_admin ? 'Снять права администратора' : 'Назначить администратором'}">
                         <span class="material-symbols-outlined">admin_panel_settings</span>
                     </button>
-                    <button class="btn btn-sm btn-outline" onclick="quickGrant('${safeUid}', 1)">+1</button>
-                    <button class="btn btn-sm btn-outline" onclick="quickGrant('${safeUid}', 5)">+5</button>
                 </div>
             </td>
         </tr>`;
@@ -301,6 +302,13 @@ function fillUid(uid) {
     document.getElementById('suggestions').style.display = 'none';
 }
 
+function startGrant(uid) {
+    fillUid(uid);
+    const input = document.getElementById('grant-amount');
+    document.getElementById('grant-uid').scrollIntoView({behavior: 'smooth', block: 'center'});
+    input.focus();
+}
+
 function filterSuggestions() {
     const input = document.getElementById('grant-uid');
     const q = (input.value || '').toLowerCase();
@@ -328,32 +336,6 @@ document.addEventListener('click', function(e) {
         document.getElementById('suggestions').style.display = 'none';
     }
 });
-
-async function quickGrant(uid, amount) {
-    const result = document.getElementById('grant-result');
-    result.style.display = 'block';
-    result.className = 'alert';
-    result.textContent = 'Выдаю...';
-    try {
-        const resp = await fetch('/api/admin/grant-coins', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({uid, amount}),
-        });
-        const data = await resp.json();
-        if (data.ok) {
-            result.className = 'alert alert-success';
-            result.textContent = `Выдано ${amount} коинов. Новый баланс: ${data.new_balance}`;
-            loadUsers();
-        } else {
-            result.className = 'alert alert-error';
-            result.textContent = (data.error || 'Ошибка');
-        }
-    } catch (e) {
-        result.className = 'alert alert-error';
-        result.textContent = 'Ошибка соединения: ' + e.message;
-    }
-}
 
 async function setTrust(uid, trustLevel) {
     try {

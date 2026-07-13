@@ -709,14 +709,17 @@ body.dark-theme .alert-warning {
     white-space: nowrap;
 }
 
-.admin-users-table__admin-btn {
+.admin-users-table__admin-btn,
+.admin-users-table__action-btn {
     width: 34px;
     min-width: 34px;
+    height: 34px;
     padding: 0;
     justify-content: center;
 }
 
-.admin-users-table__admin-btn .material-symbols-outlined {
+.admin-users-table__admin-btn .material-symbols-outlined,
+.admin-users-table__action-btn .material-symbols-outlined {
     font-size: 18px;
 }
 
@@ -2195,50 +2198,39 @@ body.dark-theme .badge-muted {
     margin-top: 14px;
 }
 
-.partner-placeholder {
-    position: relative;
-    max-width: 720px;
-    min-height: 230px;
-    padding: 44px 28px;
-    overflow: hidden;
-    text-align: center;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: var(--bg-card);
-    box-shadow: var(--shadow);
+.partner-integration {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 18px 0;
+    border-bottom: 1px solid var(--border);
 }
 
-.partner-placeholder__icon {
-    display: block;
-    margin-bottom: 14px;
+.partner-integration__icon {
     color: var(--primary);
-    font-size: 42px;
+    font-size: 24px;
 }
 
-.partner-placeholder__status {
-    position: absolute;
-    top: 14px;
-    right: 14px;
-    padding: 4px 8px;
-    border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
-    border-radius: 4px;
-    color: var(--warning);
-    font-size: 12px;
-    font-weight: 700;
+.partner-integration__copy {
+    min-width: 0;
+    flex: 1;
 }
 
-.partner-placeholder h2 {
-    margin: 0 0 8px;
-    font-size: 22px;
+.partner-integration__heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
-.partner-placeholder p {
+.partner-integration h2 {
     margin: 0;
-    color: var(--text-muted);
+    font-size: 16px;
 }
 
-.partner-placeholder a {
-    color: var(--link);
+.partner-integration p {
+    margin: 3px 0 0;
+    color: var(--text-muted);
+    font-size: 14px;
 }
 .referral-card { display: grid; justify-items: center; gap: 14px; }
 .referral-card > .text-muted { width: 100%; line-height: 1.45; }
@@ -2262,7 +2254,9 @@ body.dark-theme .badge-muted {
     .polymarket-options { grid-template-columns: 1fr; }
     .polymarket-number-bet { max-width: none; }
     .polymarket-heat__legend { font-size: 11px; }
-    .partner-placeholder { min-height: 210px; padding: 38px 20px; }
+    .partner-integration { align-items: flex-start; flex-wrap: wrap; }
+    .partner-integration__copy { flex-basis: calc(100% - 42px); }
+    .partner-integration .btn { margin-left: 38px; }
     .feedback-message { max-width: 94%; }
     .feedback-reply-form { flex-direction: column; }
     .feedback-reply-form .btn { align-self: flex-end; }

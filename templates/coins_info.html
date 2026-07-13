@@ -18,11 +18,16 @@
     </div>
 
     {% if coins_tab == 'dronebet' %}
-    <section class="partner-placeholder" aria-labelledby="dronebet-exchange-title">
-        <span class="material-symbols-outlined partner-placeholder__icon">hourglass_top</span>
-        <span class="partner-placeholder__status">Скоро</span>
-        <h2 id="dronebet-exchange-title">DroneBet</h2>
-        <p>Скоро будет интеграция с <a href="https://dronebet.cloudpub.ru/" target="_blank" rel="noopener noreferrer">dronebet.cloudpub.ru</a>.</p>
+    <section class="partner-integration" aria-labelledby="dronebet-exchange-title">
+        <span class="material-symbols-outlined partner-integration__icon" aria-hidden="true">sync_alt</span>
+        <div class="partner-integration__copy">
+            <div class="partner-integration__heading">
+                <h2 id="dronebet-exchange-title">Интеграция DroneBet</h2>
+                <span class="badge">Скоро</span>
+            </div>
+            <p>Обмен Сириус Коинов и печенек появится после подключения API партнёра.</p>
+        </div>
+        <a class="btn btn-outline btn-sm" href="https://dronebet.cloudpub.ru/" target="_blank" rel="noopener noreferrer">Открыть DroneBet</a>
     </section>
     {% else %}
     <div class="auth-card__help" style="background:var(--bg-card);padding:24px;border-radius:var(--radius);box-shadow:var(--shadow);line-height:1.8">
