@@ -212,8 +212,9 @@ public class MainActivity extends android.app.Activity {
                 loadOfflineSnapshot(url);
                 return true;
             }
-            view.loadUrl(url);
-            return true;
+            // Let WebView handle online navigations itself: reloading here turns
+            // an HTML form POST into a GET request.
+            return false;
         }
 
         @Override
