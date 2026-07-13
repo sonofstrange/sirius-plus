@@ -316,6 +316,11 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_referrals_referrer
                 ON referrals(referrer_uid, rewarded_at DESC);
 
+            CREATE TABLE IF NOT EXISTS app_usage_bonuses (
+                uid          TEXT PRIMARY KEY,
+                claimed_at   INTEGER NOT NULL
+            );
+
         """)
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(watchlist)").fetchall()]
         if "event_start" not in cols:
@@ -1262,6 +1267,24 @@ def add_coins(uid: str, amount: int) -> int:
             (new_balance, now, uid),
         )
         return new_balance
+
+
+def claim_app_usage_bonus(uid: str, amount: int = 2) -> bool:
+    """Credits the Android-app bonus only once per Sirius account."""
+    now = int(time.time())
+    with get_conn() as conn:
+        try:
+            conn.execute(
+                "INSERT INTO app_usage_bonuses (uid, claimed_at) VALUES (?, ?)",
+                (uid, now),
+            )
+        except sqlite3.IntegrityError:
+            return False
+        conn.execute(
+            "UPDATE sirius_coins SET coins=coins+?, updated_at=? WHERE uid=?",
+            (amount, now, uid),
+        )
+        return True
 
 
 # ---------- referrals ----------

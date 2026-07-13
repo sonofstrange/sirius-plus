@@ -359,6 +359,20 @@ templates = Jinja2Templates(env=jinja_env)
 templates.env.filters["nl2br"] = lambda v: v.replace("\n", "<br>\n")
 
 
+@app.get("/.well-known/assetlinks.json")
+async def android_asset_links():
+    return JSONResponse([{
+        "relation": ["delegate_permission/common.handle_all_urls"],
+        "target": {
+            "namespace": "android_app",
+            "package_name": "ru.sonofstrange.siriusplus",
+            "sha256_cert_fingerprints": [
+                "6A:48:60:26:BE:83:F6:40:A5:8F:12:90:9B:2D:1B:0A:36:FC:9F:C9:13:3D:56:FF:F8:12:F2:CF:CF:DB:BE:11"
+            ],
+        },
+    }])
+
+
 @app.middleware("http")
 async def origin_guard(request: Request, call_next):
     """Require the private activation file and the official host."""
@@ -1419,6 +1433,23 @@ async def api_coins_balance(request: Request):
     if not uid:
         return JSONResponse({"ok": False, "error": "Токен не задан"}, status_code=400)
     return JSONResponse({"ok": True, "coins": storage.get_coins(uid), "total": storage.get_coins_total(uid), "reserved": storage.get_coins_reserved(uid), "uid": uid})
+
+
+@app.post("/api/app-bonus")
+async def api_app_bonus(request: Request):
+    user_id = get_user_id(request)
+    if not user_id:
+        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
+    if "SiriusPlusAndroid/" not in request.headers.get("user-agent", ""):
+        return JSONResponse({"ok": False, "error": "Бонус доступен только в приложении"}, status_code=403)
+    uid = _session_uid(user_id)
+    if not uid:
+        return JSONResponse({"ok": False, "error": "Токен не задан"}, status_code=400)
+    storage.ensure_coins(uid)
+    claimed = storage.claim_app_usage_bonus(uid)
+    if claimed:
+        await web_notify(user_id, "📱 Бонус за использование приложения: +2 Сириус Коина.", "success")
+    return JSONResponse({"ok": True, "claimed": claimed, "coins": storage.get_coins(uid)})
 
 
 @app.get("/api/referral")

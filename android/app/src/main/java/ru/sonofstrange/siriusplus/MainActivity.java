@@ -2,6 +2,7 @@ package ru.sonofstrange.siriusplus;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Color;
 import android.net.ConnectivityManager;
 import android.net.NetworkCapabilities;
@@ -17,6 +18,8 @@ import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
+
 import org.json.JSONArray;
 
 import java.io.File;
@@ -30,6 +33,7 @@ public class MainActivity extends android.app.Activity {
 
     private WebView webView;
     private TextView offlineBadge;
+    private SwipeRefreshLayout swipeRefresh;
     private boolean loadingOfflineSnapshot;
 
     @Override
@@ -38,6 +42,10 @@ public class MainActivity extends android.app.Activity {
         super.onCreate(savedInstanceState);
 
         FrameLayout root = new FrameLayout(this);
+        root.setOnApplyWindowInsetsListener((view, insets) -> {
+            view.setPadding(0, insets.getSystemWindowInsetTop(), 0, insets.getSystemWindowInsetBottom());
+            return insets;
+        });
         webView = new WebView(this);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -45,8 +53,15 @@ public class MainActivity extends android.app.Activity {
         settings.setDatabaseEnabled(true);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setUserAgentString(settings.getUserAgentString() + " SiriusPlusAndroid/1.0");
+        webView.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_YES);
         webView.setWebViewClient(new SiriusWebViewClient());
-        root.addView(webView, new FrameLayout.LayoutParams(
+        swipeRefresh = new SwipeRefreshLayout(this);
+        swipeRefresh.setColorSchemeColors(Color.rgb(108, 92, 231));
+        swipeRefresh.setOnRefreshListener(this::refreshCurrentPage);
+        swipeRefresh.addView(webView, new SwipeRefreshLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+        root.addView(swipeRefresh, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
         ));
 
@@ -65,13 +80,20 @@ public class MainActivity extends android.app.Activity {
         root.addView(offlineBadge, badgeLayout);
         setContentView(root);
 
-        loadApp();
+        loadApp(appUrlFromIntent());
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        if (webView != null) loadApp();
+        if (webView != null) updateConnectionBadge();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        loadApp(appUrlFromIntent());
     }
 
     @Override
@@ -83,16 +105,34 @@ public class MainActivity extends android.app.Activity {
         }
     }
 
-    private void loadApp() {
+    private String appUrlFromIntent() {
+        String url = getIntent().getDataString();
+        return isAppUrl(url) ? url : APP_URL;
+    }
+
+    private boolean isAppUrl(String url) {
+        return url != null && url.startsWith(APP_URL);
+    }
+
+    private void loadApp(String url) {
         boolean online = isOnline();
         offlineBadge.setVisibility(online ? View.GONE : View.VISIBLE);
         if (online) {
             loadingOfflineSnapshot = false;
             webView.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
-            webView.loadUrl(APP_URL);
+            webView.loadUrl(isAppUrl(url) ? url : APP_URL);
         } else {
-            loadOfflineSnapshot(null);
+            loadOfflineSnapshot(isAppUrl(url) ? url : null);
         }
+    }
+
+    private void refreshCurrentPage() {
+        String url = webView.getUrl();
+        loadApp(isAppUrl(url) ? url : APP_URL);
+    }
+
+    private void updateConnectionBadge() {
+        offlineBadge.setVisibility(isOnline() ? View.GONE : View.VISIBLE);
     }
 
     private boolean isOnline() {
@@ -167,7 +207,7 @@ public class MainActivity extends android.app.Activity {
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             String url = request.getUrl().toString();
-            if (!url.startsWith(APP_URL)) return false;
+            if (!isAppUrl(url)) return false;
             if (!isOnline()) {
                 loadOfflineSnapshot(url);
                 return true;
@@ -179,7 +219,15 @@ public class MainActivity extends android.app.Activity {
         @Override
         public void onPageFinished(WebView view, String url) {
             super.onPageFinished(view, url);
-            if (!loadingOfflineSnapshot) saveSnapshot(url);
+            swipeRefresh.setRefreshing(false);
+            updateConnectionBadge();
+            if (!loadingOfflineSnapshot) {
+                saveSnapshot(url);
+                view.evaluateJavascript(
+                    "fetch('/api/app-bonus', {method: 'POST', credentials: 'same-origin'}).catch(function() {})",
+                    null
+                );
+            }
         }
 
         @Override
