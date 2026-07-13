@@ -15,6 +15,8 @@ import androidx.core.app.NotificationManagerCompat;
 final class MobileNotifier {
     private static final String EVENTS_CHANNEL = "sirius_events";
     private static final String ALARM_CHANNEL = "sirius_alarm";
+    private static String lastFingerprint = "";
+    private static long lastShownAt;
 
     private MobileNotifier() {}
 
@@ -41,7 +43,12 @@ final class MobileNotifier {
         manager.createNotificationChannel(alarm);
     }
 
-    static void show(Context context, String title, String body, boolean isAlarm) {
+    static synchronized void show(Context context, String title, String body, boolean isAlarm) {
+        String fingerprint = title + "\n" + body + "\n" + isAlarm;
+        long now = System.currentTimeMillis();
+        if (fingerprint.equals(lastFingerprint) && now - lastShownAt < 4000) return;
+        lastFingerprint = fingerprint;
+        lastShownAt = now;
         createChannels(context);
         Intent intent = new Intent(context, MainActivity.class)
             .setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -62,6 +69,6 @@ final class MobileNotifier {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             builder.setDefaults(NotificationCompat.DEFAULT_SOUND | NotificationCompat.DEFAULT_VIBRATE);
         }
-        NotificationManagerCompat.from(context).notify((int) System.currentTimeMillis(), builder.build());
+        NotificationManagerCompat.from(context).notify((int) now, builder.build());
     }
 }

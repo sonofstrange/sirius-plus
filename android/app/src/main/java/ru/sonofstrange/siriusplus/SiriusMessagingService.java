@@ -21,8 +21,6 @@ public class SiriusMessagingService extends FirebaseMessagingService {
         String title = data.getOrDefault("title", "Пирожковый Диспетчер");
         String body = data.getOrDefault("body", "Новое уведомление");
         boolean isAlarm = "1".equals(data.get("is_alarm"));
-        if (!MainActivity.isAppForeground()) {
-            MobileNotifier.show(this, title, body, isAlarm);
-        }
+        MobileNotifier.show(this, title, body, isAlarm);
     }
 }

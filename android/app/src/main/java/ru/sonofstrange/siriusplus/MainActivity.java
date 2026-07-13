@@ -107,7 +107,6 @@ public class MainActivity extends android.app.Activity {
             FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL
         );
-        badgeLayout.bottomMargin = dp(12);
         root.addView(offlineBadge, badgeLayout);
 
         offlineNotice = new LinearLayout(this);
@@ -124,7 +123,11 @@ public class MainActivity extends android.app.Activity {
         Button dismissNotice = new Button(this);
         dismissNotice.setText("Понятно");
         dismissNotice.setTextSize(12);
-        dismissNotice.setOnClickListener(view -> offlineNotice.setVisibility(View.GONE));
+        dismissNotice.setOnClickListener(view -> {
+            offlineNotice.setVisibility(View.GONE);
+            offlineBadge.setVisibility(View.VISIBLE);
+            setWebContentBottomInset(32);
+        });
         offlineNotice.addView(dismissNotice, new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ));
@@ -135,7 +138,6 @@ public class MainActivity extends android.app.Activity {
         );
         noticeLayout.leftMargin = dp(12);
         noticeLayout.rightMargin = dp(12);
-        noticeLayout.bottomMargin = dp(48);
         root.addView(offlineNotice, noticeLayout);
         setContentView(root);
 
@@ -240,14 +242,21 @@ public class MainActivity extends android.app.Activity {
     private void enterOfflineMode() {
         boolean justEntered = !offlineMode;
         offlineMode = true;
-        offlineBadge.setVisibility(View.VISIBLE);
-        if (justEntered) offlineNotice.setVisibility(View.VISIBLE);
+        if (justEntered) {
+            offlineBadge.setVisibility(View.GONE);
+            offlineNotice.setVisibility(View.VISIBLE);
+            setWebContentBottomInset(84);
+        } else if (offlineNotice.getVisibility() != View.VISIBLE) {
+            offlineBadge.setVisibility(View.VISIBLE);
+            setWebContentBottomInset(32);
+        }
     }
 
     private void leaveOfflineMode() {
         offlineMode = false;
         offlineBadge.setVisibility(View.GONE);
         offlineNotice.setVisibility(View.GONE);
+        setWebContentBottomInset(0);
     }
 
     private void loadOfflineSnapshot(String requestedUrl) {
@@ -255,6 +264,7 @@ public class MainActivity extends android.app.Activity {
         String html = url == null ? null : readSnapshot(url);
         loadingOfflineSnapshot = true;
         webView.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
+        webView.stopLoading();
         if (html == null || html.isEmpty()) {
             webView.loadUrl("file:///android_asset/offline.html");
             return;
@@ -389,6 +399,12 @@ public class MainActivity extends android.app.Activity {
         );
     }
 
+    private void setWebContentBottomInset(int bottomDp) {
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) swipeRefresh.getLayoutParams();
+        params.bottomMargin = dp(bottomDp);
+        swipeRefresh.setLayoutParams(params);
+    }
+
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
@@ -437,19 +453,29 @@ public class MainActivity extends android.app.Activity {
         @Override
         public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
             if (request.isForMainFrame() && !loadingOfflineSnapshot) {
-                serverReachable = false;
-                enterOfflineMode();
-                loadOfflineSnapshot(request.getUrl().toString());
+                showOfflineFallback(request.getUrl().toString());
             }
         }
 
         @Override
         public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
             if (request.isForMainFrame() && response.getStatusCode() >= 400 && !loadingOfflineSnapshot) {
-                serverReachable = false;
-                enterOfflineMode();
-                loadOfflineSnapshot(request.getUrl().toString());
+                showOfflineFallback(request.getUrl().toString());
             }
         }
+
+        @Override
+        @SuppressWarnings("deprecation")
+        public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
+            if (!loadingOfflineSnapshot && isAppUrl(failingUrl) && failingUrl.equals(view.getUrl())) {
+                showOfflineFallback(failingUrl);
+            }
+        }
+    }
+
+    private void showOfflineFallback(String url) {
+        serverReachable = false;
+        enterOfflineMode();
+        loadOfflineSnapshot(url);
     }
 }
