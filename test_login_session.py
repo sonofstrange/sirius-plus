@@ -33,6 +33,18 @@ class _AjaxLoginRequest(_LoginRequest):
     headers = {"content-type": "application/json", "x-requested-with": "XMLHttpRequest"}
 
 
+class _AjaxFormLoginRequest:
+    headers = {
+        "content-type": "multipart/form-data; boundary=test-boundary",
+        "x-requested-with": "XMLHttpRequest",
+    }
+    cookies = {}
+    state = SimpleNamespace()
+
+    async def form(self):
+        return {"email": "user@example.com", "password": "secret", "referral_code": ""}
+
+
 class LoginSessionTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -67,6 +79,19 @@ class LoginSessionTests(unittest.IsolatedAsyncioTestCase):
         main._sirius_client = _SiriusClient(f"header.{payload_b64}.signature")
 
         response = await main.api_login(_AjaxLoginRequest())
+
+        self.assertEqual(json.loads(response.body), {"ok": True, "redirect": "/events?tab=register"})
+        cookie = SimpleCookie()
+        cookie.load(response.headers["set-cookie"])
+        self.assertEqual(storage.get_user_by_session(cookie["session_id"].value), uid)
+
+    async def test_ajax_form_login_returns_session_cookie(self):
+        uid = "sirius-user-44"
+        payload = {"id": uid, "exp": int(time.time()) + 3600}
+        payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=").decode()
+        main._sirius_client = _SiriusClient(f"header.{payload_b64}.signature")
+
+        response = await main.api_login(_AjaxFormLoginRequest())
 
         self.assertEqual(json.loads(response.body), {"ok": True, "redirect": "/events?tab=register"})
         cookie = SimpleCookie()
