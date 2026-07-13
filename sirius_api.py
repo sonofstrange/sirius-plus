@@ -784,11 +784,6 @@ class SiriusClient:
                 if token:
                     log.info("login: токен получен из localStorage (длина %d)", len(token))
                     self.token = token
-                    try:
-                        await self.refresh_session()
-                        log.info("login: ngenix обновлён")
-                    except Exception as e:
-                        log.warning("login: не удалось обновить ngenix — %s", e)
                     return token
             except Exception:
                 pass
@@ -799,10 +794,6 @@ class SiriusClient:
                     if c["name"] == "AuthToken" and c["value"]:
                         log.info("login: токен получен из cookie (длина %d)", len(c["value"]))
                         self.token = c["value"]
-                        try:
-                            await self.refresh_session()
-                        except Exception as e:
-                            log.warning("login: не удалось обновить ngenix — %s", e)
                         return c["value"]
             except Exception:
                 pass
