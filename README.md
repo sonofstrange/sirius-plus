@@ -2,7 +2,7 @@
 
 Пирожковый Диспетчер, или Sirius Plus, помогает следить за расписанием `my.sirius.online`, получать напоминания и автоматически записываться на выбранные события в момент открытия регистрации.
 
-Сайт: [sirius.rusanoff.ru](https://sirius.rusanoff.ru/)  
+Сайт: [sirius.rusanoff.ru](https://sirius.rusanoff.ru/)<br>
 Telegram-канал: [@sirius_pirozhki](https://t.me/sirius_pirozhki)
 
 > Проект не является официальным продуктом Sirius. Он работает с пользовательским аккаунтом только после явного входа владельца.
@@ -131,7 +131,7 @@ python -m unittest discover -v
 
 ## Контакты
 
-Создатель: Николай Русанов, [@sonofstrange](https://t.me/sonofstrange).  
-Telegram-канал: [@sirius_pirozhki](https://t.me/sirius_pirozhki).  
-Discord: [@sonofstrange](https://discord.com/users/891370219866583091).  
+Создатель: Николай Русанов, [@sonofstrange](https://t.me/sonofstrange).<br>
+Telegram-канал: [@sirius_pirozhki](https://t.me/sirius_pirozhki).<br>
+Discord: [@sonofstrange](https://discord.com/users/891370219866583091).<br>
 Исходный код: [sonofstrange/sirius-plus](https://github.com/sonofstrange/sirius-plus).
