@@ -19,6 +19,10 @@
 
 Python 3.12, FastAPI, Jinja2, SQLite, Playwright и Docker.
 
+## Партнёрская интеграция
+
+Спецификация будущего обмена Сириус Коинов и печенек DroneBet: [docs/dronebet-api.md](docs/dronebet-api.md).
+
 ## Масштаб проекта
 
 `10 252` строк собственного исходного кода в 25 файлах: Python, HTML, CSS и JavaScript. Тесты, README, зависимости и медиафайлы в это число не входят.

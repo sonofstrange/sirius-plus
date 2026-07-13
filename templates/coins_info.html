@@ -19,16 +19,26 @@
 
     {% if coins_tab == 'dronebet' %}
     <section class="partner-exchange" aria-labelledby="dronebet-exchange-title">
-        <div class="partner-exchange__brand">
-            <span class="material-symbols-outlined">swap_horiz</span>
-            <div><span>Партнёрский обмен</span><h2 id="dronebet-exchange-title">DroneBet</h2></div>
+        <div class="partner-exchange__head">
+            <div class="partner-exchange__brand">
+                <span class="material-symbols-outlined">swap_horiz</span>
+                <div><span>Партнёрский обмен</span><h2 id="dronebet-exchange-title">DroneBet</h2></div>
+            </div>
+            <span class="partner-exchange__status">Скоро</span>
         </div>
-        <div class="partner-exchange__rate"><strong>2000</strong><span>печенек</span><b>=</b><strong>1</strong><span>Сириус Коин</span></div>
-        <p>Обмен будет доступен в обе стороны после подключения API DroneBet.</p>
-        <div class="partner-exchange__actions">
-            <button class="btn btn-secondary" type="button" disabled>Печеньки → Коины</button>
-            <button class="btn btn-secondary" type="button" disabled>Коины → Печеньки</button>
+        <div class="partner-exchange__rate" aria-label="Курс обмена">
+            <div><strong>2000</strong><span>печенек</span></div>
+            <span class="material-symbols-outlined">sync_alt</span>
+            <div><strong>1</strong><span>Сириус Коин</span></div>
         </div>
+        <p class="partner-exchange__description">Обмен будет работать в обе стороны после подключения API DroneBet.</p>
+        <div class="partner-exchange__steps">
+            <div><span class="material-symbols-outlined">link</span><span>Привяжи аккаунт DroneBet</span></div>
+            <div><span class="material-symbols-outlined">swap_horiz</span><span>Выбери направление обмена</span></div>
+            <div><span class="material-symbols-outlined">verified_user</span><span>Подтверди операцию</span></div>
+        </div>
+        <p class="partner-exchange__security"><span class="material-symbols-outlined">lock</span> Операции будут защищены от повторного списания и проверяться на обеих сторонах.</p>
+        <a class="partner-exchange__docs" href="https://github.com/sonofstrange/sirius-plus/blob/main/docs/dronebet-api.md" target="_blank" rel="noopener noreferrer">Документация для DroneBet <span class="material-symbols-outlined">open_in_new</span></a>
     </section>
     {% else %}
     <div class="auth-card__help" style="background:var(--bg-card);padding:24px;border-radius:var(--radius);box-shadow:var(--shadow);line-height:1.8">
