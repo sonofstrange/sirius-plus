@@ -1,0 +1,3 @@
+{
+  "comment": "Скопируй google-services.json из Firebase Console в android/app/google-services.json. Этот пример не используется при сборке."
+}

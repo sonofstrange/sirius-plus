@@ -9,6 +9,7 @@ DB_PATH = os.environ.get("DB_PATH", str(BASE_DIR / "sirius_web.sqlite3"))
 DATA_DIR = BASE_DIR / "data" if os.environ.get("DB_PATH") else BASE_DIR
 KEY_FILE = DATA_DIR / "encryption_key.txt"
 VAPID_PRIVATE_KEY_FILE = DATA_DIR / "vapid_private_key.pem"
+FCM_SERVICE_ACCOUNT_FILE = Path(os.environ.get("FCM_SERVICE_ACCOUNT_FILE", DATA_DIR / "firebase_service_account.json"))
 WEB_PUSH_SUBJECT = os.environ.get("WEB_PUSH_SUBJECT", "mailto:admin@sirius.rusanoff.ru")
 CANONICAL_HOST = "sirius.rusanoff.ru"
 INSTANCE_SEAL_FILE = DATA_DIR / "instance_seal.json"

@@ -205,6 +205,24 @@ def init_db():
                 updated_at        INTEGER NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS mobile_push_devices (
+                token             TEXT PRIMARY KEY,
+                user_id           TEXT NOT NULL,
+                platform          TEXT NOT NULL DEFAULT 'android',
+                created_at        INTEGER NOT NULL,
+                updated_at        INTEGER NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_mobile_push_devices_user
+                ON mobile_push_devices(user_id, updated_at DESC);
+
+            CREATE TABLE IF NOT EXISTS radar_alert_state (
+                id          INTEGER PRIMARY KEY CHECK (id = 1),
+                active      INTEGER NOT NULL,
+                message     TEXT NOT NULL DEFAULT '',
+                updated_at  INTEGER NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS feedback_messages (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id      TEXT NOT NULL DEFAULT '',
@@ -1082,6 +1100,49 @@ def get_push_subscriptions(user_id: str) -> list[sqlite3.Row]:
             "SELECT * FROM push_subscriptions WHERE user_id=?",
             (user_id,),
         ).fetchall()
+
+
+def save_mobile_push_device(user_id: str, token: str, platform: str = "android") -> None:
+    now = int(time.time())
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO mobile_push_devices (token, user_id, platform, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(token) DO UPDATE SET
+                 user_id=excluded.user_id,
+                 platform=excluded.platform,
+                 updated_at=excluded.updated_at""",
+            (token, user_id, platform, now, now),
+        )
+
+
+def delete_mobile_push_device(token: str) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM mobile_push_devices WHERE token=?", (token,))
+
+
+def get_mobile_push_devices(user_id: str) -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT token, platform FROM mobile_push_devices WHERE user_id=?", (user_id,)
+        ).fetchall()
+
+
+def get_radar_alert_state() -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute("SELECT active, message, updated_at FROM radar_alert_state WHERE id=1").fetchone()
+
+
+def set_radar_alert_state(active: bool, message: str) -> None:
+    now = int(time.time())
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO radar_alert_state (id, active, message, updated_at)
+               VALUES (1, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET
+                 active=excluded.active, message=excluded.message, updated_at=excluded.updated_at""",
+            (int(active), message, now),
+        )
 
 
 def cleanup_schedule_cache():

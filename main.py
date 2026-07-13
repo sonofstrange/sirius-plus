@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import config as app_config
 import poller
+import sirius_radar
 import storage
 from sirius_api import EventInfo, SiriusClient, token_expiry, parse_sirius_time, classify_subscribe_result, clean_description
 
@@ -40,6 +41,7 @@ BASE_DIR = Path(__file__).parent
 
 _sirius_client: SiriusClient | None = None
 _notification_queue: dict[str, list[str]] = {}
+_firebase_app = None
 
 CACHE_TTL = 600
 _schedule_cache: dict[str, tuple[float, list]] = {}
@@ -107,11 +109,11 @@ async def web_notify(user_id: str, text: str, ntype: str = "info"):
         storage.add_notification(user_id, text, ntype)
     except Exception as e:
         log.warning("Failed to save notification: %s", e)
-    if text.startswith("🔔"):
-        try:
-            asyncio.create_task(_send_push_to_user(user_id, text, ntype))
-        except Exception as e:
-            log.warning("Failed to schedule push notification: %s", e)
+    try:
+        asyncio.create_task(_send_push_to_user(user_id, text, ntype))
+        asyncio.create_task(_send_mobile_push_to_user(user_id, text, ntype))
+    except Exception as e:
+        log.warning("Failed to schedule push notification: %s", e)
     if text.startswith("✅ Ты теперь записан"):
         _schedule_cache.pop(f"events:{user_id}", None)
     log.info("NOTIFY %s [%s]: %s", user_id, ntype, text)
@@ -235,7 +237,7 @@ async def _send_push_to_user(user_id: str, text: str, ntype: str = "info"):
         "body": text,
         "type": ntype,
         "url": "/events?tab=notifications",
-        "is_alarm": text.startswith("🔔"),
+        "is_alarm": ntype == "alarm",
     }, ensure_ascii=False)
 
     sent = 0
@@ -265,6 +267,60 @@ async def _send_push_to_user(user_id: str, text: str, ntype: str = "info"):
             failed += 1
             log.warning("Web Push failed for %s: %s", user_id, e)
     return {"sent": sent, "failed": failed, "removed": removed}
+
+
+def _fcm_is_configured() -> bool:
+    return app_config.FCM_SERVICE_ACCOUNT_FILE.exists()
+
+
+def _send_mobile_push_blocking(rows, text: str, ntype: str) -> dict:
+    global _firebase_app
+    from firebase_admin import credentials, get_app, initialize_app, messaging
+
+    if _firebase_app is None:
+        try:
+            _firebase_app = get_app()
+        except ValueError:
+            _firebase_app = initialize_app(credentials.Certificate(str(app_config.FCM_SERVICE_ACCOUNT_FILE)))
+
+    is_alarm = ntype == "alarm"
+    sent = failed = removed = 0
+    for row in rows:
+        try:
+            message = messaging.Message(
+                data={
+                    "title": "Пирожковый Диспетчер",
+                    "body": text,
+                    "is_alarm": "1" if is_alarm else "0",
+                    "url": "/events?tab=notifications",
+                },
+                android=messaging.AndroidConfig(priority="high"),
+                token=row["token"],
+            )
+            messaging.send(message, app=_firebase_app)
+            sent += 1
+        except Exception as exc:
+            message = str(exc).lower()
+            if "registration-token-not-registered" in message or "invalid-registration-token" in message:
+                storage.delete_mobile_push_device(row["token"])
+                removed += 1
+            else:
+                failed += 1
+                log.warning("FCM push failed for %s: %s", row["token"][:12], exc)
+    return {"sent": sent, "failed": failed, "removed": removed}
+
+
+async def _send_mobile_push_to_user(user_id: str, text: str, ntype: str = "info"):
+    rows = storage.get_mobile_push_devices(user_id)
+    if not rows:
+        return {"sent": 0, "failed": 0, "removed": 0}
+    if not _fcm_is_configured():
+        return {"sent": 0, "failed": 0, "removed": 0, "disabled": True}
+    try:
+        return await asyncio.to_thread(_send_mobile_push_blocking, rows, text, ntype)
+    except Exception as exc:
+        log.warning("FCM push is unavailable: %s", exc)
+        return {"sent": 0, "failed": len(rows), "removed": 0, "error": str(exc)}
 
 
 def _is_past_event_start(event_start: str | None) -> bool:
@@ -325,13 +381,14 @@ async def lifespan(app: FastAPI):
     reminder_task = asyncio.create_task(
         poller.run_reminder_checker(web_notify, _now)
     ) if _sirius_client else None
+    radar_task = asyncio.create_task(sirius_radar.run_radar_alert_monitor(web_notify))
     app.state.ready = True
     try:
         yield
     finally:
         # Nginx turns this 503 into the shared maintenance page immediately.
         app.state.ready = False
-        for t in [poller_task, reminder_task]:
+        for t in [poller_task, reminder_task, radar_task]:
             if t:
                 t.cancel()
         if _sirius_client:
@@ -2184,12 +2241,32 @@ async def api_push_test(request: Request):
     if not user_id:
         return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
 
+    text = "🔔 Тестовый push\nЕсли телефон заблокирован или вкладка закрыта, это должно прийти системным уведомлением."
     result = await _send_push_to_user(
         user_id,
-        "🔔 Тестовый push\nЕсли телефон заблокирован или вкладка закрыта, это должно прийти системным уведомлением.",
+        text,
         "reminder",
     )
-    return JSONResponse({"ok": True, **result})
+    mobile_result = await _send_mobile_push_to_user(user_id, text, "reminder")
+    return JSONResponse({"ok": True, **result, "mobile": mobile_result})
+
+
+@app.post("/api/mobile/push-token")
+async def api_mobile_push_token(request: Request):
+    user_id = get_user_id(request)
+    if not user_id:
+        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
+    if "SiriusPlusAndroid/" not in request.headers.get("user-agent", ""):
+        return JSONResponse({"ok": False, "error": "Требуется приложение Sirius Plus"}, status_code=403)
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return JSONResponse({"ok": False, "error": "Некорректный запрос"}, status_code=400)
+    token = str(data.get("token", "")).strip()
+    if len(token) < 20 or len(token) > 4096 or any(char.isspace() for char in token):
+        return JSONResponse({"ok": False, "error": "Некорректный FCM-токен"}, status_code=400)
+    storage.save_mobile_push_device(user_id, token)
+    return JSONResponse({"ok": True, "configured": _fcm_is_configured()})
 
 
 @app.post("/api/notifications")

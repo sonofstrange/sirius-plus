@@ -2,6 +2,10 @@ plugins {
     id 'com.android.application'
 }
 
+if (file('google-services.json').exists()) {
+    apply plugin: 'com.google.gms.google-services'
+}
+
 android {
     namespace 'ru.sonofstrange.siriusplus'
     compileSdk 36
@@ -10,8 +14,8 @@ android {
         applicationId 'ru.sonofstrange.siriusplus'
         minSdk 26
         targetSdk 36
-        versionCode 4
-        versionName '1.0.3'
+        versionCode 5
+        versionName '1.0.4'
     }
 
     buildTypes {
@@ -28,4 +32,6 @@ android {
 
 dependencies {
     implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
+    implementation platform('com.google.firebase:firebase-bom:33.7.0')
+    implementation 'com.google.firebase:firebase-messaging'
 }

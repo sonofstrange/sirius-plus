@@ -2,8 +2,6 @@ package ru.sonofstrange.siriusplus;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -29,9 +27,11 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.core.app.ActivityCompat;
-import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
+
+import com.google.firebase.FirebaseApp;
+import com.google.firebase.messaging.FirebaseMessaging;
 
 import org.json.JSONArray;
 
@@ -50,8 +50,10 @@ public class MainActivity extends android.app.Activity {
     private static final String HEALTH_URL = APP_URL + "healthz";
     private static final String LAST_PAGE_URL_FILE = "last_page_url.txt";
     private static final String SNAPSHOT_PREFIX = "SIRIUS_PLUS_SNAPSHOT_V2\n";
-    private static final String NOTIFICATION_CHANNEL = "sirius_events";
     private static final int NOTIFICATION_PERMISSION_REQUEST = 1001;
+    static final String PUSH_PREFS = "sirius_push";
+    static final String FCM_TOKEN_KEY = "fcm_token";
+    private static volatile boolean appForeground;
 
     private WebView webView;
     private TextView offlineBadge;
@@ -139,13 +141,25 @@ public class MainActivity extends android.app.Activity {
 
         createNotificationChannel();
         requestNotificationPermission();
+        initializeFirebaseMessaging();
         loadApp(appUrlFromIntent());
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        appForeground = true;
         if (webView != null && offlineMode) probeServer(webView.getUrl());
+    }
+
+    @Override
+    protected void onPause() {
+        appForeground = false;
+        super.onPause();
+    }
+
+    static boolean isAppForeground() {
+        return appForeground;
     }
 
     @Override
@@ -333,13 +347,7 @@ public class MainActivity extends android.app.Activity {
     }
 
     private void createNotificationChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
-        NotificationChannel channel = new NotificationChannel(
-            NOTIFICATION_CHANNEL, "События Sirius", NotificationManager.IMPORTANCE_HIGH
-        );
-        channel.setDescription("Напоминания и изменения расписания");
-        channel.enableVibration(true);
-        ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).createNotificationChannel(channel);
+        MobileNotifier.createChannels(this);
     }
 
     private void requestNotificationPermission() {
@@ -352,15 +360,33 @@ public class MainActivity extends android.app.Activity {
     private void showNativeNotification(String message) {
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
             != PackageManager.PERMISSION_GRANTED) return;
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, NOTIFICATION_CHANNEL)
-            .setSmallIcon(R.drawable.sirius_logo)
-            .setContentTitle("Пирожковый Диспетчер")
-            .setContentText(message)
-            .setStyle(new NotificationCompat.BigTextStyle().bigText(message))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setDefaults(NotificationCompat.DEFAULT_SOUND | NotificationCompat.DEFAULT_VIBRATE)
-            .setAutoCancel(true);
-        ((NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE)).notify((int) System.currentTimeMillis(), builder.build());
+        MobileNotifier.show(this, "Пирожковый Диспетчер", message, message.startsWith("🚨"));
+    }
+
+    private void initializeFirebaseMessaging() {
+        if (getResources().getIdentifier("google_app_id", "string", getPackageName()) == 0) return;
+        try {
+            FirebaseApp.initializeApp(this);
+            FirebaseMessaging.getInstance().getToken().addOnSuccessListener(this::storeFcmToken);
+        } catch (Exception ignored) {
+            // The application stays usable when Firebase is not configured yet.
+        }
+    }
+
+    private void storeFcmToken(String token) {
+        if (token == null || token.isEmpty()) return;
+        getSharedPreferences(PUSH_PREFS, MODE_PRIVATE).edit().putString(FCM_TOKEN_KEY, token).apply();
+        syncFcmToken();
+    }
+
+    private void syncFcmToken() {
+        String token = getSharedPreferences(PUSH_PREFS, MODE_PRIVATE).getString(FCM_TOKEN_KEY, "");
+        if (token.isEmpty() || loadingOfflineSnapshot) return;
+        String body = org.json.JSONObject.quote(token);
+        webView.evaluateJavascript(
+            "fetch('/api/mobile/push-token',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:" + body + "})}).catch(function(){})",
+            null
+        );
     }
 
     private int dp(int value) {
@@ -370,7 +396,7 @@ public class MainActivity extends android.app.Activity {
     private final class NativeNotificationBridge {
         @JavascriptInterface
         public void notify(String message) {
-            runOnUiThread(() -> showNativeNotification(message));
+            if (isAppForeground()) runOnUiThread(() -> showNativeNotification(message));
         }
     }
 
@@ -401,6 +427,7 @@ public class MainActivity extends android.app.Activity {
             leaveOfflineMode();
             saveSnapshot(url);
             installNativeNotificationBridge();
+            syncFcmToken();
             view.evaluateJavascript(
                 "fetch('/api/app-bonus', {method: 'POST', credentials: 'same-origin'}).catch(function() {})",
                 null

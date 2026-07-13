@@ -6,4 +6,5 @@ playwright>=1.45
 cryptography>=42
 aiofiles>=23.2
 pywebpush>=2.0
+firebase-admin>=6.5
 qrcode>=8.0
