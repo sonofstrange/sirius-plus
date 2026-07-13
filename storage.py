@@ -1734,6 +1734,17 @@ def save_known_uid(uid: str, user_id: str, full_name: str = "", team: str = ""):
         )
 
 
+def update_known_team(user_id: str, team: str):
+    team = (team or "").strip()
+    if not team:
+        return
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE known_uids SET team=?, updated_at=? WHERE user_id=?",
+            (team, int(time.time()), user_id),
+        )
+
+
 def get_all_known_uids() -> list[sqlite3.Row]:
     with get_conn() as conn:
         return conn.execute(

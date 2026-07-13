@@ -39,6 +39,20 @@ class AdminUserProfileTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(profile["watching_count"], 1)
         self.assertEqual(profile["registered_count"], 0)
 
+    def test_team_is_taken_from_schedule_groups(self):
+        storage.save_token("user-1", "token")
+        storage.set_user_uid("user-1", "1001")
+        storage.save_known_uid("1001", "user-1", "Ivan Ivanov")
+        events = [
+            SimpleNamespace(unions=["БВ3"]),
+            SimpleNamespace(unions=["БВ3", "БВ4"]),
+            SimpleNamespace(unions=["БВ4"]),
+        ]
+
+        main._save_schedule_team("user-1", events)
+
+        self.assertEqual(storage.get_admin_user_profile("1001")["team"], "БВ3")
+
     async def test_admin_profile_api_requires_verified_admin_session(self):
         storage.save_token("admin", "verified-token")
         storage.set_user_uid("admin", "admin")

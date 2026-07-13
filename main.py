@@ -165,6 +165,7 @@ def _deserialize_events(data_json: str) -> list[EventInfo]:
 
 def _set_events_cached(user_id: str, events: list[EventInfo]):
     _set_cached(f"events:{user_id}", events)
+    _save_schedule_team(user_id, events)
     try:
         storage.set_events_cache(user_id, _serialize_events(events))
     except Exception as e:
@@ -479,12 +480,21 @@ def _decode_jwt(token: str) -> dict | None:
         return None
 
 
-def _team_from_payload(payload: dict) -> str:
-    for key in ("team", "teamName", "group", "groupName", "className"):
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return ""
+def _team_from_schedule(events: list) -> str:
+    counts: dict[str, int] = {}
+    for event in events:
+        for team in getattr(event, "unions", []) or []:
+            if not isinstance(team, str) or not team.strip():
+                continue
+            team = team.strip()
+            counts[team] = counts.get(team, 0) + 1
+    return max(counts, key=counts.get) if counts else ""
+
+
+def _save_schedule_team(user_id: str, events: list):
+    team = _team_from_schedule(events)
+    if team:
+        storage.update_known_team(user_id, team)
 
 
 def _session_uid(user_id: str) -> str | None:
@@ -767,6 +777,7 @@ async def schedule_page(request: Request, date: str = ""):
             try:
                 cached = await _sirius_client.fetch_schedule_day(date, token=token)
                 _set_cached(cache_key, cached)
+                _save_schedule_team(user_id, cached)
             except Exception as e:
                 error = str(e)
         else:
@@ -988,7 +999,7 @@ async def api_set_token(request: Request):
 
     storage.ensure_coins(uid)
     full_name = " ".join(filter(None, [payload.get("lastName"), payload.get("firstName"), payload.get("middleName")]))
-    storage.save_known_uid(uid, user_id, full_name, _team_from_payload(payload))
+    storage.save_known_uid(uid, user_id, full_name)
 
     response = JSONResponse({"ok": True, "token_set": True})
     if is_new_session:
@@ -1055,7 +1066,7 @@ async def api_login(request: Request):
 
     storage.ensure_coins(uid)
     full_name = " ".join(filter(None, [payload.get("lastName"), payload.get("firstName"), payload.get("middleName")]))
-    storage.save_known_uid(uid, user_id, full_name, _team_from_payload(payload))
+    storage.save_known_uid(uid, user_id, full_name)
 
     referral_code = storage.normalize_referral_code(referral_code or request.cookies.get(REFERRAL_COOKIE, ""))
     referral_applied = is_first_sirius_login and storage.apply_referral(referral_code, uid)

@@ -97,6 +97,7 @@ class EventInfo:
     people_max: int
     description: str
     raw: dict
+    unions: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -238,6 +239,7 @@ def _parse_events(data: dict) -> list[EventInfo]:
                 people_max=ev.get("peopleMax", 0),
                 description=clean_description(ev.get("description") or ev.get("eventDescription")),
                 raw=ev,
+                unions=ev.get("unions") or [],
             ))
     return events
 

@@ -232,7 +232,7 @@ function renderTable() {
         container.innerHTML = '<p style="color:var(--text-muted)">Ничего не найдено</p>';
         return;
     }
-    let html = '<div class="admin-users-table-wrap"><table class="admin-users-table"><tr><th>Имя</th><th>Команда</th><th>UID</th><th>Коины</th><th>Доверие</th><th>Админ</th><th>Выдать</th></tr>';
+    let html = '<div class="admin-users-table-wrap"><table class="admin-users-table"><tr><th>Пользователь</th><th>Коины</th><th>Доверие</th><th>Управление</th></tr>';
     for (const u of filtered) {
         const trust = Number(u.trust_level || 2);
         const safeUid = u.uid.replace(/'/g,"\\'");
@@ -244,20 +244,17 @@ function renderTable() {
                 <option value="3" ${trust === 3 ? 'selected' : ''}>3 · Недоверенный</option>
             </select>`;
         html += `<tr>
-            <td>
+            <td class="admin-users-table__person">
                 <button class="admin-user-link" type="button" onclick="showAdminUser('${safeUid}')" title="Открыть профиль пользователя">${escapeHtml(u.name || '(без имени)')}</button>
+                <button class="admin-user-uid" type="button" onclick="fillUid('${safeUid}')" title="Подставить UID в выдачу коинов">${escapeHtml(u.uid)}</button>
             </td>
-            <td>${escapeHtml(u.team || '—')}</td>
-            <td class="admin-users-table__uid" onclick="fillUid('${safeUid}')" title="Нажми чтобы скопировать UID в поле">${escapeHtml(u.uid)}</td>
             <td class="admin-users-table__coins"><strong>${u.coins}</strong></td>
             <td>${trustHtml}</td>
             <td>
-                <button class="btn btn-sm ${u.is_admin ? 'btn-primary' : 'btn-outline'} admin-users-table__admin-btn" onclick="setAdmin('${safeUid}', ${u.is_admin ? 'false' : 'true'})">
-                    ${u.is_admin ? 'Админ' : 'Назначить'}
-                </button>
-            </td>
-            <td>
                 <div class="admin-users-table__actions">
+                    <button class="btn btn-sm ${u.is_admin ? 'btn-primary' : 'btn-outline'} admin-users-table__admin-btn" onclick="setAdmin('${safeUid}', ${u.is_admin ? 'false' : 'true'})" title="${u.is_admin ? 'Снять права администратора' : 'Назначить администратором'}">
+                        <span class="material-symbols-outlined">admin_panel_settings</span>
+                    </button>
                     <button class="btn btn-sm btn-outline" onclick="quickGrant('${safeUid}', 1)">+1</button>
                     <button class="btn btn-sm btn-outline" onclick="quickGrant('${safeUid}', 5)">+5</button>
                 </div>
