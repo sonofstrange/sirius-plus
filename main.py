@@ -48,6 +48,7 @@ _schedule_cache: dict[str, tuple[float, list]] = {}
 PAGE_SIZE = 20
 
 _MSK = dt.timezone(dt.timedelta(hours=3))
+REFERRAL_COOKIE = "sirius_referral_code"
 
 _ERROR_MSGS = {
     "401": "Токен протух — обнови его на странице входа.",
@@ -490,6 +491,7 @@ def _render(template: str, request: Request, **kwargs):
         "coins_balance": coins_balance,
         "is_admin": is_admin,
         "login_type": login_type,
+        "referral_code": request.cookies.get(REFERRAL_COOKIE, ""),
         "notifications": notifications,
     "fmt_dt": fmt_dt,
     "fmt_time": fmt_time,
@@ -503,6 +505,17 @@ def _render(template: str, request: Request, **kwargs):
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
+    referral_code = storage.normalize_referral_code(request.query_params.get("ref", ""))
+    if referral_code:
+        response = RedirectResponse(url="/", status_code=303)
+        response.set_cookie(
+            key=REFERRAL_COOKIE,
+            value=referral_code,
+            max_age=30 * 86400,
+            httponly=True,
+            samesite="lax",
+        )
+        return response
     user_id = get_user_id(request)
     if not user_id:
         error = request.query_params.get("error", "")
@@ -920,10 +933,12 @@ async def api_login(request: Request):
         data = await request.json()
         email = data.get("email", "").strip()
         password = data.get("password", "").strip()
+        referral_code = data.get("referral_code", "").strip()
     else:
         form_data = await request.form()
         email = form_data.get("email", "").strip()
         password = form_data.get("password", "").strip()
+        referral_code = form_data.get("referral_code", "").strip()
 
     if not email or not password:
         return RedirectResponse(url="/?error=Email+и+пароль+обязательны", status_code=303)
@@ -945,6 +960,7 @@ async def api_login(request: Request):
         return RedirectResponse(url="/?error=Не удалось определить аккаунт Sirius", status_code=303)
 
     uid = payload["id"]
+    is_first_sirius_login = storage.get_user_by_uid(uid) is None
     if is_new_session:
         user_id = storage.get_user_by_uid(uid) or uid
     else:
@@ -959,10 +975,20 @@ async def api_login(request: Request):
     full_name = " ".join(filter(None, [payload.get("lastName"), payload.get("firstName"), payload.get("middleName")]))
     storage.save_known_uid(uid, user_id, full_name)
 
+    referral_code = storage.normalize_referral_code(referral_code or request.cookies.get(REFERRAL_COOKIE, ""))
+    referral_applied = is_first_sirius_login and storage.apply_referral(referral_code, uid)
+    if referral_applied:
+        storage.add_notification(uid, "🎁 Реферальный код применён: тебе начислено 5 Сириус Коинов.", "success")
+        referrer_uid = storage.get_referrer_uid(uid)
+        if referrer_uid:
+            storage.add_notification(referrer_uid, "🎁 Друг зарегистрировался по твоей ссылке: начислено 5 Сириус Коинов.", "success")
+
     response = RedirectResponse(url="/events?tab=register", status_code=303)
     if is_new_session:
         session_id = storage.create_session_for_user(user_id)
         response.set_cookie(key="session_id", value=session_id, max_age=86400 * 365, httponly=True, samesite="lax")
+    if referral_code:
+        response.delete_cookie(REFERRAL_COOKIE)
     return response
 
 
@@ -1393,6 +1419,44 @@ async def api_coins_balance(request: Request):
     if not uid:
         return JSONResponse({"ok": False, "error": "Токен не задан"}, status_code=400)
     return JSONResponse({"ok": True, "coins": storage.get_coins(uid), "total": storage.get_coins_total(uid), "reserved": storage.get_coins_reserved(uid), "uid": uid})
+
+
+@app.get("/api/referral")
+async def api_referral(request: Request):
+    user_id = get_user_id(request)
+    uid = _session_uid(user_id) if user_id else None
+    if not uid:
+        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
+    code = storage.get_or_create_referral_code(uid)
+    return JSONResponse({
+        "ok": True,
+        "code": code,
+        "url": f"https://{app_config.CANONICAL_HOST}/?ref={code}",
+        "invited": storage.get_referral_count(uid),
+        "reward": 5,
+    })
+
+
+@app.get("/api/referral/qr")
+async def api_referral_qr(request: Request):
+    user_id = get_user_id(request)
+    uid = _session_uid(user_id) if user_id else None
+    if not uid:
+        return Response(status_code=401)
+    code = storage.get_or_create_referral_code(uid)
+    try:
+        import qrcode
+        import qrcode.image.svg
+
+        image = qrcode.make(
+            f"https://{app_config.CANONICAL_HOST}/?ref={code}",
+            image_factory=qrcode.image.svg.SvgPathImage,
+            border=1,
+        )
+        return Response(content=image.to_string(), media_type="image/svg+xml")
+    except Exception as e:
+        log.warning("Could not build referral QR code: %s", e)
+        return Response(status_code=503)
 
 
 @app.post("/api/coins/transfer")

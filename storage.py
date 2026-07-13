@@ -300,6 +300,22 @@ def init_db():
                 updated_at  INTEGER NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS referral_codes (
+                uid          TEXT PRIMARY KEY,
+                code         TEXT NOT NULL UNIQUE,
+                created_at   INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS referrals (
+                referred_uid TEXT PRIMARY KEY,
+                referrer_uid TEXT NOT NULL,
+                code         TEXT NOT NULL,
+                rewarded_at  INTEGER NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_referrals_referrer
+                ON referrals(referrer_uid, rewarded_at DESC);
+
         """)
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(watchlist)").fetchall()]
         if "event_start" not in cols:
@@ -1246,6 +1262,67 @@ def add_coins(uid: str, amount: int) -> int:
             (new_balance, now, uid),
         )
         return new_balance
+
+
+# ---------- referrals ----------
+
+def normalize_referral_code(code: str) -> str:
+    return "".join(char for char in (code or "").upper() if char.isalnum())[:12]
+
+
+def get_or_create_referral_code(uid: str) -> str:
+    with get_conn() as conn:
+        row = conn.execute("SELECT code FROM referral_codes WHERE uid=?", (uid,)).fetchone()
+        if row:
+            return row["code"]
+        for _ in range(20):
+            code = secrets.token_urlsafe(6).replace("-", "").replace("_", "").upper()[:8]
+            try:
+                conn.execute(
+                    "INSERT INTO referral_codes (uid, code, created_at) VALUES (?, ?, ?)",
+                    (uid, code, int(time.time())),
+                )
+                return code
+            except sqlite3.IntegrityError:
+                continue
+    raise RuntimeError("Не удалось создать реферальный код")
+
+
+def apply_referral(code: str, referred_uid: str, reward: int = 5) -> bool:
+    """One successful registration may use one code; both accounts receive the reward."""
+    code = normalize_referral_code(code)
+    if not code:
+        return False
+    now = int(time.time())
+    with get_conn() as conn:
+        referrer = conn.execute("SELECT uid FROM referral_codes WHERE code=?", (code,)).fetchone()
+        if not referrer or referrer["uid"] == referred_uid:
+            return False
+        try:
+            conn.execute(
+                "INSERT INTO referrals (referred_uid, referrer_uid, code, rewarded_at) VALUES (?, ?, ?, ?)",
+                (referred_uid, referrer["uid"], code, now),
+            )
+        except sqlite3.IntegrityError:
+            return False
+        for uid in (referrer["uid"], referred_uid):
+            conn.execute(
+                "UPDATE sirius_coins SET coins=coins+?, updated_at=? WHERE uid=?",
+                (reward, now, uid),
+            )
+        return True
+
+
+def get_referral_count(uid: str) -> int:
+    with get_conn() as conn:
+        row = conn.execute("SELECT COUNT(*) AS count FROM referrals WHERE referrer_uid=?", (uid,)).fetchone()
+        return int(row["count"])
+
+
+def get_referrer_uid(referred_uid: str) -> str | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT referrer_uid FROM referrals WHERE referred_uid=?", (referred_uid,)).fetchone()
+        return row["referrer_uid"] if row else None
 
 
 def create_prediction_market(

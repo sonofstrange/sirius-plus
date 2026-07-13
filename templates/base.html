@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Пирожковый Диспетчер{% endblock %}</title>
     <link rel="icon" href="/static/sirius.png">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260713-5">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260713-6">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
 </head>
 <body>
@@ -132,6 +132,20 @@
                 <div id="my-feedback-list" class="profile-list">
                     <div class="loading">Загрузка...</div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="referral-modal" onclick="closeModal('referral-modal')">
+        <div class="modal referral-modal" onclick="event.stopPropagation()">
+            <div class="modal__header">
+                <h2>Пригласить друга</h2>
+                <button class="modal__close" onclick="closeModal('referral-modal')">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="modal__body" id="referral-modal-body">
+                <div class="loading">Загрузка...</div>
             </div>
         </div>
     </div>
@@ -476,6 +490,7 @@
                         </div>
                         <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;display:flex;flex-direction:column;gap:8px">
                             <button class="btn btn-outline btn-block" onclick="showMyFeedback()">Мои обращения</button>
+                            <button class="btn btn-outline btn-block" onclick="showReferral()">Пригласить друга</button>
                             <button class="btn btn-outline btn-block" onclick="createLoginCode()">Получить код входа</button>
                             <button class="btn btn-outline btn-block" onclick="refreshToken()">🔄 Обновить токен</button>
                             <button class="btn btn-outline btn-block" onclick="ping()">Проверить связь с Sirius</button>
@@ -586,6 +601,41 @@
             const modal = document.getElementById('my-feedback-modal');
             if (modal) modal.style.display = 'flex';
             await loadMyFeedback();
+        }
+
+        async function showReferral() {
+            const modal = document.getElementById('referral-modal');
+            const body = document.getElementById('referral-modal-body');
+            modal.style.display = 'flex';
+            body.innerHTML = '<div class="loading">Загрузка...</div>';
+            try {
+                const response = await fetch('/api/referral');
+                const data = await response.json();
+                if (!data.ok) throw new Error(data.error || 'Не удалось загрузить реферальную ссылку');
+                body.innerHTML = `
+                    <div class="referral-card">
+                        <p class="text-muted">Друг перейдёт по ссылке или введёт код при первом входе через Sirius. После успешного входа вы оба получите по ${data.reward} Сириус Коинов.</p>
+                        <div class="referral-card__code"><span>Твой код</span><strong>${escapeHtml(data.code)}</strong></div>
+                        <img class="referral-card__qr" src="/api/referral/qr?code=${encodeURIComponent(data.code)}" alt="QR-код реферальной ссылки">
+                        <label class="form-label" for="referral-url">Реферальная ссылка</label>
+                        <div class="referral-card__url"><input id="referral-url" class="form-input" value="${escapeHtml(data.url)}" readonly><button class="btn btn-primary btn-sm" type="button" onclick="copyReferralLink()">Копировать</button></div>
+                        <div class="referral-card__stats">Приглашено друзей: <strong>${data.invited}</strong></div>
+                    </div>`;
+            } catch (e) {
+                body.innerHTML = '<div class="alert alert-error">' + escapeHtml(e.message) + '</div>';
+            }
+        }
+
+        async function copyReferralLink() {
+            const input = document.getElementById('referral-url');
+            if (!input) return;
+            input.select();
+            try {
+                await navigator.clipboard.writeText(input.value);
+                dlgAlert('Ссылка скопирована', 'Отправь её другу.');
+            } catch (e) {
+                document.execCommand('copy');
+            }
         }
 
         async function loadMyFeedback() {

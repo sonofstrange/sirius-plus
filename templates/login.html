@@ -49,6 +49,11 @@
                     <input type="password" name="password" id="password-input" class="form-input" style="width:100%"
                            placeholder="Пароль от Sirius" required>
                 </div>
+                <div class="form-group">
+                    <label class="form-label" for="referral-code-input">Реферальный код <span class="text-muted">(необязательно)</span></label>
+                    <input type="text" name="referral_code" id="referral-code-input" class="form-input" style="width:100%;text-transform:uppercase"
+                           value="{{ referral_code }}" placeholder="Например, ABCD1234" maxlength="12" autocomplete="off">
+                </div>
                 <button type="submit" class="btn btn-primary btn-block" id="login-btn">
                     Войти
                 </button>
