@@ -281,6 +281,8 @@ body {
     align-items: center;
     justify-content: space-between;
     margin-bottom: 24px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
     flex-wrap: wrap;
     gap: 12px;
 }
@@ -427,6 +429,7 @@ body.dark-theme .form-select {
     transition: all 0.3s ease;
     text-decoration: none;
     line-height: 1.4;
+    min-height: 38px;
 }
 .btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-primary {
@@ -440,6 +443,12 @@ body.dark-theme .form-select {
     border: 1px solid var(--border);
 }
 .btn-outline:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.btn:focus-visible,
+.form-input:focus-visible,
+.form-textarea:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--primary) 55%, transparent);
+    outline-offset: 2px;
+}
 .btn-sm { padding: 6px 14px; font-size: 13px; }
 .btn-block { width: 100%; justify-content: center; }
 .btn-danger {
@@ -2188,8 +2197,8 @@ body.dark-theme .badge-muted {
     background: #182126;
     color: #f4f7f8;
 }
-.drone-status--clear { border-color: #368a60; background: #1b563b; }
-.drone-status--active { border-color: #b64e52; background: #552126; }
+.drone-status--clear { border-color: #38a36c; background: #167a4e; }
+.drone-status--active { border-color: #e35b60; background: #8d242c; }
 .drone-status__content { position: relative; z-index: 1; }
 .drone-status__eyebrow { display: flex; align-items: center; gap: 8px; color: #a8cabb; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .drone-status--active .drone-status__eyebrow { color: #ffb1ad; }
@@ -2200,12 +2209,12 @@ body.dark-theme .badge-muted {
 .drone-status__art { display: none; }
 .drone-status--clear .drone-status__clouds,
 .drone-status--active .drone-status__art { display: block; position: absolute; inset: 0; pointer-events: none; }
-.drone-status__clouds { opacity: .22; }
+.drone-status__clouds { opacity: .28; }
 .drone-status__clouds .material-symbols-outlined { position: absolute; color: #fff; font-size: 138px; }
 .drone-status__clouds .material-symbols-outlined:nth-child(1) { right: 14px; bottom: -36px; }
 .drone-status__clouds .material-symbols-outlined:nth-child(2) { right: 172px; top: -40px; font-size: 88px; }
 .drone-status__clouds .material-symbols-outlined:nth-child(3) { right: 312px; bottom: 26px; font-size: 55px; }
-.drone-status--active .drone-status__art { opacity: .28; }
+.drone-status--active .drone-status__art { opacity: .35; }
 .drone-status__art .material-symbols-outlined { position: absolute; color: #fff; font-size: 94px; transform: rotate(-22deg); }
 .drone-status__art .material-symbols-outlined:nth-child(1) { right: 34px; top: 16px; }
 .drone-status__art .material-symbols-outlined:nth-child(2) { right: 158px; bottom: -12px; font-size: 54px; transform: rotate(18deg); }
@@ -2217,7 +2226,7 @@ body.dark-theme .badge-muted {
 .dronebet-section__head h2 { margin: 3px 0 0; font-size: 19px; }
 .dronebet-section__meta { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
 .dronebet-current__hint { margin: 0 0 16px; color: var(--text-muted); font-size: 13px; }
-.dronebet-options { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.dronebet-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
 .dronebet-option { display: grid; align-content: center; min-height: 106px; padding: 12px 8px; border: 0; border-right: 1px solid var(--border); background: var(--bg-card); color: var(--text); cursor: pointer; text-align: center; transition: background .15s, color .15s; }
 .dronebet-option:last-child { border-right: 0; }
 .dronebet-option:hover:not(:disabled) { background: color-mix(in srgb, var(--primary) 10%, var(--bg-card)); }
@@ -2294,7 +2303,7 @@ body.dark-theme .badge-muted {
     .drone-status__clouds .material-symbols-outlined:nth-child(3) { display: none; }
     .dronebet-market,
     .dronebet-history-panel { padding: 15px; }
-    .dronebet-options { grid-template-columns: repeat(5, minmax(94px, 1fr)); overflow-x: auto; }
+    .dronebet-options { grid-template-columns: repeat(4, minmax(94px, 1fr)); overflow-x: auto; }
     .dronebet-option { min-height: 94px; }
     .dronebet-bet-sheet { bottom: 8px; }
     .dronebet-section__head { align-items: flex-start; flex-direction: column; gap: 4px; }

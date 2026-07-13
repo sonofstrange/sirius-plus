@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import json
 import logging
 import time
 from typing import Awaitable, Callable
@@ -14,20 +15,30 @@ from sirius_radar import fetch_radar_state
 log = logging.getLogger("dronebet")
 
 RADAR_POLL_INTERVAL = 5
-DRONEBET_OPTIONS = ["До 30 минут", "30–60 минут", "1–2 часа", "2–4 часа", "4+ часов"]
+DRONEBET_OPTIONS = ["<45 минут", "45–90 минут", "90–180 минут", "180+ минут"]
+LEGACY_DRONEBET_OPTIONS = ["До 30 минут", "30–60 минут", "1–2 часа", "2–4 часа", "4+ часов"]
 NotifyFn = Callable[[str, str, str], Awaitable[None]]
 
 
-def duration_option(duration_seconds: int) -> str:
-    if duration_seconds < 30 * 60:
-        return DRONEBET_OPTIONS[0]
-    if duration_seconds < 60 * 60:
-        return DRONEBET_OPTIONS[1]
-    if duration_seconds < 2 * 60 * 60:
-        return DRONEBET_OPTIONS[2]
-    if duration_seconds < 4 * 60 * 60:
-        return DRONEBET_OPTIONS[3]
-    return DRONEBET_OPTIONS[4]
+def duration_option(duration_seconds: int, options: list[str] | None = None) -> str:
+    options = options or DRONEBET_OPTIONS
+    if options == LEGACY_DRONEBET_OPTIONS:
+        if duration_seconds < 30 * 60:
+            return options[0]
+        if duration_seconds < 60 * 60:
+            return options[1]
+        if duration_seconds < 2 * 60 * 60:
+            return options[2]
+        if duration_seconds < 4 * 60 * 60:
+            return options[3]
+        return options[4]
+    if duration_seconds < 45 * 60:
+        return options[0]
+    if duration_seconds < 90 * 60:
+        return options[1]
+    if duration_seconds < 180 * 60:
+        return options[2]
+    return options[3]
 
 
 def _state_timestamp(state: dict) -> int:
@@ -60,7 +71,11 @@ async def sync_radar_state(state: dict, notify: NotifyFn) -> None:
     if not alert:
         return
     market = storage.get_prediction_market(int(alert["market_id"]))
-    result = duration_option(max(0, timestamp - int(alert["started_at"])))
+    try:
+        market_options = json.loads(market["options_json"]) if market else DRONEBET_OPTIONS
+    except (TypeError, json.JSONDecodeError):
+        market_options = DRONEBET_OPTIONS
+    result = duration_option(max(0, timestamp - int(alert["started_at"])), market_options)
     if market and market["status"] == "open":
         ok, error, payouts = storage.resolve_prediction_market(int(alert["market_id"]), correct_option=result)
         if not ok:

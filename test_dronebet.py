@@ -38,7 +38,7 @@ class DroneBetTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(alert)
         self.assertEqual(len(storage.get_drone_alerts(include_active=True)), 1)
         market_id = int(alert["market_id"])
-        self.assertTrue(storage.place_prediction_bet("alice", market_id, "30–60 минут", None, 2)[0])
+        self.assertTrue(storage.place_prediction_bet("alice", market_id, "<45 минут", None, 2)[0])
 
         clear = {
             "active": False,
@@ -49,10 +49,16 @@ class DroneBetTests(unittest.IsolatedAsyncioTestCase):
 
         history = storage.get_drone_alerts()
         self.assertFalse(storage.get_drone_radar_state()["active"])
-        self.assertEqual(history[0]["result_option"], "30–60 минут")
+        self.assertEqual(history[0]["result_option"], "<45 минут")
         self.assertEqual(storage.get_prediction_market(market_id)["status"], "resolved")
         self.assertEqual(storage.get_prediction_markets(), [])
         self.assertEqual(storage.get_coins("alice"), 10)
+
+    def test_legacy_market_duration_keeps_its_original_ranges(self):
+        self.assertEqual(
+            dronebet.duration_option(35 * 60, dronebet.LEGACY_DRONEBET_OPTIONS),
+            "30–60 минут",
+        )
 
 
 if __name__ == "__main__":
