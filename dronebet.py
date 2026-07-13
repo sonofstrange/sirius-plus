@@ -18,6 +18,7 @@ RADAR_POLL_INTERVAL = 5
 DRONEBET_OPTIONS = ["<45 минут", "45–90 минут", "90–180 минут", "180+ минут"]
 LEGACY_DRONEBET_OPTIONS = ["До 30 минут", "30–60 минут", "1–2 часа", "2–4 часа", "4+ часов"]
 NotifyFn = Callable[[str, str, str], Awaitable[None]]
+_MSK = dt.timezone(dt.timedelta(hours=3))
 
 
 def duration_option(duration_seconds: int, options: list[str] | None = None) -> str:
@@ -52,6 +53,12 @@ def _state_timestamp(state: dict) -> int:
     return int(time.time())
 
 
+def format_threat_period(started_at: int, ended_at: int) -> str:
+    start = dt.datetime.fromtimestamp(started_at, tz=dt.timezone.utc).astimezone(_MSK)
+    end = dt.datetime.fromtimestamp(ended_at, tz=dt.timezone.utc).astimezone(_MSK)
+    return f"с {start:%d.%m %H:%M} до {end:%d.%m %H:%M} МСК"
+
+
 async def sync_radar_state(state: dict, notify: NotifyFn) -> None:
     event = state.get("event") or {}
     active = bool(state.get("active"))
@@ -76,6 +83,7 @@ async def sync_radar_state(state: dict, notify: NotifyFn) -> None:
     except (TypeError, json.JSONDecodeError):
         market_options = DRONEBET_OPTIONS
     result = duration_option(max(0, timestamp - int(alert["started_at"])), market_options)
+    period = format_threat_period(int(alert["started_at"]), timestamp)
     if market and market["status"] == "open":
         ok, error, payouts = storage.resolve_prediction_market(int(alert["market_id"]), correct_option=result)
         if not ok:
@@ -87,8 +95,8 @@ async def sync_radar_state(state: dict, notify: NotifyFn) -> None:
                 if not user_id:
                     continue
                 text = (
-                    f"🚁 ДронБет рассчитан: «{result}». Ты получил {payout} Сириус Коин(ов)."
-                    if payout else f"🚁 ДронБет рассчитан: «{result}». Эта ставка не принесла коинов."
+                    f"🚁 Угроза была {period}. ДронБет рассчитан: «{result}». Ты получил {payout} Сириус Коин(ов)."
+                    if payout else f"🚁 Угроза была {period}. ДронБет рассчитан: «{result}». Эта ставка не принесла коинов."
                 )
                 await notify(user_id, text, "info")
     storage.finish_drone_alert(int(alert["id"]), timestamp, result)

@@ -72,8 +72,11 @@ function duration(seconds) {
     return hours ? `${hours}ч ${String(minutes).padStart(2, '0')}м` : `${minutes}м ${String(rest).padStart(2, '0')}с`;
 }
 
-function formatDate(timestamp) {
-    return new Date(timestamp * 1000).toLocaleString('ru-RU', {day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'});
+function formatThreatPeriod(startedAt, endedAt) {
+    const options = {timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'};
+    const start = new Date(startedAt * 1000).toLocaleString('ru-RU', options);
+    const end = new Date(endedAt * 1000).toLocaleString('ru-RU', {timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit'});
+    return `с ${start} до ${end} МСК`;
 }
 
 function updateStatus() {
@@ -124,7 +127,7 @@ function renderHistory(history) {
         const payout = market && market.my_bets.length ? market.my_bets.reduce((sum, bet) => sum + bet.payout, 0) : null;
         return `<article class="dronebet-history__item">
             <span class="dronebet-history__dot"></span>
-            <div class="dronebet-history__main"><strong>${formatDate(item.started_at)}</strong><span>${duration(item.duration_seconds)}</span></div>
+            <div class="dronebet-history__main"><strong>${formatThreatPeriod(item.started_at, item.ended_at)}</strong><span>${duration(item.duration_seconds)}</span></div>
             <div class="dronebet-history__result"><span>${esc(item.result_option)}</span>${payout !== null ? `<b class="${payout ? 'is-win' : ''}">${payout ? '+' : ''}${payout} 🪙</b>` : ''}</div>
         </article>`;
     }).join('');

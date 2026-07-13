@@ -53,6 +53,10 @@ class DroneBetTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(storage.get_prediction_market(market_id)["status"], "resolved")
         self.assertEqual(storage.get_prediction_markets(), [])
         self.assertEqual(storage.get_coins("alice"), 10)
+        self.assertEqual(
+            dronebet.format_threat_period(1783936800, 1783938900),
+            "с 13.07 13:00 до 13.07 13:35 МСК",
+        )
 
     def test_legacy_market_duration_keeps_its_original_ranges(self):
         self.assertEqual(
