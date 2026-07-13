@@ -540,7 +540,12 @@ class SiriusClient:
             return token
         finally:
             try:
-                await login_context.close()
+                # Chromium occasionally stalls while disposing a just-authenticated
+                # context. The token is already extracted, so cleanup must not block
+                # the HTTP login response.
+                await asyncio.wait_for(login_context.close(), timeout=3)
+            except asyncio.TimeoutError:
+                log.warning("login: закрытие временного контекста заняло больше 3с")
             except Exception:
                 pass
 
