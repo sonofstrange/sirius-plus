@@ -38,7 +38,7 @@
                 <p class="auth-card__desc" style="margin-top:8px">
                     Это безопасно: вход выполняется через отдельный браузерный контекст Sirius, а данные для обновления токена хранятся в зашифрованном виде. Вход может занять до 2 минут. Исходный код проекта открыт на <a href="https://github.com/sonofstrange/sirius-plus" target="_blank" rel="noopener noreferrer">GitHub</a>.
                 </p>
-                <form method="POST" action="/api/login" onsubmit="return startLoginProgress()">
+                <form method="POST" action="/api/login" onsubmit="submitPasswordLogin(this); return false;">
                 <div class="form-group">
                     <label class="form-label" for="email-input">Email</label>
                     <input type="email" name="email" id="email-input" class="form-input" style="width:100%"
@@ -133,6 +133,32 @@ function startLoginProgress() {
         sub.textContent = steps[i][1];
     }, 3500);
     return true;
+}
+
+async function submitPasswordLogin(form) {
+    if (!startLoginProgress()) return;
+    const button = document.getElementById('login-btn');
+    try {
+        const response = await fetch('/api/login', {
+            method: 'POST',
+            headers: {'X-Requested-With': 'XMLHttpRequest'},
+            credentials: 'same-origin',
+            body: new FormData(form),
+        });
+        const data = await response.json();
+        if (data.ok && data.redirect) {
+            window.location.replace(data.redirect);
+            return;
+        }
+        throw new Error(data.error || 'Не удалось войти через Sirius');
+    } catch (error) {
+        button.disabled = false;
+        button.textContent = 'Войти';
+        const progress = document.getElementById('login-progress');
+        progress.style.display = 'block';
+        document.getElementById('login-step').textContent = 'Не удалось войти';
+        document.getElementById('login-substep').textContent = error.message || 'Проверь соединение и попробуй ещё раз.';
+    }
 }
 
 async function saveToken() {

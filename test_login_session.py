@@ -29,6 +29,10 @@ class _SiriusClient:
         return self.token
 
 
+class _AjaxLoginRequest(_LoginRequest):
+    headers = {"content-type": "application/json", "x-requested-with": "XMLHttpRequest"}
+
+
 class LoginSessionTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -55,6 +59,19 @@ class LoginSessionTests(unittest.IsolatedAsyncioTestCase):
         session_id = cookie["session_id"].value
         self.assertEqual(storage.get_user_by_session(session_id), uid)
         self.assertIsNotNone(storage.get_token(uid))
+
+    async def test_ajax_password_login_returns_redirect_and_session(self):
+        uid = "sirius-user-43"
+        payload = {"id": uid, "exp": int(time.time()) + 3600}
+        payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=").decode()
+        main._sirius_client = _SiriusClient(f"header.{payload_b64}.signature")
+
+        response = await main.api_login(_AjaxLoginRequest())
+
+        self.assertEqual(json.loads(response.body), {"ok": True, "redirect": "/events?tab=register"})
+        cookie = SimpleCookie()
+        cookie.load(response.headers["set-cookie"])
+        self.assertEqual(storage.get_user_by_session(cookie["session_id"].value), uid)
 
 
 if __name__ == "__main__":

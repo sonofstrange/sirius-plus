@@ -936,6 +936,7 @@ async def api_login(request: Request):
     user_id = get_user_id(request)
     is_new_session = user_id is None
     session_id = request.cookies.get("session_id") if user_id else None
+    wants_json = request.headers.get("x-requested-with") == "XMLHttpRequest"
 
     if not _sirius_client:
         msg = quote("Сервис недоступен")
@@ -998,7 +999,10 @@ async def api_login(request: Request):
         if referrer_uid:
             storage.add_notification(referrer_uid, "🎁 Друг зарегистрировался по твоей ссылке: начислено 5 Сириус Коинов.", "success")
 
-    response = RedirectResponse(url="/events?tab=register", status_code=303)
+    redirect_url = "/events?tab=register"
+    response = JSONResponse({"ok": True, "redirect": redirect_url}) if wants_json else RedirectResponse(
+        url=redirect_url, status_code=303
+    )
     if is_new_session:
         session_id = storage.create_session_for_user(user_id)
         response.set_cookie(key="session_id", value=session_id, max_age=86400 * 365, httponly=True, samesite="lax")
