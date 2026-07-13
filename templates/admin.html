@@ -21,6 +21,25 @@
         <button class="btn btn-primary" onclick="grantCoins()">Выдать коины</button>
         <div id="grant-result" class="alert" style="display:none;margin-top:16px"></div>
 
+        <h2 style="font-size:18px;margin:32px 0 16px">Промокоды</h2>
+        <div class="form-group">
+            <label class="form-label" for="promocode-code">Код</label>
+            <input type="text" class="form-input" id="promocode-code" placeholder="TEST1" maxlength="32" style="width:100%;text-transform:uppercase">
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="form-group">
+                <label class="form-label" for="promocode-coins">Сириус Коинов</label>
+                <input type="number" class="form-input" id="promocode-coins" value="3" min="1" style="width:100%">
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="promocode-uses">Активаций</label>
+                <input type="number" class="form-input" id="promocode-uses" value="1" min="1" style="width:100%">
+            </div>
+        </div>
+        <button class="btn btn-primary" onclick="createPromocode()">Создать промокод</button>
+        <div id="promocode-result" class="alert" style="display:none;margin-top:12px"></div>
+        <div id="promocode-list" class="profile-list" style="margin-top:12px"><div class="loading">Загрузка...</div></div>
+
         <h2 style="font-size:18px;margin:32px 0 16px">Все пользователи</h2>
         <input type="text" class="form-input" id="search-input" placeholder="Поиск по имени или UID..." style="width:100%;margin-bottom:16px"
                oninput="renderTable()">
@@ -38,6 +57,47 @@
 <script>
 let allUsers = [];
 let _suppressSuggestions = false;
+
+async function loadPromocodes() {
+    const container = document.getElementById('promocode-list');
+    try {
+        const response = await fetch('/api/admin/promocodes');
+        const data = await response.json();
+        const codes = data.promocodes || [];
+        container.innerHTML = codes.length ? codes.map(item => `
+            <div class="profile-list-item">
+                <div class="profile-list-item__main">
+                    <div class="profile-list-item__title">${escapeHtml(item.code)}</div>
+                    <div class="profile-list-item__meta">+${item.coin_amount} коинов · ${item.used_count} из ${item.max_uses} активаций</div>
+                </div>
+            </div>`).join('') : '<div class="profile-empty">Промокодов пока нет</div>';
+    } catch (e) {
+        container.innerHTML = '<div class="alert alert-error">Не удалось загрузить промокоды</div>';
+    }
+}
+
+async function createPromocode() {
+    const code = document.getElementById('promocode-code').value.trim();
+    const coin_amount = Number(document.getElementById('promocode-coins').value);
+    const max_uses = Number(document.getElementById('promocode-uses').value);
+    const result = document.getElementById('promocode-result');
+    result.style.display = 'block';
+    try {
+        const response = await fetch('/api/admin/promocodes', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({code, coin_amount, max_uses}),
+        });
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error || 'Ошибка создания');
+        result.className = 'alert alert-success';
+        result.textContent = `Промокод ${data.code} создан`;
+        document.getElementById('promocode-code').value = '';
+        loadPromocodes();
+    } catch (e) {
+        result.className = 'alert alert-error';
+        result.textContent = e.message;
+    }
+}
 
 async function loadUsers() {
     const container = document.getElementById('users-list');
@@ -338,6 +398,7 @@ async function grantCoins() {
 document.addEventListener('DOMContentLoaded', () => {
     loadUsers();
     loadFeedback();
+    loadPromocodes();
 });
 </script>
 {% endblock %}

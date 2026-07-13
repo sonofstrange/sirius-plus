@@ -984,6 +984,7 @@ async def api_login(request: Request):
     storage.set_user_uid(user_id, uid)
     storage.mark_token_verified(user_id, token)
     storage.save_login_credentials(user_id, email, password)
+    log.info("login: токен и данные входа сохранены для uid=%s", uid)
 
     storage.ensure_coins(uid)
     full_name = " ".join(filter(None, [payload.get("lastName"), payload.get("firstName"), payload.get("middleName")]))
@@ -1001,6 +1002,7 @@ async def api_login(request: Request):
     if is_new_session:
         session_id = storage.create_session_for_user(user_id)
         response.set_cookie(key="session_id", value=session_id, max_age=86400 * 365, httponly=True, samesite="lax")
+    log.info("login: сессия готова для uid=%s, новая=%s", uid, is_new_session)
     if referral_code:
         response.delete_cookie(REFERRAL_COOKIE)
     return response
@@ -1539,6 +1541,20 @@ async def api_coins_transfer(request: Request):
     return JSONResponse({"ok": True, "new_balance": storage.get_coins(from_uid)})
 
 
+@app.post("/api/promocodes/redeem")
+async def api_redeem_promocode(request: Request):
+    user_id = get_user_id(request)
+    uid = _session_uid(user_id) if user_id else None
+    if not uid:
+        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
+    data = await request.json()
+    ok, message, new_balance = storage.redeem_promo_code(data.get("code", ""), uid)
+    if not ok:
+        return JSONResponse({"ok": False, "error": message}, status_code=400)
+    await web_notify(user_id, f"🎟 {message}", "success")
+    return JSONResponse({"ok": True, "message": message, "new_balance": new_balance})
+
+
 @app.get("/api/admin/users")
 async def api_admin_users(request: Request):
     admin_uid, denied = _require_admin(request)
@@ -1559,6 +1575,34 @@ async def api_admin_users(request: Request):
             for u in users
         ]
     })
+
+
+@app.get("/api/admin/promocodes")
+async def api_admin_promocodes(request: Request):
+    admin_uid, denied = _require_admin(request)
+    if denied:
+        return denied
+    return JSONResponse({
+        "ok": True,
+        "promocodes": [dict(row) for row in storage.get_promo_codes()],
+    })
+
+
+@app.post("/api/admin/promocodes")
+async def api_admin_create_promocode(request: Request):
+    admin_uid, denied = _require_admin(request)
+    if denied:
+        return denied
+    data = await request.json()
+    try:
+        amount = int(data.get("coin_amount", 0))
+        max_uses = int(data.get("max_uses", 0))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "Коины и лимит должны быть числами"}, status_code=400)
+    code = storage.create_promo_code(data.get("code", ""), amount, max_uses, admin_uid)
+    if not code:
+        return JSONResponse({"ok": False, "error": "Проверь код, лимит и количество коинов. Такой код уже существует."}, status_code=400)
+    return JSONResponse({"ok": True, "code": code})
 
 
 @app.post("/api/admin/grant-coins")

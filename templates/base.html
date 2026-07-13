@@ -489,6 +489,7 @@
                             </div>
                         </div>
                         <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;display:flex;flex-direction:column;gap:8px">
+                            <button class="btn btn-outline btn-block" onclick="redeemPromocode()">Активировать промокод</button>
                             <button class="btn btn-outline btn-block" onclick="showMyFeedback()">Мои обращения</button>
                             <button class="btn btn-outline btn-block" onclick="showReferral()">Пригласить друга</button>
                             <button class="btn btn-outline btn-block" onclick="createLoginCode()">Получить код входа</button>
@@ -522,6 +523,27 @@
             if (!ok) return;
             await fetch('/api/logout', {method: 'POST'});
             location.href = '/';
+        }
+
+        async function redeemPromocode() {
+            const code = await dlgPrompt('Промокод', 'Введи промокод:', 'Например, TEST1');
+            if (!code) return;
+            try {
+                const response = await fetch('/api/promocodes/redeem', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({code}),
+                });
+                const data = await response.json();
+                if (!data.ok) {
+                    dlgAlert('Промокод', data.error || 'Не удалось активировать промокод');
+                    return;
+                }
+                dlgAlert('Готово', data.message + `. Баланс: ${data.new_balance}.`);
+                showUserInfo();
+            } catch (e) {
+                dlgAlert('Ошибка', 'Не удалось связаться с сервером');
+            }
         }
 
         function profileDateTime(value) {

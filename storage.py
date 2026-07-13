@@ -321,6 +321,23 @@ def init_db():
                 claimed_at   INTEGER NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS promo_codes (
+                code         TEXT PRIMARY KEY,
+                coin_amount  INTEGER NOT NULL,
+                max_uses     INTEGER NOT NULL,
+                used_count   INTEGER NOT NULL DEFAULT 0,
+                created_by   TEXT NOT NULL,
+                created_at   INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS promo_redemptions (
+                code         TEXT NOT NULL,
+                uid          TEXT NOT NULL,
+                redeemed_at  INTEGER NOT NULL,
+                PRIMARY KEY (code, uid),
+                FOREIGN KEY (code) REFERENCES promo_codes(code)
+            );
+
         """)
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(watchlist)").fetchall()]
         if "event_start" not in cols:
@@ -1285,6 +1302,76 @@ def claim_app_usage_bonus(uid: str, amount: int = 2) -> bool:
             (amount, now, uid),
         )
         return True
+
+
+# ---------- promo codes ----------
+
+def normalize_promo_code(code: str) -> str:
+    return "".join(char for char in (code or "").upper() if char.isalnum())[:32]
+
+
+def create_promo_code(code: str, coin_amount: int, max_uses: int, created_by: str) -> str | None:
+    code = normalize_promo_code(code)
+    if not code or coin_amount <= 0 or max_uses <= 0:
+        return None
+    with get_conn() as conn:
+        try:
+            conn.execute(
+                """INSERT INTO promo_codes (code, coin_amount, max_uses, created_by, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (code, coin_amount, max_uses, created_by, int(time.time())),
+            )
+        except sqlite3.IntegrityError:
+            return None
+    return code
+
+
+def get_promo_codes() -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM promo_codes ORDER BY created_at DESC"
+        ).fetchall()
+
+
+def redeem_promo_code(code: str, uid: str) -> tuple[bool, str, int]:
+    code = normalize_promo_code(code)
+    if not code:
+        return False, "Введи промокод", 0
+    now = int(time.time())
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        promo = conn.execute(
+            "SELECT coin_amount, max_uses, used_count FROM promo_codes WHERE code=?", (code,)
+        ).fetchone()
+        if not promo:
+            return False, "Промокод не найден", 0
+        if conn.execute(
+            "SELECT 1 FROM promo_redemptions WHERE code=? AND uid=?", (code, uid)
+        ).fetchone():
+            return False, "Ты уже использовал этот промокод", 0
+        if promo["used_count"] >= promo["max_uses"]:
+            return False, "У промокода закончились активации", 0
+
+        conn.execute(
+            "INSERT INTO promo_redemptions (code, uid, redeemed_at) VALUES (?, ?, ?)",
+            (code, uid, now),
+        )
+        conn.execute("UPDATE promo_codes SET used_count=used_count+1 WHERE code=?", (code,))
+        row = conn.execute("SELECT coins FROM sirius_coins WHERE uid=?", (uid,)).fetchone()
+        if row:
+            new_balance = row["coins"] + promo["coin_amount"]
+            conn.execute(
+                "UPDATE sirius_coins SET coins=?, updated_at=? WHERE uid=?",
+                (new_balance, now, uid),
+            )
+        else:
+            new_balance = STARTING_COINS + promo["coin_amount"]
+            conn.execute(
+                """INSERT INTO sirius_coins (uid, coins, reserved_coins, created_at, updated_at)
+                   VALUES (?, ?, 0, ?, ?)""",
+                (uid, new_balance, now, now),
+            )
+        return True, f"Промокод активирован: +{promo['coin_amount']} Сириус Коинов", new_balance
 
 
 # ---------- referrals ----------
