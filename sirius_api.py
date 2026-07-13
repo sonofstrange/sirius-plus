@@ -314,6 +314,7 @@ class SiriusClient:
         self._page = None
         self._ready = asyncio.Event()
         self._restart_lock = asyncio.Lock()
+        self._login_cleanup_tasks: set[asyncio.Task] = set()
         self.clock_skew = dt.timedelta(0)
 
     def now(self) -> dt.datetime:
@@ -539,15 +540,15 @@ class SiriusClient:
             token = await self._do_login_on_page(login_page, email, password)
             return token
         finally:
-            try:
-                # Chromium occasionally stalls while disposing a just-authenticated
-                # context. The token is already extracted, so cleanup must not block
-                # the HTTP login response.
-                await asyncio.wait_for(login_context.close(), timeout=3)
-            except asyncio.TimeoutError:
-                log.warning("login: закрытие временного контекста заняло больше 3с")
-            except Exception:
-                pass
+            cleanup = asyncio.create_task(self._close_login_context(login_context))
+            self._login_cleanup_tasks.add(cleanup)
+            cleanup.add_done_callback(self._login_cleanup_tasks.discard)
+
+    async def _close_login_context(self, context) -> None:
+        try:
+            await context.close()
+        except Exception as e:
+            log.warning("login: не удалось закрыть временный контекст: %s", e)
 
     async def _do_login_on_page(self, page: 'Page', email: str, password: str) -> str | None:
         login_url = "https://auth.sirius.online/password"
@@ -842,6 +843,8 @@ class SiriusClient:
         return None
 
     async def stop(self):
+        for task in self._login_cleanup_tasks:
+            task.cancel()
         if self._browser:
             await self._browser.close()
         if self._pw:
