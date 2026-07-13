@@ -479,6 +479,14 @@ def _decode_jwt(token: str) -> dict | None:
         return None
 
 
+def _team_from_payload(payload: dict) -> str:
+    for key in ("team", "teamName", "group", "groupName", "className"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
 def _session_uid(user_id: str) -> str | None:
     if not storage.get_token(user_id):
         return None
@@ -980,7 +988,7 @@ async def api_set_token(request: Request):
 
     storage.ensure_coins(uid)
     full_name = " ".join(filter(None, [payload.get("lastName"), payload.get("firstName"), payload.get("middleName")]))
-    storage.save_known_uid(uid, user_id, full_name)
+    storage.save_known_uid(uid, user_id, full_name, _team_from_payload(payload))
 
     response = JSONResponse({"ok": True, "token_set": True})
     if is_new_session:
@@ -1047,7 +1055,7 @@ async def api_login(request: Request):
 
     storage.ensure_coins(uid)
     full_name = " ".join(filter(None, [payload.get("lastName"), payload.get("firstName"), payload.get("middleName")]))
-    storage.save_known_uid(uid, user_id, full_name)
+    storage.save_known_uid(uid, user_id, full_name, _team_from_payload(payload))
 
     referral_code = storage.normalize_referral_code(referral_code or request.cookies.get(REFERRAL_COOKIE, ""))
     referral_applied = is_first_sirius_login and storage.apply_referral(referral_code, uid)
@@ -1581,12 +1589,43 @@ async def api_admin_users(request: Request):
             {
                 "uid": u["uid"],
                 "name": u["full_name"],
+                "team": u["team"],
                 "coins": u["coins"],
                 "trust_level": 0 if u["is_admin"] else u["trust_level"],
                 "is_admin": bool(u["is_admin"]),
             }
             for u in users
         ]
+    })
+
+
+@app.get("/api/admin/users/{target_uid}")
+async def api_admin_user_profile(target_uid: str, request: Request):
+    _, denied = _require_admin(request)
+    if denied:
+        return denied
+
+    profile = storage.get_admin_user_profile(target_uid)
+    if not profile:
+        return JSONResponse({"ok": False, "error": "Пользователь не найден"}, status_code=404)
+
+    return JSONResponse({
+        "ok": True,
+        "user": {
+            "uid": profile["uid"],
+            "name": profile["full_name"],
+            "team": profile["team"],
+            "coins": profile["coins"],
+            "reservedCoins": profile["reserved_coins"],
+            "trustLevel": 0 if profile["is_admin"] else profile["trust_level"],
+            "isAdmin": bool(profile["is_admin"]),
+            "createdAt": profile["created_at"],
+            "lastActive": profile["last_active"],
+            "loginType": profile["login_type"],
+            "watchingCount": profile["watching_count"],
+            "registeredCount": profile["registered_count"],
+            "reminderCount": profile["reminder_count"],
+        },
     })
 
 

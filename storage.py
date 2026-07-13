@@ -351,6 +351,10 @@ def init_db():
         if "last_token_refresh" not in user_cols:
             conn.execute("ALTER TABLE users ADD COLUMN last_token_refresh INTEGER DEFAULT 0")
 
+        known_uid_cols = [r["name"] for r in conn.execute("PRAGMA table_info(known_uids)").fetchall()]
+        if "team" not in known_uid_cols:
+            conn.execute("ALTER TABLE known_uids ADD COLUMN team TEXT NOT NULL DEFAULT ''")
+
         coin_cols = [r["name"] for r in conn.execute("PRAGMA table_info(sirius_coins)").fetchall()]
         if "reserved_coins" not in coin_cols:
             conn.execute("ALTER TABLE sirius_coins ADD COLUMN reserved_coins INTEGER NOT NULL DEFAULT 0")
@@ -1716,23 +1720,24 @@ def remove_admin(uid: str):
 
 # ---------- known uids ----------
 
-def save_known_uid(uid: str, user_id: str, full_name: str = ""):
+def save_known_uid(uid: str, user_id: str, full_name: str = "", team: str = ""):
     with get_conn() as conn:
         conn.execute(
-            """INSERT INTO known_uids (uid, user_id, full_name, updated_at)
-               VALUES (?, ?, ?, ?)
+            """INSERT INTO known_uids (uid, user_id, full_name, team, updated_at)
+               VALUES (?, ?, ?, ?, ?)
                ON CONFLICT(uid) DO UPDATE SET
                  user_id=excluded.user_id,
                  full_name=excluded.full_name,
+                 team=CASE WHEN excluded.team != '' THEN excluded.team ELSE known_uids.team END,
                  updated_at=excluded.updated_at""",
-            (uid, user_id, full_name, int(time.time())),
+            (uid, user_id, full_name, team, int(time.time())),
         )
 
 
 def get_all_known_uids() -> list[sqlite3.Row]:
     with get_conn() as conn:
         return conn.execute(
-            "SELECT k.uid, k.full_name, COALESCE(c.coins, 0) as coins, "
+            "SELECT k.uid, k.full_name, k.team, COALESCE(c.coins, 0) as coins, "
             "COALESCE(t.trust_level, 2) as trust_level, "
             "CASE WHEN a.uid IS NULL THEN 0 ELSE 1 END as is_admin, k.updated_at "
             "FROM known_uids k LEFT JOIN sirius_coins c ON k.uid = c.uid "
@@ -1740,6 +1745,29 @@ def get_all_known_uids() -> list[sqlite3.Row]:
             "LEFT JOIN admins a ON k.uid = a.uid "
             "ORDER BY k.updated_at DESC"
         ).fetchall()
+
+
+def get_admin_user_profile(uid: str) -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT k.uid, k.user_id, k.full_name, k.team, k.updated_at,
+                      u.created_at, u.login_type,
+                      COALESCE(c.coins, 0) AS coins,
+                      COALESCE(c.reserved_coins, 0) AS reserved_coins,
+                      COALESCE(t.trust_level, 2) AS trust_level,
+                      CASE WHEN a.uid IS NULL THEN 0 ELSE 1 END AS is_admin,
+                      COALESCE((SELECT MAX(s.last_active) FROM sessions s WHERE s.user_id=k.user_id), 0) AS last_active,
+                      (SELECT COUNT(*) FROM watchlist w WHERE w.user_id=k.user_id AND w.status='watching') AS watching_count,
+                      (SELECT COUNT(*) FROM watchlist w WHERE w.user_id=k.user_id AND w.status='registered') AS registered_count,
+                      (SELECT COUNT(*) FROM schedule_reminders r WHERE r.user_id=k.user_id) AS reminder_count
+               FROM known_uids k
+               LEFT JOIN users u ON u.user_id=k.user_id
+               LEFT JOIN sirius_coins c ON c.uid=k.uid
+               LEFT JOIN account_trust t ON t.uid=k.uid
+               LEFT JOIN admins a ON a.uid=k.uid
+               WHERE k.uid=?""",
+            (uid,),
+        ).fetchone()
 
 
 def get_trust_level(uid: str) -> int:

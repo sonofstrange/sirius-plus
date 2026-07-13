@@ -99,7 +99,7 @@
                     </a>
                 </div>
                 <div class="footer__copyright">
-                    © Пирожковый Диспетчер, 2026 · v1.5.0 · Создатель: Николай Русанов · <a href="https://t.me/sirius_pirozhki" target="_blank" rel="noopener noreferrer">Telegram-канал</a> · <a href="https://t.me/sonofstrange" target="_blank" rel="noopener noreferrer">Telegram</a> · <a href="https://discord.com/users/891370219866583091" target="_blank" rel="noopener noreferrer">Discord</a> · <a href="https://github.com/sonofstrange/sirius-plus" target="_blank" rel="noopener noreferrer">Открытый исходный код</a>
+                    © Пирожковый Диспетчер, 2026 · v1.6 · Создатель: Николай Русанов · <a href="https://t.me/sirius_pirozhki" target="_blank" rel="noopener noreferrer">Telegram-канал</a> · <a href="https://t.me/sonofstrange" target="_blank" rel="noopener noreferrer">Telegram</a> · <a href="https://discord.com/users/891370219866583091" target="_blank" rel="noopener noreferrer">Discord</a> · <a href="https://github.com/sonofstrange/sirius-plus" target="_blank" rel="noopener noreferrer">Открытый исходный код</a>
                 </div>
             </div>
         </footer>
@@ -215,6 +215,14 @@
             </div>
             <div class="modal__body">
                 <div class="changelog">
+                    <div class="changelog__release">
+                        <div class="changelog__version">Версия 1.6</div>
+                        <div class="changelog__date">Админ-панель и оповещения</div>
+                        <ul class="changelog__list">
+                            <li>В админ-панели появился просмотр профиля пользователя, его команды Sirius и активности.</li>
+                            <li>Добавлены мобильные push-уведомления и оповещение о тревоге БПЛА.</li>
+                        </ul>
+                    </div>
                     <div class="changelog__release">
                         <div class="changelog__version">Версия 1.5.0</div>
                         <div class="changelog__date">Сириус Полимаркет</div>
@@ -420,7 +428,7 @@
 
     <script src="/static/js/app.js?v=20260708-7"></script>
     <script>
-        const CHANGELOG_VERSION = '1.5.0';
+        const CHANGELOG_VERSION = '1.6';
         const CHANGELOG_STORAGE_KEY = 'sirius_seen_changelog_version';
 
         {% if user_id %}

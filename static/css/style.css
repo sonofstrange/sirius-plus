@@ -642,7 +642,7 @@ body.dark-theme .alert-warning {
 .admin-users-table {
     width: 100%;
     border-collapse: collapse;
-    min-width: 860px;
+    min-width: 980px;
 }
 
 .admin-users-table th,
@@ -653,7 +653,7 @@ body.dark-theme .alert-warning {
     vertical-align: middle;
 }
 
-.admin-users-table th:nth-child(3),
+.admin-users-table th:nth-child(4),
 .admin-users-table__coins {
     text-align: center;
 }
@@ -664,6 +664,20 @@ body.dark-theme .alert-warning {
     cursor: pointer;
     max-width: 210px;
     overflow-wrap: anywhere;
+}
+
+.admin-user-link {
+    border: 0;
+    padding: 0;
+    color: var(--link);
+    background: transparent;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.admin-user-link:hover {
+    text-decoration: underline;
 }
 
 .admin-users-table__select {
