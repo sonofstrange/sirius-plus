@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Пирожковый Диспетчер{% endblock %}</title>
     <link rel="icon" href="/static/sirius.png">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260714-1">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260714-2">
 </head>
 <body>
     <div class="app">
@@ -27,7 +27,7 @@
                     <a href="/coins-info" class="header__nav-link">🪙 {{ coins_balance }}</a>
                     <a href="/polymarket" class="header__nav-link">Полимаркет</a>
                 </nav>
-                <button class="header__menu-btn" onclick="toggleMobileMenu()" aria-label="Меню">
+                <button class="header__menu-btn" onclick="toggleMobileMenu()" aria-label="Меню" aria-expanded="false" aria-controls="mobile-nav">
                     <span class="material-symbols-outlined">menu</span>
                 </button>
                 <div class="header__right">
@@ -1020,12 +1020,21 @@
             // Close dialog modal on overlay click
             const dlg = document.getElementById('dialog-modal');
             if (dlg) dlg.addEventListener('click', () => closeDialog());
+            document.querySelectorAll('.header__nav-link, .header__mobile-nav-link').forEach(link => {
+                if (link.getAttribute('href') === '#') return;
+                const target = new URL(link.href, window.location.origin);
+                if (target.pathname === window.location.pathname) {
+                    link.classList.add('header__nav-link--active');
+                    link.setAttribute('aria-current', 'page');
+                }
+            });
             setTimeout(() => showChangelog(false), 400);
         });
 
         function toggleMobileMenu() {
             const nav = document.getElementById('mobile-nav');
-            nav.classList.toggle('open');
+            const opened = nav.classList.toggle('open');
+            document.querySelector('.header__menu-btn').setAttribute('aria-expanded', String(opened));
         }
         if (localStorage.getItem('theme') === 'dark') {
             document.body.classList.add('dark-theme');
