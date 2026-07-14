@@ -14,6 +14,7 @@ $tarArgs = @(
     '--exclude=*.sqlite3',
     '--exclude=*.sqlite3-journal',
     '--exclude=.env',
+    '--exclude=vapid_private_key.pem',
     '--exclude=android',
     '-C', $projectRoot, '.'
 )
