@@ -165,6 +165,41 @@ def init_db():
                 created_at   INTEGER NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS community_events (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_user_id   TEXT NOT NULL,
+                owner_uid       TEXT NOT NULL,
+                event_name      TEXT NOT NULL,
+                date_iso        TEXT NOT NULL,
+                start_time      TEXT NOT NULL DEFAULT '',
+                end_time        TEXT NOT NULL DEFAULT '',
+                registration_open_at  TEXT NOT NULL DEFAULT '',
+                registration_close_at TEXT NOT NULL DEFAULT '',
+                people_max      INTEGER NOT NULL DEFAULT 0,
+                description     TEXT NOT NULL DEFAULT '',
+                location        TEXT NOT NULL DEFAULT '',
+                created_at      INTEGER NOT NULL,
+                updated_at      INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS community_event_coorganizers (
+                event_id        INTEGER NOT NULL,
+                user_id         TEXT NOT NULL,
+                uid             TEXT NOT NULL,
+                added_at        INTEGER NOT NULL,
+                PRIMARY KEY (event_id, user_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS community_event_registrations (
+                event_id        INTEGER NOT NULL,
+                user_id         TEXT NOT NULL,
+                created_at      INTEGER NOT NULL,
+                PRIMARY KEY (event_id, user_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_community_events_date
+                ON community_events(date_iso, start_time);
+
             CREATE TABLE IF NOT EXISTS sirius_coins (
                 uid          TEXT PRIMARY KEY,
                 coins        INTEGER NOT NULL DEFAULT 0,
@@ -919,6 +954,193 @@ def is_daily_custom_event(event_id: str) -> bool:
         return bool(row and row["repeat_daily"])
 
 
+# ---------- community events ----------
+
+def _community_coorganizers(conn: sqlite3.Connection, event_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        """SELECT c.user_id, c.uid, COALESCE(k.full_name, '') AS full_name
+           FROM community_event_coorganizers c
+           LEFT JOIN known_uids k ON k.user_id=c.user_id
+           WHERE c.event_id=?
+           ORDER BY c.added_at""",
+        (event_id,),
+    ).fetchall()
+
+
+def add_community_event(
+    owner_user_id: str,
+    owner_uid: str,
+    event_name: str,
+    date_iso: str,
+    start_time: str,
+    end_time: str,
+    registration_open_at: str,
+    registration_close_at: str,
+    people_max: int,
+    description: str,
+    location: str,
+    coorganizers: list[tuple[str, str]],
+) -> int:
+    now = int(time.time())
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO community_events
+               (owner_user_id, owner_uid, event_name, date_iso, start_time, end_time,
+                registration_open_at, registration_close_at, people_max, description,
+                location, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (owner_user_id, owner_uid, event_name, date_iso, start_time, end_time,
+             registration_open_at, registration_close_at, people_max, description,
+             location, now, now),
+        )
+        event_id = int(cur.lastrowid)
+        for user_id, uid in coorganizers:
+            if user_id != owner_user_id:
+                conn.execute(
+                    """INSERT OR IGNORE INTO community_event_coorganizers
+                       (event_id, user_id, uid, added_at) VALUES (?, ?, ?, ?)""",
+                    (event_id, user_id, uid, now),
+                )
+        return event_id
+
+
+def get_community_event(event_id: int) -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT e.*, COALESCE(k.full_name, '') AS owner_name,
+                      (SELECT COUNT(*) FROM community_event_registrations r WHERE r.event_id=e.id) AS people_current
+               FROM community_events e
+               LEFT JOIN known_uids k ON k.user_id=e.owner_user_id
+               WHERE e.id=?""",
+            (event_id,),
+        ).fetchone()
+
+
+def get_community_coorganizers(event_id: int) -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return _community_coorganizers(conn, event_id)
+
+
+def get_community_events_for_date(user_id: str, date_iso: str) -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT e.*, COALESCE(k.full_name, '') AS owner_name,
+                      (SELECT COUNT(*) FROM community_event_registrations r WHERE r.event_id=e.id) AS people_current,
+                      EXISTS(SELECT 1 FROM community_event_registrations r
+                             WHERE r.event_id=e.id AND r.user_id=?) AS is_registered,
+                      (e.owner_user_id=? OR EXISTS(SELECT 1 FROM community_event_coorganizers c
+                                                    WHERE c.event_id=e.id AND c.user_id=?)) AS can_manage
+               FROM community_events e
+               LEFT JOIN known_uids k ON k.user_id=e.owner_user_id
+               WHERE e.date_iso=?
+               ORDER BY e.start_time, e.id""",
+            (user_id, user_id, user_id, date_iso),
+        ).fetchall()
+
+
+def get_managed_community_events(user_id: str) -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT e.*, COALESCE(k.full_name, '') AS owner_name,
+                      (SELECT COUNT(*) FROM community_event_registrations r WHERE r.event_id=e.id) AS people_current
+               FROM community_events e
+               LEFT JOIN known_uids k ON k.user_id=e.owner_user_id
+               WHERE e.owner_user_id=? OR EXISTS(SELECT 1 FROM community_event_coorganizers c
+                                                  WHERE c.event_id=e.id AND c.user_id=?)
+               ORDER BY e.date_iso, e.start_time, e.id""",
+            (user_id, user_id),
+        ).fetchall()
+
+
+def can_manage_community_event(event_id: int, user_id: str) -> bool:
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT 1 FROM community_events e
+               WHERE e.id=? AND (e.owner_user_id=? OR EXISTS(
+                   SELECT 1 FROM community_event_coorganizers c
+                   WHERE c.event_id=e.id AND c.user_id=?))""",
+            (event_id, user_id, user_id),
+        ).fetchone()
+        return bool(row)
+
+
+def update_community_event(
+    event_id: int,
+    event_name: str,
+    date_iso: str,
+    start_time: str,
+    end_time: str,
+    registration_open_at: str,
+    registration_close_at: str,
+    people_max: int,
+    description: str,
+    location: str,
+    coorganizers: list[tuple[str, str]],
+) -> bool:
+    now = int(time.time())
+    with get_conn() as conn:
+        cur = conn.execute(
+            """UPDATE community_events
+               SET event_name=?, date_iso=?, start_time=?, end_time=?,
+                   registration_open_at=?, registration_close_at=?, people_max=?,
+                   description=?, location=?, updated_at=?
+               WHERE id=?""",
+            (event_name, date_iso, start_time, end_time, registration_open_at,
+             registration_close_at, people_max, description, location, now, event_id),
+        )
+        if cur.rowcount != 1:
+            return False
+        conn.execute("DELETE FROM community_event_coorganizers WHERE event_id=?", (event_id,))
+        owner = conn.execute("SELECT owner_user_id FROM community_events WHERE id=?", (event_id,)).fetchone()
+        for user_id, uid in coorganizers:
+            if owner and user_id != owner["owner_user_id"]:
+                conn.execute(
+                    """INSERT OR IGNORE INTO community_event_coorganizers
+                       (event_id, user_id, uid, added_at) VALUES (?, ?, ?, ?)""",
+                    (event_id, user_id, uid, now),
+                )
+        return True
+
+
+def delete_community_event(event_id: int) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM community_event_registrations WHERE event_id=?", (event_id,))
+        conn.execute("DELETE FROM community_event_coorganizers WHERE event_id=?", (event_id,))
+        conn.execute("DELETE FROM community_events WHERE id=?", (event_id,))
+
+
+def add_community_registration(event_id: int, user_id: str) -> tuple[bool, str]:
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        event = conn.execute("SELECT people_max FROM community_events WHERE id=?", (event_id,)).fetchone()
+        if not event:
+            return False, "not_found"
+        exists = conn.execute(
+            "SELECT 1 FROM community_event_registrations WHERE event_id=? AND user_id=?",
+            (event_id, user_id),
+        ).fetchone()
+        if exists:
+            return True, "already_registered"
+        current = conn.execute(
+            "SELECT COUNT(*) AS count FROM community_event_registrations WHERE event_id=?", (event_id,)
+        ).fetchone()["count"]
+        if event["people_max"] > 0 and current >= event["people_max"]:
+            return False, "full"
+        conn.execute(
+            "INSERT INTO community_event_registrations (event_id, user_id, created_at) VALUES (?, ?, ?)",
+            (event_id, user_id, int(time.time())),
+        )
+        return True, "registered"
+
+
+def remove_community_registration(event_id: int, user_id: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "DELETE FROM community_event_registrations WHERE event_id=? AND user_id=?",
+            (event_id, user_id),
+        )
+
+
 # ---------- event snapshots ----------
 
 def get_event_snapshot(user_id: str) -> str | None:
@@ -1062,6 +1284,23 @@ def get_known_name(uid: str) -> str:
             (uid, uid),
         ).fetchone()
         return row["full_name"] if row and row["full_name"] else ""
+
+
+def resolve_known_recipient(value: str) -> list[sqlite3.Row]:
+    """Resolve an exact UID or full name without guessing between people with the same name."""
+    needle = (value or "").strip()
+    if not needle:
+        return []
+    with get_conn() as conn:
+        direct = conn.execute(
+            "SELECT uid, user_id, full_name, team FROM known_uids WHERE uid=?", (needle,)
+        ).fetchall()
+        if direct:
+            return direct
+        rows = conn.execute(
+            "SELECT uid, user_id, full_name, team FROM known_uids WHERE full_name != ''"
+        ).fetchall()
+        return [row for row in rows if str(row["full_name"]).strip().casefold() == needle.casefold()]
 
 
 # ---------- Sirius request statistics ----------
@@ -1818,6 +2057,7 @@ def get_all_known_uids() -> list[sqlite3.Row]:
     with get_conn() as conn:
         return conn.execute(
             "SELECT k.uid, k.full_name, k.team, COALESCE(c.coins, 0) as coins, "
+            "COALESCE(c.reserved_coins, 0) as reserved_coins, "
             "COALESCE(t.trust_level, 2) as trust_level, "
             "CASE WHEN a.uid IS NULL THEN 0 ELSE 1 END as is_admin, k.updated_at "
             "FROM known_uids k LEFT JOIN sirius_coins c ON k.uid = c.uid "

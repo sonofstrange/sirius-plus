@@ -1149,6 +1149,13 @@ body.dark-theme .badge-muted {
     border-left: 3px solid var(--primary);
     background: color-mix(in srgb, var(--primary) 8%, var(--bg-card));
 }
+.schedule-card--community,
+.event-card--community {
+    border-left: 3px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 7%, var(--bg-card));
+}
+.badge-community { color: #255d38; background: #dff5e5; }
+body.dark-theme .badge-community { color: #abebbc; background: #1d4a2b; }
 .schedule-card__actions { display:flex; align-items:center; flex-shrink:0; padding-left:8px; }
 .schedule-card__reminder-btn--active {
     border-color: #2f80ed;
@@ -2033,7 +2040,7 @@ body.dark-theme .badge-muted {
     gap: 10px;
 }
 .header__logo {
-    width: 250px;
+    width: 280px;
     gap: 7px;
     justify-content: flex-start;
     overflow: visible;
@@ -2287,9 +2294,9 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
         flex-wrap: wrap;
         row-gap: 6px;
     }
-    .header__logo { width: auto; min-width: 0; flex: 1 1 auto; height: 54px; gap: 4px; }
+    .header__logo { width: auto; min-width: 0; flex: 1 1 auto; height: 54px; gap: 5px; }
     .header__logo-img { width: 42px; height: 42px; }
-    .header__logo-text { font-size: 13px; white-space: normal; overflow-wrap: anywhere; }
+    .header__logo-text { font-size: 15px; white-space: nowrap; overflow-wrap: normal; }
     .header__nav {
         position: static;
         order: 4;
@@ -2369,7 +2376,7 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
 }
 
 @media (max-width: 420px) {
-    .header__logo-text { display: block; font-size: 12px; }
+    .header__logo-text { display: block; font-size: 14px; }
     .header__right {
         gap: 4px;
     }
@@ -2621,6 +2628,22 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
 .referral-card__stats { width: 100%; padding-top: 14px; border-top: 1px solid var(--border); text-align: center; color: var(--text-muted); font-size: 13px; }
 .referral-card__stats strong { color: var(--text); }
 
+.community-events-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    margin-bottom: 14px;
+    padding: 12px 14px;
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 9%, var(--bg-card));
+    font-size: 14px;
+    line-height: 1.4;
+}
+.community-events-notice .material-symbols-outlined { color: var(--accent); }
+.community-event-warning { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 16px; }
+.custom-events-time-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+
 @media (max-width: 720px) {
     .polymarket-page .page__header { align-items: flex-start; }
     .polymarket-balance { align-self: flex-start; }
@@ -2637,4 +2660,5 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
     .feedback-message { max-width: 94%; }
     .feedback-reply-form { flex-direction: column; }
     .feedback-reply-form .btn { align-self: flex-end; }
+    .custom-events-time-grid { grid-template-columns: 1fr; gap: 0; }
 }

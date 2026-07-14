@@ -38,7 +38,7 @@
 
     <div class="schedule-list">
         {% for ev in events %}
-        <div class="schedule-card {% if ev.event_type == 'customEvent' %}schedule-card--custom{% else %}schedule-card-{{ ev.event_type | lower }}{% endif %} {% if ev.status == 'finished' %}schedule-card--finished{% elif ev.status == 'ongoing' %}schedule-card--ongoing{% endif %}"
+        <div class="schedule-card {% if ev.event_type == 'customEvent' %}schedule-card--custom{% elif ev.event_type == 'communityEvent' %}schedule-card--community{% else %}schedule-card-{{ ev.event_type | lower }}{% endif %} {% if ev.status == 'finished' %}schedule-card--finished{% elif ev.status == 'ongoing' %}schedule-card--ongoing{% endif %}"
              {% if ev.event_type == 'customEvent' %}onclick='showCustomScheduleDetail({{ ev.event_name | tojson }}, {{ ev.start_time | tojson }}, {{ ev.end_time | tojson }}, {{ ev.location | tojson }}, {{ ev.description | tojson }})'{% else %}onclick="showScheduleDetail('{{ ev.event_id }}')"{% endif %} style="cursor:pointer">
             {% if ev.event_type == 'transferEvent' %}
             <div class="schedule-card__bus-icon">
@@ -55,7 +55,7 @@
                     <span class="schedule-card__time-end">{{ fmt_time(ev.end_time) }}</span>
                     </div>
                     {% endif %}
-                    {% elif ev.event_type == 'customEvent' and ev.start_time %}
+                    {% elif ev.event_type in ['customEvent', 'communityEvent'] and ev.start_time %}
                     <span class="schedule-card__time-start">{{ fmt_time(ev.start_time) }}</span>
                     {% if ev.end_time %}<span class="schedule-card__time-sep">—</span>
                     <span class="schedule-card__time-end">{{ fmt_time(ev.end_time) }}</span>{% endif %}
@@ -70,6 +70,7 @@
                 <div class="schedule-card__title">
                     {{ ev.event_name }}
                     {% if ev.event_type == 'customEvent' %}<span class="badge badge-custom">Моё</span>{% endif %}
+                    {% if ev.event_type == 'communityEvent' %}<span class="badge badge-community">Сообщество</span>{% endif %}
                 </div>
                 {% if ev.event_type == 'transferEvent' and ev.transport_info %}
                 <div class="schedule-card__transport">
@@ -124,6 +125,11 @@
             </div>
             {% endif %}
             <div class="schedule-card__actions" onclick="event.stopPropagation()">
+                {% if ev.event_type == 'communityEvent' %}
+                <button class="btn {% if ev.community_is_registered %}btn-success{% else %}btn-primary{% endif %} btn-sm" onclick="toggleCommunityRegistration({{ ev.community_id }}, {{ 'true' if ev.community_is_registered else 'false' }})" {% if not ev.community_is_registered and not ev.community_registration_open %}disabled{% endif %}>
+                    {% if ev.community_is_registered %}Записан{% elif ev.community_registration_open %}Записаться{% else %}Регистрация закрыта{% endif %}
+                </button>
+                {% endif %}
                 <button class="btn btn-outline btn-sm schedule-card__reminder-btn {% if ev.event_id in reminder_event_ids %}schedule-card__reminder-btn--active{% endif %}" onclick="setReminder('{{ ev.event_id }}', '{{ ev.event_name|e }}', '{{ ev.start_time }}', this)" title="{% if ev.event_id in reminder_event_ids %}Напоминание включено{% else %}Напомнить{% endif %}">
                     <span class="material-symbols-outlined">notifications</span>
                 </button>
@@ -175,6 +181,11 @@ async function showScheduleDetail(eventId) {
         const ev = data.events.find(e => e.event_id === eventId);
         if (!ev) { body.innerHTML = '<div class="alert alert-error">Событие не найдено</div>'; return; }
         title.textContent = escapeHtml(ev.event_name);
+        const communityControls = ev.event_type === 'communityEvent' ? `
+            <div class="modal-actions">
+                <button class="btn ${ev.community_is_registered ? 'btn-outline' : 'btn-primary'} btn-sm" onclick="toggleCommunityRegistration(${ev.community_id}, ${Boolean(ev.community_is_registered)})" ${!ev.community_is_registered && !ev.community_registration_open ? 'disabled' : ''}>${ev.community_is_registered ? 'Отписаться' : ev.community_registration_open ? 'Записаться' : 'Регистрация закрыта'}</button>
+                ${ev.community_can_manage ? `<a class="btn btn-outline btn-sm" href="/custom-events">Управление</a>` : ''}
+            </div>` : '';
         body.innerHTML = `
             <table class="info-table">
                 <tr><td>ID</td><td class="mono">${escapeHtml(ev.event_id)}</td></tr>
@@ -188,10 +199,26 @@ async function showScheduleDetail(eventId) {
                 ${ev.unions && ev.unions.length ? '<tr><td>Группы</td><td>' + ev.unions.map(g => '<span class="chip chip-xs">' + escapeHtml(g) + '</span>').join(' ') + '</td></tr>' : ''}
                 ${ev.transport_info ? '<tr><td>Трансфер</td><td>' + escapeHtml(ev.transport_info.kind || '') + ' ' + escapeHtml(ev.transport_info.number || '') + (ev.departure_location ? ' · ' + escapeHtml(ev.departure_location) + ' → ' + escapeHtml(ev.arrival_location) : '') + '</td></tr>' : ev.departure_location ? '<tr><td>Трансфер</td><td>' + escapeHtml(ev.departure_location) + ' → ' + escapeHtml(ev.arrival_location) + '</td></tr>' : ''}
                 ${ev.description ? '<tr><td>Описание</td><td style="white-space:pre-wrap">' + escapeHtml(ev.description) + '</td></tr>' : ''}
+                ${ev.event_type === 'communityEvent' ? '<tr><td>Организатор</td><td>' + escapeHtml(ev.community_owner || '—') + '</td></tr>' : ''}
+                ${ev.event_type === 'communityEvent' && ev.community_coorganizers?.length ? '<tr><td>Соорганизаторы</td><td>' + escapeHtml(ev.community_coorganizers.join(', ')) + '</td></tr>' : ''}
+                ${ev.event_type === 'communityEvent' && ev.registration_open_at ? '<tr><td>Открытие регистрации</td><td>' + new Date(ev.registration_open_at).toLocaleString('ru-RU') + '</td></tr>' : ''}
+                ${ev.event_type === 'communityEvent' && ev.registration_close_at ? '<tr><td>Закрытие регистрации</td><td>' + new Date(ev.registration_close_at).toLocaleString('ru-RU') + '</td></tr>' : ''}
             </table>
+            ${communityControls}
         `;
     } catch(e) {
         body.innerHTML = '<div class="alert alert-error">Ошибка соединения: ' + escapeHtml(e.message) + '</div>';
+    }
+}
+
+async function toggleCommunityRegistration(eventId, isRegistered) {
+    try {
+        const response = await fetch('/api/community-events/' + eventId + '/register', {method: isRegistered ? 'DELETE' : 'POST'});
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error || 'Не удалось изменить запись');
+        location.reload();
+    } catch (error) {
+        dlgAlert('Запись на событие', error.message);
     }
 }
 

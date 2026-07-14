@@ -90,6 +90,69 @@ def fmt_time(iso: str | None) -> str:
     return d.strftime("%H:%M")
 
 
+def _community_datetime(value: str | None) -> dt.datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=_MSK)
+        return parsed.astimezone(dt.timezone.utc)
+    except ValueError:
+        return None
+
+
+def _community_registration_open(event) -> bool:
+    now = _now()
+    starts_at = _community_datetime(event["registration_open_at"])
+    closes_at = _community_datetime(event["registration_close_at"])
+    event_starts_at = _community_datetime(
+        f"{event['date_iso']}T{event['start_time']}" if event["start_time"] else ""
+    )
+    if starts_at and now < starts_at:
+        return False
+    if closes_at and now >= closes_at:
+        return False
+    if event_starts_at and now >= event_starts_at:
+        return False
+    return not event["people_max"] or event["people_current"] < event["people_max"]
+
+
+def _community_event_payload(event, user_id: str, is_admin: bool = False) -> dict:
+    coorganizers = storage.get_community_coorganizers(event["id"])
+    names = [row["full_name"] or row["uid"] for row in coorganizers]
+    is_registered = bool(event["is_registered"]) if "is_registered" in event.keys() else False
+    can_manage = bool(event["can_manage"]) if "can_manage" in event.keys() else storage.can_manage_community_event(event["id"], user_id)
+    return {
+        "event_id": f"community_{event['id']}",
+        "community_id": event["id"],
+        "event_name": event["event_name"],
+        "event_type": "communityEvent",
+        "start_time": f"{event['date_iso']}T{event['start_time']}:00+03:00" if event["start_time"] else "",
+        "end_time": f"{event['date_iso']}T{event['end_time']}:00+03:00" if event["end_time"] else "",
+        "date_iso": event["date_iso"],
+        "status": "",
+        "location": [event["location"]] if event["location"] else [],
+        "tutors": [],
+        "description": event["description"],
+        "people_max": event["people_max"],
+        "people_current": event["people_current"],
+        "people_reserved": 0,
+        "record_end": event["registration_close_at"],
+        "transport_info": None,
+        "departure_location": "",
+        "arrival_location": "",
+        "unions": [],
+        "community_owner": event["owner_name"] or event["owner_uid"],
+        "community_coorganizers": names,
+        "community_is_registered": is_registered,
+        "community_can_manage": can_manage or is_admin,
+        "community_registration_open": _community_registration_open(event),
+        "registration_open_at": event["registration_open_at"],
+        "registration_close_at": event["registration_close_at"],
+    }
+
+
 def _fmt_countdown(delta: dt.timedelta) -> str:
     total = max(0, int(delta.total_seconds()))
     if total < 60:
@@ -865,6 +928,12 @@ async def schedule_page(request: Request, date: str = ""):
             "unions": [],
         })())
 
+    session_uid = _session_uid(user_id) or ""
+    for community_event in storage.get_community_events_for_date(user_id, date):
+        events.append(type("_CommunityEvent", (), _community_event_payload(
+            community_event, user_id, storage.is_admin(session_uid)
+        ))())
+
     events.sort(key=lambda e: parse_sirius_time(e.start_time) or dt.datetime.max.replace(tzinfo=dt.timezone.utc))
 
     groups = sorted(set(g for ev in events for g in ev.unions))
@@ -893,8 +962,12 @@ async def custom_events_page(request: Request, date: str = ""):
     if not user_id:
         return RedirectResponse(url="/")
     events = storage.get_custom_events(user_id, date) if date else storage.get_custom_events(user_id)
+    community_events = storage.get_managed_community_events(user_id)
     today = _now().astimezone(_MSK).strftime("%Y-%m-%d")
-    return _render("custom_events.html", request, custom_events=events, cur_date=today)
+    return _render(
+        "custom_events.html", request, custom_events=events,
+        community_events=community_events, cur_date=today,
+    )
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -1529,7 +1602,8 @@ async def api_coins_transfer(request: Request):
         return JSONResponse({"ok": False, "error": "Токен не задан"}, status_code=400)
 
     data = await request.json()
-    to_uid = data.get("to_uid", "").strip()
+    raw_uid = str(data.get("to_uid") or "").strip()
+    to_uid = raw_uid or str(data.get("recipient") or "").strip()
     try:
         amount = int(data.get("amount", 0))
     except (ValueError, TypeError):
@@ -1539,6 +1613,18 @@ async def api_coins_transfer(request: Request):
         return JSONResponse({"ok": False, "error": "Некорректный получатель"}, status_code=400)
     if amount < 1:
         return JSONResponse({"ok": False, "error": "Количество должно быть > 0"}, status_code=400)
+
+    if not raw_uid:
+        matches = storage.resolve_known_recipient(to_uid)
+        if not matches:
+            if not to_uid.isdigit():
+                return JSONResponse({"ok": False, "error": "Получатель не найден. Введи точный UID или полное ФИО."}, status_code=404)
+        elif len(matches) > 1:
+            return JSONResponse({"ok": False, "error": "Нашлось несколько пользователей с таким ФИО. Введи UID."}, status_code=409)
+        else:
+            to_uid = matches[0]["uid"]
+    if to_uid == from_uid:
+        return JSONResponse({"ok": False, "error": "Нельзя перевести коины самому себе"}, status_code=400)
 
     available = storage.get_coins(from_uid)
     if available < amount:
@@ -1597,6 +1683,7 @@ async def api_admin_users(request: Request):
                 "name": u["full_name"],
                 "team": u["team"],
                 "coins": u["coins"],
+                "reserved_coins": u["reserved_coins"],
                 "trust_level": 0 if u["is_admin"] else u["trust_level"],
                 "is_admin": bool(u["is_admin"]),
             }
@@ -2504,6 +2591,11 @@ async def api_schedule(request: Request, date: str = ""):
                 "arrival_location": "",
                 "transport_info": None,
             })
+        session_uid = _session_uid(user_id) or ""
+        for community_event in storage.get_community_events_for_date(user_id, date):
+            result.append(_community_event_payload(
+                community_event, user_id, storage.is_admin(session_uid)
+            ))
         result.sort(key=lambda e: parse_sirius_time(e["start_time"]) or dt.datetime.max.replace(tzinfo=dt.timezone.utc))
         return JSONResponse({"ok": True, "events": result, "date": date})
     except Exception as e:
@@ -2581,6 +2673,184 @@ async def api_delete_custom_event(event_id: int, request: Request):
     if not user_id:
         return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
     storage.remove_custom_event(user_id, event_id)
+    return JSONResponse({"ok": True})
+
+
+COMMUNITY_EVENT_PUBLICATION_COST = 5
+
+
+def _community_event_input(data: dict) -> tuple[dict | None, str | None]:
+    event_name = str(data.get("event_name") or "").strip()
+    date_iso = str(data.get("date_iso") or "").strip()
+    start_time = str(data.get("start_time") or "").strip()
+    end_time = str(data.get("end_time") or "").strip()
+    registration_open_at = str(data.get("registration_open_at") or "").strip()
+    registration_close_at = str(data.get("registration_close_at") or "").strip()
+    description = str(data.get("description") or "").strip()
+    location = str(data.get("location") or "").strip()
+    try:
+        people_max = int(data.get("people_max") or 0)
+        dt.date.fromisoformat(date_iso)
+    except (ValueError, TypeError):
+        return None, "Укажи корректную дату и лимит участников"
+    if not event_name or len(event_name) > 180:
+        return None, "Название обязательно и должно быть не длиннее 180 символов"
+    if not start_time:
+        return None, "Укажи время начала события"
+    if people_max < 1 or people_max > 1000:
+        return None, "Лимит участников должен быть от 1 до 1000"
+    open_at = _community_datetime(registration_open_at)
+    close_at = _community_datetime(registration_close_at)
+    starts_at = _community_datetime(f"{date_iso}T{start_time}")
+    if registration_open_at and not open_at:
+        return None, "Некорректное время открытия регистрации"
+    if registration_close_at and not close_at:
+        return None, "Некорректное время закрытия регистрации"
+    if open_at and close_at and open_at >= close_at:
+        return None, "Открытие регистрации должно быть раньше закрытия"
+    if close_at and starts_at and close_at > starts_at:
+        return None, "Регистрация должна закрыться до начала события"
+    return {
+        "event_name": event_name,
+        "date_iso": date_iso,
+        "start_time": start_time,
+        "end_time": end_time,
+        "registration_open_at": registration_open_at,
+        "registration_close_at": registration_close_at,
+        "people_max": people_max,
+        "description": description,
+        "location": location,
+    }, None
+
+
+def _community_coorganizer_input(data: dict, owner_user_id: str) -> tuple[list[tuple[str, str]] | None, str | None]:
+    raw_values = data.get("coorganizers") or []
+    if isinstance(raw_values, str):
+        raw_values = raw_values.split(",")
+    if not isinstance(raw_values, list):
+        return None, "Соорганизаторов нужно указывать списком"
+    resolved: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for raw_value in raw_values:
+        value = str(raw_value or "").strip()
+        if not value:
+            continue
+        matches = storage.resolve_known_recipient(value)
+        if not matches:
+            return None, f"Соорганизатор «{value}» не найден"
+        if len(matches) > 1:
+            return None, f"Для «{value}» найдено несколько людей. Укажи UID"
+        user_id = matches[0]["user_id"]
+        uid = matches[0]["uid"]
+        if user_id != owner_user_id and user_id not in seen:
+            resolved.append((user_id, uid))
+            seen.add(user_id)
+    return resolved, None
+
+
+def _can_manage_community_event(event_id: int, user_id: str) -> bool:
+    uid = _session_uid(user_id) or ""
+    return storage.is_admin(uid) or storage.can_manage_community_event(event_id, user_id)
+
+
+@app.get("/api/community-events/{event_id}")
+async def api_community_event(event_id: int, request: Request):
+    user_id = get_user_id(request)
+    if not user_id:
+        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
+    event = storage.get_community_event(event_id)
+    if not event:
+        return JSONResponse({"ok": False, "error": "Событие не найдено"}, status_code=404)
+    uid = _session_uid(user_id) or ""
+    payload = _community_event_payload(event, user_id, storage.is_admin(uid))
+    payload["coorganizers"] = [
+        {"uid": row["uid"], "name": row["full_name"]}
+        for row in storage.get_community_coorganizers(event_id)
+    ]
+    return JSONResponse({"ok": True, "event": payload})
+
+
+@app.post("/api/community-events")
+async def api_add_community_event(request: Request):
+    user_id = get_user_id(request)
+    uid = _session_uid(user_id) if user_id else None
+    if not user_id or not uid:
+        return JSONResponse({"ok": False, "error": "Войди через Sirius, чтобы создать событие"}, status_code=401)
+    data = await request.json()
+    event_data, error = _community_event_input(data)
+    if error:
+        return JSONResponse({"ok": False, "error": error}, status_code=400)
+    coorganizers, error = _community_coorganizer_input(data, user_id)
+    if error:
+        return JSONResponse({"ok": False, "error": error}, status_code=400)
+    if storage.get_coins(uid) < COMMUNITY_EVENT_PUBLICATION_COST:
+        return JSONResponse({"ok": False, "error": f"Нужно {COMMUNITY_EVENT_PUBLICATION_COST} Сириус Коинов для публикации"}, status_code=402)
+    storage.add_coins(uid, -COMMUNITY_EVENT_PUBLICATION_COST)
+    event_id = storage.add_community_event(user_id, uid, coorganizers=coorganizers or [], **event_data)
+    return JSONResponse({"ok": True, "id": event_id, "new_balance": storage.get_coins(uid)})
+
+
+@app.patch("/api/community-events/{event_id}")
+async def api_update_community_event(event_id: int, request: Request):
+    user_id = get_user_id(request)
+    if not user_id:
+        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
+    if not _can_manage_community_event(event_id, user_id):
+        return JSONResponse({"ok": False, "error": "Нет прав на изменение события"}, status_code=403)
+    data = await request.json()
+    event_data, error = _community_event_input(data)
+    if error:
+        return JSONResponse({"ok": False, "error": error}, status_code=400)
+    event = storage.get_community_event(event_id)
+    if not event:
+        return JSONResponse({"ok": False, "error": "Событие не найдено"}, status_code=404)
+    coorganizers, error = _community_coorganizer_input(data, event["owner_user_id"])
+    if error:
+        return JSONResponse({"ok": False, "error": error}, status_code=400)
+    storage.update_community_event(event_id, coorganizers=coorganizers or [], **event_data)
+    return JSONResponse({"ok": True})
+
+
+@app.delete("/api/community-events/{event_id}")
+async def api_delete_community_event(event_id: int, request: Request):
+    user_id = get_user_id(request)
+    if not user_id:
+        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
+    if not _can_manage_community_event(event_id, user_id):
+        return JSONResponse({"ok": False, "error": "Нет прав на удаление события"}, status_code=403)
+    storage.delete_community_event(event_id)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/community-events/{event_id}/register")
+async def api_register_community_event(event_id: int, request: Request):
+    user_id = get_user_id(request)
+    if not user_id:
+        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
+    event = storage.get_community_event(event_id)
+    if not event:
+        return JSONResponse({"ok": False, "error": "Событие не найдено"}, status_code=404)
+    if not _community_registration_open(event):
+        return JSONResponse({"ok": False, "error": "Регистрация сейчас закрыта"}, status_code=400)
+    ok, reason = storage.add_community_registration(event_id, user_id)
+    if not ok:
+        return JSONResponse({"ok": False, "error": "Места закончились" if reason == "full" else "Событие не найдено"}, status_code=400)
+    await web_notify(user_id, f"✅ Ты теперь записан на «{event['event_name']}».")
+    return JSONResponse({"ok": True, "alreadyRegistered": reason == "already_registered"})
+
+
+@app.delete("/api/community-events/{event_id}/register")
+async def api_unregister_community_event(event_id: int, request: Request):
+    user_id = get_user_id(request)
+    if not user_id:
+        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
+    event = storage.get_community_event(event_id)
+    if not event:
+        return JSONResponse({"ok": False, "error": "Событие не найдено"}, status_code=404)
+    starts_at = _community_datetime(f"{event['date_iso']}T{event['start_time']}")
+    if starts_at and _now() >= starts_at:
+        return JSONResponse({"ok": False, "error": "Событие уже прошло или началось"}, status_code=400)
+    storage.remove_community_registration(event_id, user_id)
     return JSONResponse({"ok": True})
 
 

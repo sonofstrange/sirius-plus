@@ -232,7 +232,7 @@ function renderTable() {
         container.innerHTML = '<p style="color:var(--text-muted)">Ничего не найдено</p>';
         return;
     }
-    let html = '<div class="admin-users-table-wrap"><table class="admin-users-table"><tr><th>Пользователь</th><th>Коины</th><th>Доверие</th><th>Управление</th></tr>';
+    let html = '<div class="admin-users-table-wrap"><table class="admin-users-table"><tr><th>Пользователь</th><th>Коины</th><th>В резерве</th><th>Доверие</th><th>Управление</th></tr>';
     for (const u of filtered) {
         const trust = Number(u.trust_level || 2);
         const safeUid = u.uid.replace(/'/g,"\\'");
@@ -249,6 +249,7 @@ function renderTable() {
                 <span class="admin-user-uid">${escapeHtml(u.uid)}</span>
             </td>
             <td class="admin-users-table__coins"><strong>${u.coins}</strong></td>
+            <td class="admin-users-table__coins">${u.reserved_coins || 0}</td>
             <td>${trustHtml}</td>
             <td>
                 <div class="admin-users-table__actions">
@@ -302,7 +303,8 @@ async function showAdminUser(uid) {
             <tr><td>Команда Sirius</td><td>${escapeHtml(u.team || 'Не указана в Sirius')}</td></tr>
             <tr><td>UID</td><td class="mono">${escapeHtml(u.uid)}</td></tr>
             <tr><td>Уровень</td><td>${escapeHtml(trustNames[u.trustLevel] || 'Обычный')}</td></tr>
-            <tr><td>Коины</td><td><strong>${u.coins}</strong>${u.reservedCoins ? ` · ${u.reservedCoins} в резерве` : ''}</td></tr>
+            <tr><td>Коины</td><td><strong>${u.coins}</strong></td></tr>
+            <tr><td>В резерве</td><td>${u.reservedCoins || 0}</td></tr>
             <tr><td>Создан</td><td>${escapeHtml(fmt(u.createdAt))}</td></tr>
             <tr><td>Последняя активность</td><td>${escapeHtml(fmt(u.lastActive))}</td></tr>
             <tr><td>Тип входа</td><td>${escapeHtml(loginNames[u.loginType] || '—')}</td></tr>

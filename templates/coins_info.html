@@ -13,9 +13,9 @@
 
     {% if user_id %}
     <div class="subtabs" aria-label="Раздел Сириус Коинов">
-        <a href="/coins-info" class="subtab {% if coins_tab == 'coins' %}subtab-active{% endif %}">Сириус Коины</a>
         <a href="/coins-info?tab=polymarket" class="subtab">Полимаркет</a>
         <a href="/coins-info?tab=dronebet" class="subtab {% if coins_tab == 'dronebet' %}subtab-active{% endif %}">DroneBet</a>
+        <a href="/coins-info" class="subtab {% if coins_tab == 'coins' %}subtab-active{% endif %}">Сириус Коины</a>
     </div>
 
     {% if coins_tab == 'dronebet' %}
@@ -99,15 +99,15 @@ loadCoins();
 setInterval(loadCoins, 10000);
 
 async function doTransfer() {
-    const toUid = await dlgPrompt('Перевод коинов', 'Введи UID получателя:', 'UID...');
-    if (!toUid) return;
+    const recipient = await dlgPrompt('Перевод коинов', 'Введи UID или точное ФИО получателя:', 'UID или ФИО...');
+    if (!recipient) return;
     const amount = await dlgPrompt('Перевод коинов', 'Сколько Сириус Коинов перевести?', '1', {type: 'number', value: '1'});
     if (!amount) return;
     try {
         const resp = await fetch('/api/coins/transfer', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({to_uid: toUid.trim(), amount: parseInt(amount)}),
+            body: JSON.stringify({recipient: recipient.trim(), amount: parseInt(amount)}),
         });
         const data = await resp.json().catch(() => ({
             ok: false,
