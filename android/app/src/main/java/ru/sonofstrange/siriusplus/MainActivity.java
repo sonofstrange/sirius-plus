@@ -381,6 +381,7 @@ public class MainActivity extends android.app.Activity {
             case "dark_mode" -> "&#9680;";
             case "delete" -> "&#9003;";
             case "directions_bus_filled" -> "&#128652;";
+            case "error" -> "!";
             case "help_outline" -> "?";
             case "location_on" -> "&#8982;";
             case "menu" -> "&#9776;";
@@ -394,6 +395,7 @@ public class MainActivity extends android.app.Activity {
             case "search" -> "&#8981;";
             case "sync" -> "&#8635;";
             case "sync_alt" -> "&#8596;";
+            case "verified" -> "&#10003;";
             case "warning" -> "&#9888;";
             default -> null;
         };
