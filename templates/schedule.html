@@ -70,7 +70,7 @@
                 <div class="schedule-card__title">
                     {{ ev.event_name }}
                     {% if ev.event_type == 'customEvent' %}<span class="badge badge-custom">Моё</span>{% endif %}
-                    {% if ev.event_type == 'communityEvent' %}<span class="badge badge-community">Сообщество</span>{% endif %}
+                    {% if ev.event_type == 'communityEvent' %}<span class="badge badge-community" title="Неофициальное событие пользователей Пирожкового Диспетчера">Событие сообщества</span>{% endif %}
                 </div>
                 {% if ev.event_type == 'transferEvent' and ev.transport_info %}
                 <div class="schedule-card__transport">
@@ -212,6 +212,13 @@ async function showScheduleDetail(eventId) {
 }
 
 async function toggleCommunityRegistration(eventId, isRegistered) {
+    if (!isRegistered) {
+        const confirmed = await dlgConfirm(
+            'Событие сообщества',
+            'Это неофициальное событие, созданное пользователем Пирожкового Диспетчера, а не Sirius. Проверь описание, время и место у организатора перед записью.'
+        );
+        if (!confirmed) return;
+    }
     try {
         const response = await fetch('/api/community-events/' + eventId + '/register', {method: isRegistered ? 'DELETE' : 'POST'});
         const data = await response.json();
