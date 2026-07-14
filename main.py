@@ -237,7 +237,7 @@ async def _send_push_to_user(user_id: str, text: str, ntype: str = "info"):
         "title": "Пирожковый Диспетчер",
         "body": text,
         "type": ntype,
-        "url": "/events?tab=notifications",
+        "url": "/events?tab=register",
         "is_alarm": ntype == "alarm",
     }, ensure_ascii=False)
 
@@ -293,7 +293,7 @@ def _send_mobile_push_blocking(rows, text: str, ntype: str) -> dict:
                     "title": "Пирожковый Диспетчер",
                     "body": text,
                     "is_alarm": "1" if is_alarm else "0",
-                    "url": "/events?tab=notifications",
+                    "url": "/events?tab=register",
                 },
                 android=messaging.AndroidConfig(priority="high"),
                 token=row["token"],
@@ -589,6 +589,38 @@ def _render(template: str, request: Request, **kwargs):
 
 # ---------- Pages ----------
 
+def _decorate_auto_registration(event, watch, user_id: str, now: dt.datetime) -> None:
+    """Attach presentation-only auto-registration state to an event."""
+    priority = str(watch["snipe_priority"] or "high")
+    priority_names = {
+        "high": "Высокий приоритет",
+        "medium": "Средний приоритет",
+        "low": "Низкий приоритет",
+    }
+    target = poller.event_target_time(event) or parse_sirius_time(watch["event_start"])
+    is_active = poller.is_sniping(user_id, event.event_id)
+    label = "Автозапись ожидает обновления"
+    if target:
+        remaining = (target - now).total_seconds()
+        opening = target.astimezone(_MSK).strftime("%d.%m %H:%M")
+        if remaining > poller.WARMUP_WINDOW:
+            label = f"Запланирована до открытия {opening}"
+        elif remaining > 0:
+            label = f"Подготовка к открытию {opening}"
+        elif is_active:
+            label = "Ловит открытие сейчас"
+        else:
+            label = f"Ожидает запись, открытие было {opening}"
+
+    event._watched = True
+    event._watch = {
+        "priority": priority_names.get(priority, "Высокий приоритет"),
+        "cost": int(watch["coin_cost"] or 0),
+        "status": label,
+        "active": is_active,
+        "target": target.astimezone(_MSK).isoformat() if target else "",
+    }
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     referral_code = storage.normalize_referral_code(request.query_params.get("ref", ""))
@@ -614,15 +646,12 @@ async def events_page(request: Request, tab: str = "register", status: str = "al
     user_id = get_user_id(request)
     if not user_id:
         return RedirectResponse(url="/")
+    if tab == "notifications":
+        return RedirectResponse(url="/events?tab=register", status_code=303)
 
     token = storage.get_token(user_id)
     if not token:
         return _render("login.html", request, error="Войди, чтобы продолжить")
-
-    if tab == "notifications":
-        history = storage.get_notifications(user_id)
-        _notification_queue.pop(user_id, [])
-        return _render("events.html", request, cur_tab="notifications", notifications_history=history, events=[])
 
     cache_key = f"events:{user_id}"
     all_events = _get_cached(cache_key)
@@ -653,6 +682,13 @@ async def events_page(request: Request, tab: str = "register", status: str = "al
 
     now = _now()
     watches = {w["event_id"]: w for w in storage.get_watchlist(user_id)}
+
+    for ev in all_events:
+        ev._watched = False
+        ev._watch = None
+        watch = watches.get(ev.event_id)
+        if watch:
+            _decorate_auto_registration(ev, watch, user_id, now)
 
     # Compute overlaps: which events overlap with user's registered/watched events
     _user_event_names = {ev.event_id: ev.event_name for ev in all_events}
@@ -692,6 +728,8 @@ async def events_page(request: Request, tab: str = "register", status: str = "al
                 continue
             if sub == "past" and not is_past:
                 continue
+            if sub == "watch" and ev.event_id not in watches:
+                continue
         else:
             if status == "all" and is_past:
                 continue
@@ -727,7 +765,6 @@ async def events_page(request: Request, tab: str = "register", status: str = "al
         filtered.sort(key=lambda ev: parse_sirius_time(ev.event_start) or dt.datetime.max.replace(tzinfo=_MSK))
 
     for ev in filtered:
-        ev._watched = ev.event_id in watches
         ev._is_past = _is_past_event(ev)
 
     dates = sorted(set(e.day_iso for e in all_events if e.day_iso))
@@ -841,57 +878,7 @@ async def schedule_page(request: Request, date: str = ""):
 
 @app.get("/watchlist", response_class=HTMLResponse)
 async def watchlist_page(request: Request):
-    user_id = get_user_id(request)
-    if not user_id:
-        return RedirectResponse(url="/")
-
-    watches = storage.get_all_watchlist(user_id)
-    # Показываем только активную слежку и ошибки, зарегистрированные прячем
-    watches = [w for w in watches if w["status"] != "registered"]
-    token = storage.get_token(user_id)
-
-    # Загружаем актуальное расписание, чтобы показать реальное время открытия записи
-    by_id: dict[str, object] = {}
-    cached: list | None = None
-    if token and _sirius_client:
-        try:
-            cached = _get_cached(f"events:{user_id}")
-            if cached is None:
-                cached = _get_cached_any(f"events:{user_id}") or _get_persistent_events_cache(user_id) or []
-            by_id = {ev.event_id: ev for ev in cached}
-        except Exception as e:
-            log.warning("Failed to fetch schedule for watchlist: %s", e)
-
-    now = _now()
-    watches_out = []
-    for w in watches:
-        w = dict(w)
-        ev = by_id.get(w["event_id"])
-        target = poller.event_target_time(ev) if ev else parse_sirius_time(w["event_start"])
-        w["_snipe_active"] = poller.is_sniping(user_id, w["event_id"])
-        w["_target_dt"] = target
-        w["_snipe_opening_iso"] = target.astimezone(_MSK).isoformat() if target else ""
-        w["_snipe_label"] = ""
-        if target:
-            remaining = (target - now).total_seconds()
-            if remaining > poller.WARMUP_WINDOW:
-                h = int(remaining // 3600)
-                m = int((remaining % 3600) // 60)
-                start_msk = target.astimezone(_MSK).strftime("%H:%M")
-                w["_snipe_label"] = (
-                    f"запись откроется в {start_msk} (через {h}ч {m}м)"
-                    if h else f"запись откроется в {start_msk} (через {m}м)"
-                )
-            elif remaining > 0:
-                w["_snipe_label"] = f"начну ловить через {int(remaining)}с"
-            elif w["_snipe_active"]:
-                w["_snipe_label"] = "ловлю открытие прямо сейчас"
-            else:
-                start_msk = target.astimezone(_MSK).strftime("%d.%m %H:%M")
-                w["_snipe_label"] = f"запись открылась {start_msk}"
-        watches_out.append(w)
-
-    return _render("watchlist.html", request, watches=watches_out)
+    return RedirectResponse(url="/events?tab=my&sub=watch", status_code=303)
 
 
 @app.get("/custom-events", response_class=HTMLResponse)
@@ -926,18 +913,19 @@ async def help_page(request: Request):
 async def coins_info_page(request: Request):
     user_id = get_user_id(request)
     uid = _session_uid(user_id) if user_id else None
+    tab = request.query_params.get("tab", "coins")
+    if tab == "polymarket":
+        if not user_id:
+            return RedirectResponse(url="/")
+        return _render("polymarket.html", request, coins_tab="polymarket")
     return _render("coins_info.html", request,
                    app_bonus_claimed=bool(uid and storage.has_claimed_app_usage_bonus(uid)),
-                   coins_tab="dronebet" if request.query_params.get("tab") == "dronebet" else "coins")
+                   coins_tab="dronebet" if tab == "dronebet" else "coins")
 
 
 @app.get("/polymarket", response_class=HTMLResponse)
 async def polymarket_page(request: Request):
-    if not get_user_id(request):
-        return RedirectResponse(url="/")
-    if request.query_params.get("tab") == "dronebet":
-        return RedirectResponse(url="/coins-info?tab=dronebet", status_code=303)
-    return _render("polymarket.html", request)
+    return RedirectResponse(url="/coins-info?tab=polymarket", status_code=303)
 
 
 @app.get("/dronebet", response_class=HTMLResponse)
@@ -2014,7 +2002,7 @@ async def api_watch_priority(request: Request):
 
     watch = storage.get_watch(user_id, event_id)
     if not watch or watch["status"] != "watching":
-        return JSONResponse({"ok": False, "error": "Слежка не найдена"}, status_code=404)
+        return JSONResponse({"ok": False, "error": "Автозапись не найдена"}, status_code=404)
 
     old_cost = watch["coin_cost"] if "coin_cost" in watch.keys() else storage.snipe_priority_cost(watch["snipe_priority"])
     new_cost = storage.snipe_priority_cost(snipe_priority)

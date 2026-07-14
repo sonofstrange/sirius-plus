@@ -9,11 +9,9 @@
     <!-- Tabs -->
     <div class="tabs">
         <a href="/events?tab=register{% if search_q %}&q={{ search_q }}{% endif %}"
-           class="tab {% if cur_tab == 'register' or not cur_tab %}tab-active{% endif %}">Записаться</a>
+           class="tab {% if cur_tab == 'register' or not cur_tab %}tab-active{% endif %}">Записаться на событие</a>
         <a href="/events?tab=my&sub=current"
-           class="tab {% if cur_tab == 'my' %}tab-active{% endif %}">Мои</a>
-        <a href="/events?tab=notifications"
-           class="tab {% if cur_tab == 'notifications' %}tab-active{% endif %}">Уведомления</a>
+           class="tab {% if cur_tab == 'my' %}tab-active{% endif %}">События, куда я записан</a>
     </div>
 
     {% if cur_tab == 'register' %}
@@ -60,6 +58,8 @@
     <div class="subtabs">
         <a href="/events?tab=my&sub=current"
            class="subtab {% if cur_sub == 'current' %}subtab-active{% endif %}">Текущие</a>
+        <a href="/events?tab=my&sub=watch"
+           class="subtab {% if cur_sub == 'watch' %}subtab-active{% endif %}">Автозапись</a>
         <a href="/events?tab=my&sub=past"
            class="subtab {% if cur_sub == 'past' %}subtab-active{% endif %}">Прошедшие</a>
     </div>
@@ -75,30 +75,6 @@
     </div>
     {% endif %}
 
-    {% if cur_tab == 'notifications' %}
-    <div class="notif-actions" style="margin-bottom:16px">
-        <button class="btn btn-outline btn-sm" onclick="clearNotifications()">
-            <span class="material-symbols-outlined">delete</span> Очистить историю
-        </button>
-    </div>
-    <div class="notif-list">
-        {% for n in notifications_history %}
-        <div class="notif-item" id="notif-{{ n.id }}">
-            <div class="notif-item__time">{{ n.created_at | fmt_ts }}</div>
-            <div class="notif-item__text">{{ n.text }}</div>
-            <button class="notif-item__close" onclick="deleteNotification({{ n.id }})" title="Удалить">
-                <span class="material-symbols-outlined">close</span>
-            </button>
-        </div>
-        {% else %}
-        <div class="empty-state">
-            <span class="material-symbols-outlined empty-state__icon">notifications</span>
-            <p>Уведомлений пока нет</p>
-        </div>
-        {% endfor %}
-    </div>
-    {% endif %}
-
     {% if error %}
     <div class="alert alert-error">{{ error }}</div>
     {% endif %}
@@ -111,7 +87,7 @@
         {% if loop.first or ev.day_iso != loop.previtem.day_iso %}
         <div class="events-day-header">{{ ev.day_iso }}</div>
         {% endif %}
-        <div class="event-card" onclick="showEventDetail('{{ ev.event_id }}')" style="cursor:pointer">
+        <div class="event-card {% if ev.is_recorded or ev.is_reserved %}event-card--registered{% elif ev._watched %}event-card--autoreg{% endif %}" onclick="showEventDetail('{{ ev.event_id }}')" style="cursor:pointer">
             <div class="event-card__time">
                 <span class="event-card__time-start">{{ fmt_time(ev.event_start) }}</span>
                 {% if ev.raw.get('eventEnd') %}
@@ -147,22 +123,37 @@
                     {% endfor %}
                 </div>
                 {% endif %}
+                {% if cur_tab == 'my' and cur_sub == 'watch' and ev._watch %}
+                <div class="event-card__autoreg-details">
+                    <span>{{ ev._watch.priority }}</span>
+                    <span>{{ ev._watch.status }}</span>
+                    {% if ev._watch.cost %}<span>{{ ev._watch.cost }} 🪙</span>{% else %}<span>Бесплатно</span>{% endif %}
+                </div>
+                {% endif %}
             </div>
             <div class="event-card__actions" onclick="event.stopPropagation()">
                 {% if ev._is_past and (ev.is_recorded or ev.is_reserved) %}
                 <span class="badge badge-muted">Событие уже прошло</span>
                 {% elif ev._is_past %}
                 <span class="badge" style="background:var(--danger);color:white">🔒 Запись закрыта</span>
-                {% elif ev.is_recorded and ev.is_reserved %}
-                <span class="badge badge-warning">🟡 В резерве</span>
                 {% elif ev.is_recorded %}
-                <span class="badge badge-success">✅ Записан</span>
+                <button class="btn btn-danger-text btn-sm" onclick="showUnsubscribeModal('{{ ev.event_id }}', this)">Отписаться</button>
+                <span class="btn btn-success btn-sm event-card__state">Записан</span>
                 {% elif ev.is_reserved %}
-                <span class="badge badge-warning">🟡 В резерве</span>
+                <button class="btn btn-danger-text btn-sm" onclick="showUnsubscribeModal('{{ ev.event_id }}', this)">Отписаться</button>
+                <span class="btn btn-warning btn-sm event-card__state">В резерве</span>
+                {% elif ev._watched %}
+                <button class="btn btn-primary btn-sm watch-btn"
+                    data-event-id="{{ ev.event_id }}"
+                    data-event-name="{{ ev.event_name|e }}"
+                    data-event-start="{{ ev.event_start }}"
+                    onclick="toggleWatch(this)">
+                    <span class="material-symbols-outlined">bolt</span> Автозапись
+                </button>
                 {% elif 'recordClosed' in ev.reasons %}
                 <span class="badge" style="background:var(--danger);color:white">🔒 Запись закрыта</span>
                 {% elif ev.is_available and ev.people_max > 0 and ev.people_current >= ev.people_max %}
-                <button class="btn btn-primary btn-sm" onclick="subscribe('{{ ev.event_id }}', this)">
+                <button class="btn btn-warning btn-sm" onclick="subscribe('{{ ev.event_id }}', this)">
                     Записаться в резерв
                 </button>
                 {% elif ev.is_available %}
@@ -170,42 +161,29 @@
                     Записаться
                 </button>
                 {% elif ev.will_open_at %}
-                <button class="btn btn-outline btn-sm watch-btn"
+                <button class="btn btn-primary btn-sm watch-btn"
                     data-event-id="{{ ev.event_id }}"
                     data-event-name="{{ ev.event_name|e }}"
                     data-event-start="{{ ev.event_start }}"
                     onclick="toggleWatch(this)">
-                    {% if ev._watched %}
-                    <span class="material-symbols-outlined">notifications_active</span> Слежу
-                    {% else %}
-                    <span class="material-symbols-outlined">notifications</span> Следить
-                    {% endif %}
+                    <span class="material-symbols-outlined">bolt</span> Автозапись
                 </button>
                 <button class="btn btn-outline btn-sm" onclick="setReminder('{{ ev.event_id }}', '{{ ev.event_name|e }}', '{{ ev.event_start }}')" title="Напомнить">
                     <span class="material-symbols-outlined">alarm</span>
                 </button>
                 {% else %}
-                <button class="btn btn-outline btn-sm watch-btn"
+                <button class="btn btn-primary btn-sm watch-btn"
                     data-event-id="{{ ev.event_id }}"
                     data-event-name="{{ ev.event_name|e }}"
                     data-event-start="{{ ev.event_start }}"
                     onclick="toggleWatch(this)">
-                    {% if ev._watched %}
-                    <span class="material-symbols-outlined">notifications_active</span> Слежу
-                    {% else %}
-                    <span class="material-symbols-outlined">notifications</span> Следить
-                    {% endif %}
-                </button>
-                {% endif %}
-                {% if (ev.is_recorded or ev.is_reserved) and not ev._is_past %}
-                <button class="btn btn-danger-text btn-sm" onclick="showUnsubscribeModal('{{ ev.event_id }}', this)">
-                    Отписаться
+                    <span class="material-symbols-outlined">bolt</span> Автозапись
                 </button>
                 {% endif %}
             </div>
         </div>
         {% else %}
-        {% if cur_tab != 'notifications' and not refresh_message %}
+        {% if not refresh_message %}
         <div class="empty-state">
             <span class="material-symbols-outlined empty-state__icon">search</span>
             <p>Нет событий по выбранному фильтру</p>
@@ -214,7 +192,7 @@
         {% endfor %}
     </div>
 
-    {% if cur_tab != 'notifications' and total_pages > 1 %}
+    {% if total_pages > 1 %}
     <div class="pagination">
         {% if page > 1 %}
         <a href="/events?tab={{ cur_tab }}&status={{ cur_status }}&sort={{ cur_sort }}&page={{ page-1 }}{% if cur_date %}&date={{ cur_date }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}{% if cur_tab == 'my' %}&sub={{ cur_sub }}{% endif %}"
@@ -306,24 +284,6 @@ async function syncEvents() {
     }
 }
 
-async function clearNotifications() {
-    if (!confirm('Очистить все уведомления?')) return;
-    try {
-        await fetch('/api/notifications/clear', {method: 'POST'});
-        location.reload();
-    } catch (e) { alert('Ошибка: ' + e); }
-}
-
-async function deleteNotification(id) {
-    try {
-        const resp = await fetch('/api/notifications/delete/' + id, {method: 'POST'});
-        const data = await resp.json();
-        if (data.ok) {
-            document.getElementById('notif-' + id).remove();
-        }
-    } catch (e) { console.error(e); }
-}
-
 async function subscribe(eventId, btn) {
     btn.disabled = true;
     btn.textContent = '⏳';
@@ -335,10 +295,7 @@ async function subscribe(eventId, btn) {
         });
         const data = await resp.json();
         if (data.ok) {
-            const badge = data.reserved
-                ? '<span class="badge badge-warning">🟡 В резерве</span>'
-                : '<span class="badge badge-success">✅ Записан</span>';
-            btn.outerHTML = badge;
+            location.reload();
         } else {
             alert(data.text || data.error || 'Ошибка');
             btn.disabled = false;
@@ -355,12 +312,12 @@ async function toggleWatch(btn) {
     const eventId = btn.dataset.eventId;
     const eventName = btn.dataset.eventName;
     const eventStart = btn.dataset.eventStart;
-    const isWatching = _watching.has(eventId) || btn.querySelector('.material-symbols-outlined')?.textContent === 'notifications_active';
+    const isWatching = _watching.has(eventId) || btn.closest('.event-card')?.classList.contains('event-card--autoreg');
     try {
         if (isWatching) {
             const resp = await fetch('/api/unwatch', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({event_id: eventId})});
             const data = await resp.json();
-            if (data.ok) { _watching.delete(eventId); btn.innerHTML = '<span class="material-symbols-outlined">notifications</span> Следить'; }
+            if (data.ok) { location.reload(); }
         } else {
             const choice = await showDialog('Приоритет автозаписи', 'Выбери скорость снайпинга:', {
                 buttons: [
@@ -373,9 +330,9 @@ async function toggleWatch(btn) {
             const snipePriority = choice === 0 ? 'low' : choice === 1 ? 'medium' : 'high';
             const resp = await fetch('/api/watch', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({event_id: eventId, event_name: eventName, event_start: eventStart, snipe_priority: snipePriority})});
             const data = await resp.json();
-            if (data.ok) { _watching.add(eventId); btn.innerHTML = '<span class="material-symbols-outlined">notifications_active</span> Слежу'; }
+            if (data.ok) { location.reload(); }
             else if (resp.status === 402) { dlgAlert('Не хватает Сириус Коинов', data.error || 'Для этой скорости автозаписи не хватает коинов.'); }
-            else { dlgAlert('Ошибка', data.error || 'Не удалось добавить в слежку'); }
+            else { dlgAlert('Ошибка', data.error || 'Не удалось включить автозапись'); }
         }
     } catch (e) { alert('Ошибка: ' + e); }
 }
@@ -429,7 +386,7 @@ async function showEventDetail(eventId) {
                 <tr><td>Участников</td><td>${ev.people_current}/${ev.people_max}</td></tr>
                 <tr><td>Статус</td><td>${registrationStatus}</td></tr>
                 <tr><td>Откроется</td><td>${escapeHtml(willOpen)}</td></tr>
-                <tr><td>В слежке</td><td>${ev.watched ? '✅ Да' : '❌ Нет'}</td></tr>
+                <tr><td>Автозапись</td><td>${ev.watched ? '✅ Включена' : '—'}</td></tr>
                 ${conflict}
             </table>
             ${desc ? '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)"><strong>Описание:</strong><p style="margin-top:6px;color:var(--text-muted);font-size:14px;line-height:1.6">' + escapeHtml(desc) + '</p></div>' : ''}

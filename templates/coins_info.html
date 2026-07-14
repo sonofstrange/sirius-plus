@@ -14,6 +14,7 @@
     {% if user_id %}
     <div class="subtabs" aria-label="Раздел Сириус Коинов">
         <a href="/coins-info" class="subtab {% if coins_tab == 'coins' %}subtab-active{% endif %}">Сириус Коины</a>
+        <a href="/coins-info?tab=polymarket" class="subtab">Полимаркет</a>
         <a href="/coins-info?tab=dronebet" class="subtab {% if coins_tab == 'dronebet' %}subtab-active{% endif %}">DroneBet</a>
     </div>
 
@@ -41,15 +42,13 @@
         <div style="font-size:28px;font-weight:700;margin-bottom:4px" id="coins-balance">—</div>
         <p style="color:var(--text-muted);font-size:14px;margin-bottom:20px">
             Доступно: <strong id="coins-available">—</strong>
-            &nbsp;|&nbsp;
-            В резерве: <strong id="coins-reserved" style="color:var(--warning)">—</strong>
         </p>
 
         <h2 style="font-size:18px;margin-bottom:12px">Как это работает?</h2>
         <ol style="padding-left:20px;color:var(--text-muted);margin-bottom:20px;line-height:2">
-            <li>Когда ты нажимаешь «Следить» — <strong>1 коин резервируется</strong> (замораживается на время слежки).</li>
+            <li>Когда включаешь автозапись — стоимость выбранного приоритета резервируется до результата.</li>
             <li>Если автозапись <strong>прошла успешно</strong> — коин списывается окончательно.</li>
-            <li>Если автозапись <strong>не удалась</strong> или ты <strong>уберёшь событие из слежки</strong> — коин <strong>возвращается</strong> обратно.</li>
+            <li>Если автозапись <strong>не удалась</strong> или ты её отменишь — коин <strong>возвращается</strong> обратно.</li>
         </ol>
 
         <h2 style="font-size:18px;margin-bottom:12px">Как получить Сириус Коины?</h2>
@@ -97,7 +96,6 @@ async function loadCoins() {
         if (data.ok) {
             document.getElementById('coins-balance').textContent = data.total + ' 🪙';
             document.getElementById('coins-available').textContent = data.coins;
-            document.getElementById('coins-reserved').textContent = data.reserved || 0;
         }
     } catch (e) { /* ignore */ }
 }

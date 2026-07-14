@@ -25,7 +25,7 @@ self.addEventListener('push', event => {
         requireInteraction: isAlarm,
         silent: false,
         timestamp: Date.now(),
-        data: {url: data.url || '/events?tab=notifications'},
+        data: {url: data.url || '/events?tab=register'},
     };
     if (isAlarm) {
         options.vibrate = [700, 200, 700, 200, 1000];
@@ -38,7 +38,7 @@ self.addEventListener('notificationclick', event => {
     event.notification.close();
     const url = event.notification.data && event.notification.data.url
         ? event.notification.data.url
-        : '/events?tab=notifications';
+        : '/events?tab=register';
 
     event.waitUntil((async () => {
         const allClients = await clients.matchAll({type: 'window', includeUncontrolled: true});
