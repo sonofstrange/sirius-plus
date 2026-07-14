@@ -39,6 +39,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import javax.net.ssl.HttpsURLConnection;
 
@@ -47,6 +49,10 @@ public class MainActivity extends android.app.Activity {
     private static final String HEALTH_URL = APP_URL + "healthz";
     private static final String LAST_PAGE_URL_FILE = "last_page_url.txt";
     private static final int NOTIFICATION_PERMISSION_REQUEST = 1001;
+    private static final Pattern MATERIAL_ICON_IN_ARCHIVE = Pattern.compile(
+        "(<span[^>]*class=3D\"[^\"]*material-symbols-outlined[^\"]*\"[^>]*>)"
+            + "((?:[a-z_]|=\\r?\\n)+)(</span>)"
+    );
     static final String PUSH_PREFS = "sirius_push";
     static final String FCM_TOKEN_KEY = "fcm_token";
     private static volatile boolean appForeground;
@@ -268,6 +274,7 @@ public class MainActivity extends android.app.Activity {
             webView.loadUrl("file:///android_asset/offline.html");
             return;
         }
+        replaceArchiveIconNames(archive);
         webView.loadUrl(Uri.fromFile(archive).toString());
     }
 
@@ -277,9 +284,69 @@ public class MainActivity extends android.app.Activity {
         if (archive.exists() && !archive.delete()) return;
         String archiveStyle = "(function(){const old=document.getElementById('sirius-archive-cleanup');if(old)old.remove();const style=document.createElement('style');style.id='sirius-archive-cleanup';style.textContent='.modal-overlay,.toast-container{display:none!important}';document.head.appendChild(style);})()";
         webView.evaluateJavascript(archiveStyle, ignored -> webView.saveWebArchive(archive.getAbsolutePath(), false, savedPath -> {
+            replaceArchiveIconNames(archive);
             webView.post(() -> webView.evaluateJavascript("(function(){var e=document.getElementById('sirius-archive-cleanup');if(e)e.remove();})()", null));
             if (savedPath != null) writeFile(LAST_PAGE_URL_FILE, url);
         }));
+    }
+
+    private void replaceArchiveIconNames(File archive) {
+        try {
+            String content = new String(java.nio.file.Files.readAllBytes(archive.toPath()), StandardCharsets.UTF_8);
+            Matcher matcher = MATERIAL_ICON_IN_ARCHIVE.matcher(content);
+            StringBuffer rewritten = new StringBuffer();
+            boolean changed = false;
+            while (matcher.find()) {
+                String name = matcher.group(2).replaceAll("=\\r?\\n", "");
+                String replacement = offlineIcon(name);
+                if (replacement == null) {
+                    matcher.appendReplacement(rewritten, Matcher.quoteReplacement(matcher.group()));
+                    continue;
+                }
+                changed = true;
+                matcher.appendReplacement(rewritten, Matcher.quoteReplacement(
+                    matcher.group(1) + replacement + matcher.group(3)
+                ));
+            }
+            matcher.appendTail(rewritten);
+            if (changed) {
+                java.nio.file.Files.write(archive.toPath(), rewritten.toString().getBytes(StandardCharsets.UTF_8));
+            }
+        } catch (Exception ignored) {
+            // A damaged offline archive is handled by the normal offline fallback.
+        }
+    }
+
+    private String offlineIcon(String name) {
+        return switch (name) {
+            case "account_circle", "person" -> "&#128100;";
+            case "add" -> "+";
+            case "add_chart" -> "&#9637;";
+            case "admin_panel_settings" -> "&#9881;";
+            case "alarm" -> "&#9200;";
+            case "block", "visibility_off" -> "&#8856;";
+            case "calendar_month" -> "&#9635;";
+            case "chat_bubble_outline" -> "&#128172;";
+            case "close" -> "&times;";
+            case "dark_mode" -> "&#9680;";
+            case "delete" -> "&#9003;";
+            case "directions_bus_filled" -> "&#128652;";
+            case "help_outline" -> "?";
+            case "location_on" -> "&#8982;";
+            case "menu" -> "&#9776;";
+            case "new_releases" -> "&#10022;";
+            case "notifications", "notifications_active" -> "&#128276;";
+            case "paid" -> "&#8381;";
+            case "phone_android" -> "&#128241;";
+            case "query_stats" -> "&#9636;";
+            case "radar" -> "&#9673;";
+            case "schedule" -> "&#9687;";
+            case "search" -> "&#8981;";
+            case "sync" -> "&#8635;";
+            case "sync_alt" -> "&#8596;";
+            case "warning" -> "&#9888;";
+            default -> null;
+        };
     }
 
     private void disableOfflineActions() {
