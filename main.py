@@ -955,6 +955,14 @@ async def schedule_page(request: Request, date: str = ""):
             "unions": [],
         })())
 
+    session_uid = _session_uid(user_id) or ""
+    for community_event in storage.get_community_events_for_date(user_id, date):
+        if not community_event["is_registered"]:
+            continue
+        events.append(type("_CommunityEvent", (), _community_event_payload(
+            community_event, user_id, storage.is_admin(session_uid)
+        ))())
+
     events.sort(key=lambda e: parse_sirius_time(e.start_time) or dt.datetime.max.replace(tzinfo=dt.timezone.utc))
 
     groups = sorted(set(g for ev in events for g in ev.unions))
@@ -2612,6 +2620,12 @@ async def api_schedule(request: Request, date: str = ""):
                 "arrival_location": "",
                 "transport_info": None,
             })
+        session_uid = _session_uid(user_id) or ""
+        for community_event in storage.get_community_events_for_date(user_id, date):
+            if community_event["is_registered"]:
+                result.append(_community_event_payload(
+                    community_event, user_id, storage.is_admin(session_uid)
+                ))
         result.sort(key=lambda e: parse_sirius_time(e["start_time"]) or dt.datetime.max.replace(tzinfo=dt.timezone.utc))
         return JSONResponse({"ok": True, "events": result, "date": date})
     except Exception as e:
