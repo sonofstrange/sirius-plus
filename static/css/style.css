@@ -2229,15 +2229,63 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
 .alarm-card--radar { border-top-color: var(--danger); }
 
 @media (max-width: 768px) {
-    .header__container { height: 54px; padding: 0 10px; }
-    .header__logo { width: auto; min-width: 0; flex: 1 1 auto; gap: 4px; }
+    .header__container {
+        height: auto;
+        min-height: 54px;
+        padding: 0 10px 7px;
+        flex-wrap: wrap;
+        row-gap: 6px;
+    }
+    .header__logo { width: auto; min-width: 0; flex: 1 1 auto; height: 54px; gap: 4px; }
     .header__logo-img { width: 42px; height: 42px; }
     .header__logo-text { font-size: 13px; white-space: normal; overflow-wrap: anywhere; }
-    .header__nav { display: none; }
-    .header__right { margin-left: auto; }
+    .header__nav {
+        position: static;
+        order: 4;
+        width: 100%;
+        flex: 0 0 100%;
+        transform: none;
+        display: flex;
+        gap: 3px;
+        padding: 3px;
+    }
+    .header__nav-link {
+        min-width: 0;
+        flex: 1 1 50%;
+        justify-content: center;
+        padding: 8px 10px;
+        font-size: 14px;
+    }
+    .header__right { height: 54px; margin-left: 0; }
     .header__coins, .header__theme, .header__admin { display: none; }
     .header__auth-btn, .header__menu-btn { width: 36px; height: 36px; }
-    .header__mobile-nav { top: 54px; }
+    .header__menu-btn { margin-left: 0; }
+    .header__mobile-nav {
+        top: 112px;
+        padding: 10px;
+        gap: 10px;
+        border-radius: 0 0 8px 8px;
+    }
+    .header__mobile-nav-group {
+        display: grid;
+        gap: 2px;
+        padding: 4px 0;
+    }
+    .header__mobile-nav-title {
+        padding: 5px 10px 3px;
+        color: var(--text-muted);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+    }
+    .header__mobile-nav-link {
+        min-height: 42px;
+        gap: 10px;
+        padding: 10px;
+        border-radius: 8px;
+    }
+    .header__mobile-nav-link .material-symbols-outlined { font-size: 19px; color: var(--primary); }
     .main { padding: 16px 10px 24px; }
     .tabs { width: 100%; overflow-x: auto; }
     .tab { flex: 1 0 auto; text-align: center; }
