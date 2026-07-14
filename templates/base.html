@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Пирожковый Диспетчер{% endblock %}</title>
     <link rel="icon" href="/static/sirius.png">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260715-4">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260715-5">
 </head>
 <body>
     <div class="app">
@@ -112,7 +112,7 @@
     <div class="modal-overlay" id="user-modal" onclick="closeModal('user-modal')">
         <div class="modal" onclick="event.stopPropagation()">
             <div class="modal__header">
-                <h2>Информация о пользователе</h2>
+                <h2>Профиль</h2>
                 <button class="modal__close" onclick="closeModal('user-modal')">
                     <span class="material-symbols-outlined">close</span>
                 </button>
@@ -518,23 +518,25 @@
                         <div class="user-profile">
                             <div class="user-profile__summary">
                                 <div class="user-profile__avatar"><span class="material-symbols-outlined">account_circle</span></div>
-                                <div><div class="user-profile__name">${escapeHtml(name)}</div><div class="user-profile__meta">${escapeHtml(data.team || 'Команда Sirius не указана')}</div></div>
+                                <div class="user-profile__identity"><div class="user-profile__name">${escapeHtml(name)}</div><div class="user-profile__meta">${escapeHtml(data.team || 'Команда Sirius не указана')}</div><div class="user-profile__trust">${escapeHtml(trustNames[data.trustLevel] || '2 · Обычный')}</div></div>
+                                <div class="user-profile__token ${data.remainingSeconds > 0 ? '' : 'user-profile__token--expired'}"><span class="material-symbols-outlined">key</span><span>${data.remainingSeconds > 0 ? 'Токен: ' + escapeHtml(remaining) : 'Токен истёк'}</span></div>
                             </div>
-                        <table class="info-table">
-                            <tr><td>Имя</td><td>${escapeHtml(name)}</td></tr>
-                            <tr><td>Email</td><td>${escapeHtml(data.email || '—')}</td></tr>
-                            <tr><td>UID</td><td class="mono">${escapeHtml(data.id || '—')}</td></tr>
-                            <tr><td>Команда Sirius</td><td>${escapeHtml(data.team || 'Не указана в Sirius')}</td></tr>
-                            <tr><td>Уровень аккаунта</td><td>${escapeHtml(trustNames[data.trustLevel] || '2 · Обычный')}</td></tr>
-                            <tr><td>🪙 Сириус Коины</td><td><strong>${coins}</strong></td></tr>
-                            <tr><td>Тип входа</td><td>${data.loginType === 'password' ? '🔐 Пароль (авто)' : data.loginType === 'token' ? '🔑 Токен (ручной)' : '—'}</td></tr>
-                            <tr><td>Выдан</td><td>${escapeHtml(iatDate)}</td></tr>
-                            <tr><td>Истекает</td><td>${escapeHtml(expDate)}</td></tr>
-                            <tr><td>Действует ещё</td><td>${escapeHtml(remaining)}</td></tr>
-                            <tr><td>Автозаписей</td><td>${escapeHtml(data.watchedCount || 0)}</td></tr>
-                            <tr><td>Записей</td><td>${escapeHtml(data.registeredCount || 0)}</td></tr>
-                            <tr><td>Запросов к Sirius</td><td>${escapeHtml(data.siriusRequestCount || 0)}</td></tr>
-                        </table>
+                            <div class="profile-metrics">
+                                <a class="profile-metric" href="/coins-info"><span class="material-symbols-outlined">toll</span><strong>${coins}</strong><small>Сириус Коинов</small></a>
+                                <a class="profile-metric" href="/events?tab=my&sub=watch"><span class="material-symbols-outlined">bolt</span><strong>${data.watchedCount || 0}</strong><small>Автозаписей</small></a>
+                                <a class="profile-metric" href="/events?tab=my&sub=current"><span class="material-symbols-outlined">event_available</span><strong>${data.registeredCount || 0}</strong><small>Записей</small></a>
+                            </div>
+                            <details class="profile-details">
+                                <summary><span><span class="material-symbols-outlined">badge</span>Данные аккаунта Sirius</span><span class="material-symbols-outlined">expand_more</span></summary>
+                                <table class="info-table">
+                                    <tr><td>Email</td><td>${escapeHtml(data.email || '—')}</td></tr>
+                                    <tr><td>UID</td><td class="mono">${escapeHtml(data.id || '—')}</td></tr>
+                                    <tr><td>Тип входа</td><td>${data.loginType === 'password' ? 'Пароль, автообновление' : data.loginType === 'token' ? 'Токен, вручную' : '—'}</td></tr>
+                                    <tr><td>Выдан</td><td>${escapeHtml(iatDate)}</td></tr>
+                                    <tr><td>Истекает</td><td>${escapeHtml(expDate)}</td></tr>
+                                    <tr><td>Запросов к Sirius</td><td>${escapeHtml(data.siriusRequestCount || 0)}</td></tr>
+                                </table>
+                            </details>
                         <div class="profile-section">
                             <div class="profile-section__header">
                                 <span>Уведомления</span>
@@ -559,15 +561,20 @@
                                 <div class="loading">Загрузка...</div>
                             </div>
                         </div>
-                        <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;display:flex;flex-direction:column;gap:8px">
-                            <button class="btn btn-outline btn-block" onclick="redeemPromocode()">Активировать промокод</button>
-                            <button class="btn btn-outline btn-block" onclick="showMyFeedback()">Мои обращения</button>
-                            <button class="btn btn-outline btn-block" onclick="showReferral()">Пригласить друга</button>
-                            <button class="btn btn-outline btn-block" onclick="createLoginCode()">Получить код входа</button>
-                            <button class="btn btn-outline btn-block" onclick="refreshToken()">🔄 Обновить токен</button>
-                            <button class="btn btn-outline btn-block" onclick="ping()">Проверить связь с Sirius</button>
-                            <button class="btn btn-outline btn-block" onclick="logout()">Выйти</button>
+                        <div class="profile-menu">
+                            <button class="profile-menu__item" onclick="redeemPromocode()"><span class="material-symbols-outlined">confirmation_number</span><span><strong>Промокод</strong><small>Активировать Сириус Коины</small></span><span class="material-symbols-outlined">chevron_right</span></button>
+                            <button class="profile-menu__item" onclick="showReferral()"><span class="material-symbols-outlined">group_add</span><span><strong>Пригласить друга</strong><small>Ссылка, код и QR-код</small></span><span class="material-symbols-outlined">chevron_right</span></button>
+                            <button class="profile-menu__item" onclick="showMyFeedback()"><span class="material-symbols-outlined">forum</span><span><strong>Мои обращения</strong><small>Диалоги с администрацией</small></span><span class="material-symbols-outlined">chevron_right</span></button>
                         </div>
+                        <details class="profile-details profile-details--actions">
+                            <summary><span><span class="material-symbols-outlined">key</span>Вход и токен</span><span class="material-symbols-outlined">expand_more</span></summary>
+                            <div class="profile-actions">
+                                <button class="btn btn-outline btn-sm" onclick="createLoginCode()">Код входа</button>
+                                <button class="btn btn-outline btn-sm" onclick="refreshToken()">Обновить токен</button>
+                                <button class="btn btn-outline btn-sm" onclick="ping()">Проверить Sirius</button>
+                                <button class="btn btn-danger-text btn-sm" onclick="logout()">Выйти из аккаунта</button>
+                            </div>
+                        </details>
                         <div id="login-code-result" class="alert" style="display:none;margin-top:8px"></div>
                         <div id="ping-result" class="alert" style="display:none;margin-top:8px"></div>
                         </div>
