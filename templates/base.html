@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Пирожковый Диспетчер{% endblock %}</title>
     <link rel="icon" href="/static/sirius.png">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260715-5">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260715-6">
 </head>
 <body>
     <div class="app">
@@ -513,12 +513,11 @@
                         : 'Истёк';
                     const name = [data.lastName, data.firstName, data.middleName].filter(Boolean).join(' ') || '—';
                     const coins = coinsData.ok ? coinsData.coins : 0;
-                    const trustNames = {0: '0 · Админ', 1: '1 · Доверенный', 2: '2 · Обычный', 3: '3 · Недоверенный'};
                     body.innerHTML = `
                         <div class="user-profile">
                             <div class="user-profile__summary">
                                 <div class="user-profile__avatar"><span class="material-symbols-outlined">account_circle</span></div>
-                                <div class="user-profile__identity"><div class="user-profile__name">${escapeHtml(name)}</div><div class="user-profile__meta">${escapeHtml(data.team || 'Команда Sirius не указана')}</div><div class="user-profile__trust">${escapeHtml(trustNames[data.trustLevel] || '2 · Обычный')}</div></div>
+                                <div class="user-profile__identity"><div class="user-profile__name">${escapeHtml(name)}</div><div class="user-profile__meta">${escapeHtml(data.team || 'Команда Sirius не указана')}</div></div>
                                 <div class="user-profile__token ${data.remainingSeconds > 0 ? '' : 'user-profile__token--expired'}"><span class="material-symbols-outlined">key</span><span>${data.remainingSeconds > 0 ? 'Токен: ' + escapeHtml(remaining) : 'Токен истёк'}</span></div>
                             </div>
                             <div class="profile-metrics">
@@ -537,30 +536,16 @@
                                     <tr><td>Запросов к Sirius</td><td>${escapeHtml(data.siriusRequestCount || 0)}</td></tr>
                                 </table>
                             </details>
-                        <div class="profile-section">
-                            <div class="profile-section__header">
-                                <span>Уведомления</span>
-                                <span class="profile-section__hint">это устройство</span>
+                        <details class="profile-details profile-details--actions">
+                            <summary><span><span class="material-symbols-outlined">notifications</span>Уведомления и будильники</span><span class="material-symbols-outlined">expand_more</span></summary>
+                            <div class="profile-details__content">
+                                <div class="profile-section__header"><span>Уведомления</span><span class="profile-section__hint">это устройство</span></div>
+                                <div class="profile-status-grid" id="notification-settings-status"><div class="loading">Проверяю...</div></div>
+                                <div class="profile-actions"><button class="btn btn-outline btn-sm" onclick="enableStrongNotifications()">Включить</button><button class="btn btn-outline btn-sm" onclick="testStrongNotification()">Тест</button><button class="btn btn-danger-text btn-sm" onclick="disableStrongNotifications()">Отключить</button></div>
+                                <div id="strong-notify-result" class="alert" style="display:none;margin-top:8px"></div>
+                                <div class="profile-section"><div class="profile-section__header"><span>Активные будильники</span><span class="profile-section__hint" id="reminders-count">—</span></div><div id="profile-reminders-list" class="profile-list"><div class="loading">Загрузка...</div></div></div>
                             </div>
-                            <div class="profile-status-grid" id="notification-settings-status">
-                                <div class="loading">Проверяю...</div>
-                            </div>
-                            <div class="profile-actions">
-                                <button class="btn btn-outline btn-sm" onclick="enableStrongNotifications()">Включить</button>
-                                <button class="btn btn-outline btn-sm" onclick="testStrongNotification()">Тест</button>
-                                <button class="btn btn-danger-text btn-sm" onclick="disableStrongNotifications()">Отключить</button>
-                            </div>
-                            <div id="strong-notify-result" class="alert" style="display:none;margin-top:8px"></div>
-                        </div>
-                        <div class="profile-section">
-                            <div class="profile-section__header">
-                                <span>Активные будильники</span>
-                                <span class="profile-section__hint" id="reminders-count">—</span>
-                            </div>
-                            <div id="profile-reminders-list" class="profile-list">
-                                <div class="loading">Загрузка...</div>
-                            </div>
-                        </div>
+                        </details>
                         <div class="profile-menu">
                             <button class="profile-menu__item" onclick="redeemPromocode()"><span class="material-symbols-outlined">confirmation_number</span><span><strong>Промокод</strong><small>Активировать Сириус Коины</small></span><span class="material-symbols-outlined">chevron_right</span></button>
                             <button class="profile-menu__item" onclick="showReferral()"><span class="material-symbols-outlined">group_add</span><span><strong>Пригласить друга</strong><small>Ссылка, код и QR-код</small></span><span class="material-symbols-outlined">chevron_right</span></button>
