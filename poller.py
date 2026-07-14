@@ -467,6 +467,14 @@ async def poll_user_once(
     for event_id, watch in watches.items():
         ev = by_id.get(event_id)
         if ev is None:
+            # Sirius removed the event altogether: leaving a watch here would keep a
+            # dead auto-registration entry visible forever.
+            cancel_snipe(user_id, event_id)
+            storage.remove_watch(user_id, event_id)
+            coin_cost = int(watch["coin_cost"] or 0)
+            if uid and coin_cost:
+                storage.release_coins(uid, coin_cost)
+            await notify(user_id, f"🗑 Событие «{watch['event_name']}» удалено из расписания. Автозапись отменена.")
             continue
         if is_sniping(user_id, event_id) and _snipe_tasks[(user_id, event_id)]["target"] is None:
             continue

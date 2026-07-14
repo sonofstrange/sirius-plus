@@ -13,9 +13,9 @@
 
     {% if user_id %}
     <div class="subtabs" aria-label="Раздел Сириус Коинов">
-        <a href="/coins-info?tab=polymarket" class="subtab">Полимаркет</a>
-        <a href="/coins-info?tab=dronebet" class="subtab {% if coins_tab == 'dronebet' %}subtab-active{% endif %}">DroneBet</a>
         <a href="/coins-info" class="subtab {% if coins_tab == 'coins' %}subtab-active{% endif %}">Сириус Коины</a>
+        <a href="/coins-info?tab=dronebet" class="subtab {% if coins_tab == 'dronebet' %}subtab-active{% endif %}">DroneBet</a>
+        <a href="/coins-info?tab=polymarket" class="subtab">Полимаркет</a>
     </div>
 
     {% if coins_tab == 'dronebet' %}

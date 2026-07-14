@@ -39,6 +39,20 @@ class CommunityEventStorageTests(unittest.TestCase):
         self.assertEqual(len(resolved), 1)
         self.assertEqual(resolved[0]["uid"], "300")
 
+    def test_text_coorganizer_and_event_watch_cleanup_are_stored(self):
+        event_id = storage.add_community_event(
+            "owner", "100", "Community event", "2026-08-01", "12:00", "13:00",
+            "", "", 5, "Description", "Hall", [("text:guest", "", "Guest organiser")],
+        )
+
+        coorganizers = storage.get_community_coorganizers(event_id)
+        self.assertEqual(coorganizers[0]["display_name"], "Guest organiser")
+
+        storage.add_watch("member", f"community_{event_id}", "Community event")
+        removed = storage.remove_watches_for_event(f"community_{event_id}")
+        self.assertEqual(len(removed), 1)
+        self.assertIsNone(storage.get_watch("member", f"community_{event_id}"))
+
 
 if __name__ == "__main__":
     unittest.main()

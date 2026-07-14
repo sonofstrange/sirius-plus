@@ -120,7 +120,7 @@ def _community_registration_open(event) -> bool:
 
 def _community_event_payload(event, user_id: str, is_admin: bool = False) -> dict:
     coorganizers = storage.get_community_coorganizers(event["id"])
-    names = [row["full_name"] or row["uid"] for row in coorganizers]
+    names = [row["full_name"] or row["display_name"] or row["uid"] for row in coorganizers]
     is_registered = bool(event["is_registered"]) if "is_registered" in event.keys() else False
     can_manage = bool(event["can_manage"]) if "can_manage" in event.keys() else storage.can_manage_community_event(event["id"], user_id)
     return {
@@ -2672,6 +2672,11 @@ async def api_delete_custom_event(event_id: int, request: Request):
     user_id = get_user_id(request)
     if not user_id:
         return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
+    for watch in storage.remove_watches_for_event(f"custom_{event_id}"):
+        poller.cancel_snipe(watch["user_id"], watch["event_id"])
+        watched_uid = storage.get_user_uid(watch["user_id"])
+        if watched_uid and watch["coin_cost"]:
+            storage.release_coins(watched_uid, watch["coin_cost"])
     storage.remove_custom_event(user_id, event_id)
     return JSONResponse({"ok": True})
 
@@ -2723,13 +2728,13 @@ def _community_event_input(data: dict) -> tuple[dict | None, str | None]:
     }, None
 
 
-def _community_coorganizer_input(data: dict, owner_user_id: str) -> tuple[list[tuple[str, str]] | None, str | None]:
+def _community_coorganizer_input(data: dict, owner_user_id: str) -> tuple[list[tuple[str, str, str]] | None, str | None]:
     raw_values = data.get("coorganizers") or []
     if isinstance(raw_values, str):
-        raw_values = raw_values.split(",")
+        raw_values = raw_values.replace("\n", ",").split(",")
     if not isinstance(raw_values, list):
         return None, "Соорганизаторов нужно указывать списком"
-    resolved: list[tuple[str, str]] = []
+    resolved: list[tuple[str, str, str]] = []
     seen: set[str] = set()
     for raw_value in raw_values:
         value = str(raw_value or "").strip()
@@ -2737,13 +2742,17 @@ def _community_coorganizer_input(data: dict, owner_user_id: str) -> tuple[list[t
             continue
         matches = storage.resolve_known_recipient(value)
         if not matches:
-            return None, f"Соорганизатор «{value}» не найден"
+            key = f"text:{value.casefold()}"
+            if key not in seen:
+                resolved.append((key, "", value))
+                seen.add(key)
+            continue
         if len(matches) > 1:
             return None, f"Для «{value}» найдено несколько людей. Укажи UID"
         user_id = matches[0]["user_id"]
         uid = matches[0]["uid"]
         if user_id != owner_user_id and user_id not in seen:
-            resolved.append((user_id, uid))
+            resolved.append((user_id, uid, matches[0]["full_name"] or value))
             seen.add(user_id)
     return resolved, None
 
@@ -2764,7 +2773,7 @@ async def api_community_event(event_id: int, request: Request):
     uid = _session_uid(user_id) or ""
     payload = _community_event_payload(event, user_id, storage.is_admin(uid))
     payload["coorganizers"] = [
-        {"uid": row["uid"], "name": row["full_name"]}
+        {"uid": row["uid"], "name": row["full_name"] or row["display_name"] or row["uid"]}
         for row in storage.get_community_coorganizers(event_id)
     ]
     return JSONResponse({"ok": True, "event": payload})
@@ -2818,8 +2827,33 @@ async def api_delete_community_event(event_id: int, request: Request):
         return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
     if not _can_manage_community_event(event_id, user_id):
         return JSONResponse({"ok": False, "error": "Нет прав на удаление события"}, status_code=403)
+    for watch in storage.remove_watches_for_event(f"community_{event_id}"):
+        poller.cancel_snipe(watch["user_id"], watch["event_id"])
+        watched_uid = storage.get_user_uid(watch["user_id"])
+        if watched_uid and watch["coin_cost"]:
+            storage.release_coins(watched_uid, watch["coin_cost"])
     storage.delete_community_event(event_id)
     return JSONResponse({"ok": True})
+
+
+@app.get("/api/community-events/{event_id}/participants")
+async def api_community_event_participants(event_id: int, request: Request):
+    user_id = get_user_id(request)
+    if not user_id:
+        return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
+    if not _can_manage_community_event(event_id, user_id):
+        return JSONResponse({"ok": False, "error": "Нет прав на просмотр участников"}, status_code=403)
+    event = storage.get_community_event(event_id)
+    if not event:
+        return JSONResponse({"ok": False, "error": "Событие не найдено"}, status_code=404)
+    return JSONResponse({
+        "ok": True,
+        "event_name": event["event_name"],
+        "participants": [
+            {"name": row["full_name"] or row["uid"] or "Пользователь", "uid": row["uid"]}
+            for row in storage.get_community_event_participants(event_id)
+        ],
+    })
 
 
 @app.post("/api/community-events/{event_id}/register")

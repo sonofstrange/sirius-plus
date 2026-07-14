@@ -5,135 +5,67 @@
     <div class="page__header">
         <div>
             <h1 class="page__title">Свои события</h1>
-            <p class="text-muted">Личные заметки и события для сообщества Пирожкового Диспетчера.</p>
+            <p class="text-muted">Все события, которые создал ты: личные и для сообщества.</p>
         </div>
-        <div class="page__actions">
-            <button type="button" class="btn btn-outline btn-sm" onclick="openPersonalEvent()">
-                <span class="material-symbols-outlined">add</span> Личное
-            </button>
-            <button type="button" class="btn btn-primary btn-sm" onclick="openCommunityEvent()">
-                <span class="material-symbols-outlined">groups</span> Событие сообщества
-            </button>
-        </div>
+        <div class="page__actions"><button type="button" class="btn btn-primary" onclick="openCreateEvent()"><span class="material-symbols-outlined">add</span>Создать событие</button></div>
     </div>
 
-    <div class="tabs custom-events-tabs" role="tablist">
-        <button type="button" class="tab tab-active" id="personal-events-tab" onclick="selectCustomEventsTab('personal')">Личные</button>
-        <button type="button" class="tab" id="community-events-tab" onclick="selectCustomEventsTab('community')">События сообщества</button>
+    {% if not custom_events and not community_events %}
+    <div class="empty-state"><span class="material-symbols-outlined empty-state__icon">event_note</span><p>Ты пока не создал ни одного события</p></div>
+    {% endif %}
+    <div class="events-list">
+        {% for ev in custom_events %}
+        <article class="event-card{% if ev.date_iso < cur_date %} event-card--past{% endif %}">
+            <div class="event-card__time"><span class="event-card__time-start">{{ ev.date_iso }}</span>{% if ev.start_time %}<br><small>{{ ev.start_time }}{% if ev.end_time %} - {{ ev.end_time }}{% endif %}</small>{% endif %}</div>
+            <div class="event-card__info">
+                <div class="event-card__title">{{ ev.event_name }} <span class="badge">Личное</span></div>
+                {% if ev.description %}<div class="event-card__meta">{{ ev.description }}</div>{% endif %}
+                {% if ev.location %}<div class="event-card__meta"><span class="material-symbols-outlined" style="font-size:14px">location_on</span>{{ ev.location }}</div>{% endif %}
+                {% if ev.repeat_daily %}<span class="chip chip-xs">Ежедневно</span>{% endif %}
+            </div>
+            <div class="event-card__actions"><button class="btn btn-danger-text btn-sm" onclick="deleteCustomEvent({{ ev.id }})">Удалить</button></div>
+        </article>
+        {% endfor %}
+        {% for ev in community_events %}
+        <article class="event-card event-card--community{% if ev.date_iso < cur_date %} event-card--past{% endif %}">
+            <div class="event-card__time"><span class="event-card__time-start">{{ ev.date_iso }}</span><br><small>{{ ev.start_time }}{% if ev.end_time %} - {{ ev.end_time }}{% endif %}</small></div>
+            <div class="event-card__info">
+                <div class="event-card__title">{{ ev.event_name }} <span class="badge badge-community">Сообщество</span></div>
+                <div class="event-card__meta"><span class="material-symbols-outlined" style="font-size:14px">person</span>{{ ev.people_current }}/{{ ev.people_max }} участников</div>
+                {% if ev.location %}<div class="event-card__meta"><span class="material-symbols-outlined" style="font-size:14px">location_on</span>{{ ev.location }}</div>{% endif %}
+                {% if ev.registration_close_at %}<div class="event-card__meta">Регистрация до {{ ev.registration_close_at }}</div>{% endif %}
+            </div>
+            <div class="event-card__actions">
+                <button class="btn btn-outline btn-sm" onclick="showParticipants({{ ev.id }})">Участники</button>
+                <button class="btn btn-outline btn-sm" onclick="openCommunityEvent({{ ev.id }})">Изменить</button>
+                <button class="btn btn-danger-text btn-sm" onclick="deleteCommunityEvent({{ ev.id }})">Удалить</button>
+            </div>
+        </article>
+        {% endfor %}
     </div>
-
-    <section id="personal-events-panel">
-        {% if not custom_events %}
-        <div class="empty-state"><span class="material-symbols-outlined empty-state__icon">event_note</span><p>Личных событий пока нет</p></div>
-        {% endif %}
-        <div class="events-list">
-            {% for ev in custom_events %}
-            <article class="event-card{% if ev.date_iso < cur_date %} event-card--past{% endif %}">
-                <div class="event-card__time"><span class="event-card__time-start">{{ ev.date_iso }}</span>{% if ev.start_time %}<br><small>{{ ev.start_time }}{% if ev.end_time %} - {{ ev.end_time }}{% endif %}</small>{% endif %}</div>
-                <div class="event-card__info">
-                    <div class="event-card__title">{{ ev.event_name }}</div>
-                    {% if ev.description %}<div class="event-card__meta">{{ ev.description }}</div>{% endif %}
-                    {% if ev.location %}<div class="event-card__meta"><span class="material-symbols-outlined" style="font-size:14px">location_on</span>{{ ev.location }}</div>{% endif %}
-                    {% if ev.repeat_daily %}<span class="chip chip-xs">Ежедневно</span>{% endif %}
-                </div>
-                <div class="event-card__actions"><button class="btn btn-danger-text btn-sm" onclick="deleteCustomEvent({{ ev.id }})">Удалить</button></div>
-            </article>
-            {% endfor %}
-        </div>
-    </section>
-
-    <section id="community-events-panel" hidden>
-        <div class="community-events-notice"><span class="material-symbols-outlined">groups</span><span>Эти события видят только пользователи Пирожкового Диспетчера. Публикация стоит 5 Сириус Коинов.</span></div>
-        {% if not community_events %}
-        <div class="empty-state"><span class="material-symbols-outlined empty-state__icon">group_add</span><p>Ты пока не организуешь события сообщества</p></div>
-        {% endif %}
-        <div class="events-list">
-            {% for ev in community_events %}
-            <article class="event-card event-card--community{% if ev.date_iso < cur_date %} event-card--past{% endif %}">
-                <div class="event-card__time"><span class="event-card__time-start">{{ ev.date_iso }}</span><br><small>{{ ev.start_time }}{% if ev.end_time %} - {{ ev.end_time }}{% endif %}</small></div>
-                <div class="event-card__info">
-                    <div class="event-card__title">{{ ev.event_name }} <span class="badge badge-community">Сообщество</span></div>
-                    <div class="event-card__meta"><span class="material-symbols-outlined" style="font-size:14px">person</span>{{ ev.people_current }}/{{ ev.people_max }} участников</div>
-                    {% if ev.location %}<div class="event-card__meta"><span class="material-symbols-outlined" style="font-size:14px">location_on</span>{{ ev.location }}</div>{% endif %}
-                    {% if ev.registration_close_at %}<div class="event-card__meta">Регистрация до {{ ev.registration_close_at }}</div>{% endif %}
-                </div>
-                <div class="event-card__actions">
-                    <button class="btn btn-outline btn-sm" onclick="openCommunityEvent({{ ev.id }})">Изменить</button>
-                    <button class="btn btn-danger-text btn-sm" onclick="deleteCommunityEvent({{ ev.id }})">Удалить</button>
-                </div>
-            </article>
-            {% endfor %}
-        </div>
-    </section>
 </div>
 
-<div class="modal-overlay" id="personal-event-modal" onclick="closeModal('personal-event-modal')"><div class="modal" onclick="event.stopPropagation()"><div class="modal__header"><h2>Личное событие</h2><button class="modal__close" onclick="closeModal('personal-event-modal')"><span class="material-symbols-outlined">close</span></button></div><div class="modal__body">
-    <div class="form-group"><label class="form-label" for="personal-name">Название</label><input class="form-input" id="personal-name" maxlength="180"></div>
-    <div class="form-group"><label class="form-label" for="personal-date">Дата</label><input type="date" class="form-input" id="personal-date"></div>
-    <div class="form-group custom-events-time-grid"><div><label class="form-label" for="personal-start">Начало</label><input type="time" class="form-input" id="personal-start"></div><div><label class="form-label" for="personal-end">Конец</label><input type="time" class="form-input" id="personal-end"></div></div>
-    <div class="form-group"><label class="form-label" for="personal-location">Место</label><input class="form-input" id="personal-location"></div>
-    <div class="form-group"><label class="form-label" for="personal-description">Описание</label><textarea class="form-textarea" id="personal-description" rows="2"></textarea></div>
-    <label class="form-check"><input type="checkbox" id="personal-repeat"> Повторять ежедневно</label>
-    <button class="btn btn-primary btn-block" onclick="submitPersonalEvent()">Добавить</button><div id="personal-event-result" class="alert" style="display:none;margin-top:8px"></div>
-</div></div></div>
+<div class="modal-overlay" id="create-event-modal" onclick="closeModal('create-event-modal')"><div class="modal" onclick="event.stopPropagation()"><div class="modal__header"><h2>Создать событие</h2><button class="modal__close" onclick="closeModal('create-event-modal')"><span class="material-symbols-outlined">close</span></button></div><div class="modal__body create-event-types"><button class="create-event-type" onclick="startPersonalEvent()"><span class="material-symbols-outlined">person</span><span><strong>Личное событие</strong><small>Видно только тебе в расписании.</small></span></button><button class="create-event-type" onclick="startCommunityEvent()"><span class="material-symbols-outlined">groups</span><span><strong>Событие сообщества</strong><small>Видно пользователям Пирожкового Диспетчера. Публикация: 5 Коинов.</small></span></button></div></div></div>
 
-<div class="modal-overlay" id="community-event-modal" onclick="closeModal('community-event-modal')"><div class="modal modal-lg" onclick="event.stopPropagation()"><div class="modal__header"><h2 id="community-modal-title">Событие сообщества</h2><button class="modal__close" onclick="closeModal('community-event-modal')"><span class="material-symbols-outlined">close</span></button></div><div class="modal__body">
-    <div class="alert community-event-warning"><span class="material-symbols-outlined">public</span><span>Это общее событие для пользователей Пирожкового Диспетчера. Проверь время, место и лимит до публикации.</span></div>
-    <input type="hidden" id="community-event-id">
-    <div class="form-group"><label class="form-label" for="community-name">Название</label><input class="form-input" id="community-name" maxlength="180"></div>
-    <div class="form-group custom-events-time-grid"><div><label class="form-label" for="community-date">Дата</label><input type="date" class="form-input" id="community-date"></div><div><label class="form-label" for="community-capacity">Количество мест</label><input type="number" min="1" max="1000" class="form-input" id="community-capacity" value="20"></div></div>
-    <div class="form-group custom-events-time-grid"><div><label class="form-label" for="community-start">Начало</label><input type="time" class="form-input" id="community-start"></div><div><label class="form-label" for="community-end">Конец</label><input type="time" class="form-input" id="community-end"></div></div>
-    <div class="form-group custom-events-time-grid"><div><label class="form-label" for="community-reg-open">Открытие регистрации</label><input type="datetime-local" class="form-input" id="community-reg-open"></div><div><label class="form-label" for="community-reg-close">Закрытие регистрации</label><input type="datetime-local" class="form-input" id="community-reg-close"></div></div>
-    <div class="form-group"><label class="form-label" for="community-location">Где проводится</label><input class="form-input" id="community-location"></div>
-    <div class="form-group"><label class="form-label" for="community-description">Описание</label><textarea class="form-textarea" id="community-description" rows="3"></textarea></div>
-    <div class="form-group"><label class="form-label" for="community-coorganizers">Соорганизаторы</label><input class="form-input" id="community-coorganizers" placeholder="UID или точное ФИО, через запятую"><div class="form-hint">Организатором автоматически остаётся создатель события.</div></div>
-    <button class="btn btn-primary btn-block" onclick="submitCommunityEvent()" id="community-submit">Опубликовать за 5 Коинов</button><div id="community-event-result" class="alert" style="display:none;margin-top:8px"></div>
-</div></div></div>
+<div class="modal-overlay" id="personal-event-modal" onclick="closeModal('personal-event-modal')"><div class="modal" onclick="event.stopPropagation()"><div class="modal__header"><h2>Личное событие</h2><button class="modal__close" onclick="closeModal('personal-event-modal')"><span class="material-symbols-outlined">close</span></button></div><div class="modal__body"><div class="form-group"><label class="form-label" for="personal-name">Название</label><input class="form-input" id="personal-name" maxlength="180"></div><div class="form-group"><label class="form-label" for="personal-date">Дата</label><input type="date" class="form-input" id="personal-date"></div><div class="form-group custom-events-time-grid"><div><label class="form-label" for="personal-start">Начало</label><input type="time" class="form-input" id="personal-start"></div><div><label class="form-label" for="personal-end">Конец</label><input type="time" class="form-input" id="personal-end"></div></div><div class="form-group"><label class="form-label" for="personal-location">Место</label><input class="form-input" id="personal-location"></div><div class="form-group"><label class="form-label" for="personal-description">Описание</label><textarea class="form-textarea" id="personal-description" rows="2"></textarea></div><label class="form-check"><input type="checkbox" id="personal-repeat"> Повторять ежедневно</label><button class="btn btn-primary btn-block" onclick="submitPersonalEvent()">Добавить</button><div id="personal-event-result" class="alert" style="display:none;margin-top:8px"></div></div></div></div>
+
+<div class="modal-overlay" id="community-event-modal" onclick="closeModal('community-event-modal')"><div class="modal modal-lg" onclick="event.stopPropagation()"><div class="modal__header"><h2 id="community-modal-title">Событие сообщества</h2><button class="modal__close" onclick="closeModal('community-event-modal')"><span class="material-symbols-outlined">close</span></button></div><div class="modal__body"><div class="alert community-event-warning"><span class="material-symbols-outlined">public</span><span>Это неофициальное общее событие. Его видят только пользователи Пирожкового Диспетчера, а ответственность за описание, время и место несёт организатор.</span></div><input type="hidden" id="community-event-id"><div class="form-group"><label class="form-label" for="community-name">Название</label><input class="form-input" id="community-name" maxlength="180"></div><div class="form-group custom-events-time-grid"><div><label class="form-label" for="community-date">Дата</label><input type="date" class="form-input" id="community-date"></div><div><label class="form-label" for="community-capacity">Количество мест</label><input type="number" min="1" max="1000" class="form-input" id="community-capacity" value="20"></div></div><div class="form-group custom-events-time-grid"><div><label class="form-label" for="community-start">Начало</label><input type="time" class="form-input" id="community-start"></div><div><label class="form-label" for="community-end">Конец</label><input type="time" class="form-input" id="community-end"></div></div><div class="form-group custom-events-time-grid"><div><label class="form-label" for="community-reg-open">Открытие регистрации</label><input type="datetime-local" class="form-input" id="community-reg-open"></div><div><label class="form-label" for="community-reg-close">Закрытие регистрации</label><input type="datetime-local" class="form-input" id="community-reg-close"></div></div><div class="form-group"><label class="form-label" for="community-location">Где проводится</label><input class="form-input" id="community-location"></div><div class="form-group"><label class="form-label" for="community-description">Описание</label><textarea class="form-textarea" id="community-description" rows="3"></textarea></div><div class="form-group"><label class="form-label" for="community-coorganizers">Соорганизаторы</label><textarea class="form-textarea community-coorganizers" id="community-coorganizers" rows="3" placeholder="Можно указать любые имена, UID или ФИО. Каждый с новой строки либо через запятую."></textarea><div class="form-hint">Указанный пользователь получает право редактировать событие, если его UID или ФИО совпадает с аккаунтом Пирожкового Диспетчера.</div></div><button class="btn btn-primary btn-block" onclick="submitCommunityEvent()" id="community-submit">Опубликовать за 5 Коинов</button><div id="community-event-result" class="alert" style="display:none;margin-top:8px"></div></div></div></div>
+
+<div class="modal-overlay" id="participants-modal" onclick="closeModal('participants-modal')"><div class="modal" onclick="event.stopPropagation()"><div class="modal__header"><h2 id="participants-title">Участники</h2><button class="modal__close" onclick="closeModal('participants-modal')"><span class="material-symbols-outlined">close</span></button></div><div class="modal__body"><div id="participants-list" class="participants-list"></div></div></div></div>
 
 <script>
 const customToday = '{{ cur_date }}';
 const ce = id => document.getElementById(id);
-function selectCustomEventsTab(tab) {
-    const personal = tab === 'personal';
-    ce('personal-events-panel').hidden = !personal;
-    ce('community-events-panel').hidden = personal;
-    ce('personal-events-tab').classList.toggle('tab-active', personal);
-    ce('community-events-tab').classList.toggle('tab-active', !personal);
-}
-function openPersonalEvent() {
-    ce('personal-name').value = ''; ce('personal-date').value = customToday; ce('personal-start').value = ''; ce('personal-end').value = '';
-    ce('personal-location').value = ''; ce('personal-description').value = ''; ce('personal-repeat').checked = false; ce('personal-event-result').style.display = 'none';
-    ce('personal-event-modal').style.display = 'flex';
-}
-async function submitPersonalEvent() {
-    const payload = {event_name: ce('personal-name').value.trim(), date_iso: ce('personal-date').value, start_time: ce('personal-start').value, end_time: ce('personal-end').value, location: ce('personal-location').value.trim(), description: ce('personal-description').value.trim(), repeat_daily: ce('personal-repeat').checked};
-    const result = ce('personal-event-result');
-    if (!payload.event_name || !payload.date_iso) { result.className = 'alert alert-error'; result.textContent = 'Название и дата обязательны'; result.style.display = 'block'; return; }
-    try { const response = await fetch('/api/custom-events', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}); const data = await response.json(); if (!data.ok) throw new Error(data.error || 'Ошибка'); location.reload(); } catch (error) { result.className = 'alert alert-error'; result.textContent = error.message; result.style.display = 'block'; }
-}
-async function deleteCustomEvent(id) { if (await dlgConfirm('Удалить событие', 'Удалить личное событие?')) { const response = await fetch('/api/custom-events/' + id, {method:'DELETE'}); if ((await response.json()).ok) location.reload(); } }
-function resetCommunityForm() {
-    ce('community-event-id').value = ''; ce('community-modal-title').textContent = 'Событие сообщества'; ce('community-submit').textContent = 'Опубликовать за 5 Коинов';
-    ['community-name','community-start','community-end','community-reg-open','community-reg-close','community-location','community-description','community-coorganizers'].forEach(id => ce(id).value = '');
-    ce('community-date').value = customToday; ce('community-capacity').value = '20'; ce('community-event-result').style.display = 'none';
-}
-async function openCommunityEvent(id) {
-    resetCommunityForm(); selectCustomEventsTab('community'); ce('community-event-modal').style.display = 'flex';
-    if (!id) return;
-    try {
-        const response = await fetch('/api/community-events/' + id); const data = await response.json(); if (!data.ok) throw new Error(data.error || 'Ошибка'); const event = data.event;
-        ce('community-event-id').value = event.community_id; ce('community-modal-title').textContent = 'Изменить событие сообщества'; ce('community-submit').textContent = 'Сохранить изменения';
-        ce('community-name').value = event.event_name || ''; ce('community-date').value = event.date_iso || ''; ce('community-start').value = (event.start_time || '').slice(11,16); ce('community-end').value = (event.end_time || '').slice(11,16);
-        ce('community-capacity').value = event.people_max || 1; ce('community-reg-open').value = (event.registration_open_at || '').slice(0,16); ce('community-reg-close').value = (event.registration_close_at || '').slice(0,16); ce('community-location').value = (event.location || [])[0] || ''; ce('community-description').value = event.description || '';
-        ce('community-coorganizers').value = (event.coorganizers || []).map(x => x.uid).join(', ');
-    } catch (error) { closeModal('community-event-modal'); dlgAlert('Ошибка', error.message); }
-}
-async function submitCommunityEvent() {
-    const id = ce('community-event-id').value;
-    const payload = {event_name:ce('community-name').value.trim(), date_iso:ce('community-date').value, start_time:ce('community-start').value, end_time:ce('community-end').value, registration_open_at:ce('community-reg-open').value, registration_close_at:ce('community-reg-close').value, people_max:Number(ce('community-capacity').value), location:ce('community-location').value.trim(), description:ce('community-description').value.trim(), coorganizers:ce('community-coorganizers').value};
-    const result = ce('community-event-result');
-    try { const response = await fetch(id ? '/api/community-events/' + id : '/api/community-events', {method:id ? 'PATCH' : 'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}); const data = await response.json(); if (!data.ok) throw new Error(data.error || 'Ошибка'); location.reload(); } catch (error) { result.className = 'alert alert-error'; result.textContent = error.message; result.style.display = 'block'; }
-}
-async function deleteCommunityEvent(id) { if (await dlgConfirm('Удалить событие', 'Событие и записи участников будут удалены.')) { const response = await fetch('/api/community-events/' + id, {method:'DELETE'}); const data = await response.json(); if (data.ok) location.reload(); else dlgAlert('Ошибка', data.error || 'Не удалось удалить событие'); } }
+function openCreateEvent() { ce('create-event-modal').style.display = 'flex'; }
+function startPersonalEvent() { closeModal('create-event-modal'); openPersonalEvent(); }
+function startCommunityEvent() { closeModal('create-event-modal'); openCommunityEvent(); }
+function openPersonalEvent() { ['personal-name','personal-start','personal-end','personal-location','personal-description'].forEach(id => ce(id).value = ''); ce('personal-date').value = customToday; ce('personal-repeat').checked = false; ce('personal-event-result').style.display = 'none'; ce('personal-event-modal').style.display = 'flex'; }
+async function submitPersonalEvent() { const payload = {event_name: ce('personal-name').value.trim(), date_iso: ce('personal-date').value, start_time: ce('personal-start').value, end_time: ce('personal-end').value, location: ce('personal-location').value.trim(), description: ce('personal-description').value.trim(), repeat_daily: ce('personal-repeat').checked}; const result = ce('personal-event-result'); if (!payload.event_name || !payload.date_iso) { result.className = 'alert alert-error'; result.textContent = 'Название и дата обязательны'; result.style.display = 'block'; return; } try { const response = await fetch('/api/custom-events', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}); const data = await response.json(); if (!data.ok) throw new Error(data.error || 'Ошибка'); location.reload(); } catch (error) { result.className = 'alert alert-error'; result.textContent = error.message; result.style.display = 'block'; } }
+async function deleteCustomEvent(id) { if (await dlgConfirm('Удалить событие', 'Удалить личное событие? Связанная автозапись также будет отменена.')) { const response = await fetch('/api/custom-events/' + id, {method:'DELETE'}); if ((await response.json()).ok) location.reload(); } }
+function resetCommunityForm() { ce('community-event-id').value = ''; ce('community-modal-title').textContent = 'Событие сообщества'; ce('community-submit').textContent = 'Опубликовать за 5 Коинов'; ['community-name','community-start','community-end','community-reg-open','community-reg-close','community-location','community-description','community-coorganizers'].forEach(id => ce(id).value = ''); ce('community-date').value = customToday; ce('community-capacity').value = '20'; ce('community-event-result').style.display = 'none'; }
+async function openCommunityEvent(id) { resetCommunityForm(); ce('community-event-modal').style.display = 'flex'; if (!id) return; try { const response = await fetch('/api/community-events/' + id); const data = await response.json(); if (!data.ok) throw new Error(data.error || 'Ошибка'); const event = data.event; ce('community-event-id').value = event.community_id; ce('community-modal-title').textContent = 'Изменить событие сообщества'; ce('community-submit').textContent = 'Сохранить изменения'; ce('community-name').value = event.event_name || ''; ce('community-date').value = event.date_iso || ''; ce('community-start').value = (event.start_time || '').slice(11,16); ce('community-end').value = (event.end_time || '').slice(11,16); ce('community-capacity').value = event.people_max || 1; ce('community-reg-open').value = (event.registration_open_at || '').slice(0,16); ce('community-reg-close').value = (event.registration_close_at || '').slice(0,16); ce('community-location').value = (event.location || [])[0] || ''; ce('community-description').value = event.description || ''; ce('community-coorganizers').value = (event.coorganizers || []).map(x => x.name || x.uid).join('\n'); } catch (error) { closeModal('community-event-modal'); dlgAlert('Ошибка', error.message); } }
+async function submitCommunityEvent() { const id = ce('community-event-id').value; const payload = {event_name:ce('community-name').value.trim(), date_iso:ce('community-date').value, start_time:ce('community-start').value, end_time:ce('community-end').value, registration_open_at:ce('community-reg-open').value, registration_close_at:ce('community-reg-close').value, people_max:Number(ce('community-capacity').value), location:ce('community-location').value.trim(), description:ce('community-description').value.trim(), coorganizers:ce('community-coorganizers').value}; const result = ce('community-event-result'); if (!id && !await dlgConfirm('Опубликовать событие сообщества?', 'Оно будет видно всем пользователям Пирожкового Диспетчера. Это неофициальное событие: проверь название, время, место, лимит и контакты организатора. Публикация спишет 5 Сириус Коинов.')) return; try { const response = await fetch(id ? '/api/community-events/' + id : '/api/community-events', {method:id ? 'PATCH' : 'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}); const data = await response.json(); if (!data.ok) throw new Error(data.error || 'Ошибка'); location.reload(); } catch (error) { result.className = 'alert alert-error'; result.textContent = error.message; result.style.display = 'block'; } }
+async function deleteCommunityEvent(id) { if (await dlgConfirm('Удалить событие', 'Событие, записи участников и связанная автозапись будут удалены.')) { const response = await fetch('/api/community-events/' + id, {method:'DELETE'}); const data = await response.json(); if (data.ok) location.reload(); else dlgAlert('Ошибка', data.error || 'Не удалось удалить событие'); } }
+async function showParticipants(id) { ce('participants-modal').style.display = 'flex'; ce('participants-list').innerHTML = '<div class="text-muted">Загружаю список...</div>'; try { const response = await fetch('/api/community-events/' + id + '/participants'); const data = await response.json(); if (!data.ok) throw new Error(data.error || 'Ошибка'); ce('participants-title').textContent = 'Участники: ' + data.event_name; ce('participants-list').innerHTML = data.participants.length ? data.participants.map((p, i) => `<div class="participant-row"><span>${i + 1}</span><strong>${escapeHtml(p.name)}</strong>${p.uid ? `<small>${escapeHtml(p.uid)}</small>` : ''}</div>`).join('') : '<div class="text-muted">Пока никто не записался.</div>'; } catch (error) { ce('participants-list').innerHTML = '<div class="alert alert-error">' + escapeHtml(error.message) + '</div>'; } }
 </script>
 {% endblock %}
