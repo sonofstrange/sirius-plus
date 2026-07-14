@@ -135,7 +135,8 @@ def _fmt_event_dt(iso_str: str | None) -> str:
 
 
 def is_sniping(user_id: str, event_id: str) -> bool:
-    return (user_id, event_id) in _snipe_tasks
+    entry = _snipe_tasks.get((user_id, event_id))
+    return bool(entry and entry.get("active"))
 
 
 def cancel_snipe(user_id: str, event_id: str):
@@ -206,7 +207,7 @@ def schedule_snipe(
     task = asyncio.create_task(
         _snipe_loop(user_id, token, event_id, event_name, client, notify, target_time, uid, reserve_only, snipe_priority, coin_cost)
     )
-    _snipe_tasks[key] = {"task": task, "target": target_time}
+    _snipe_tasks[key] = {"task": task, "target": target_time, "active": False}
 
 
 def on_watch_added(
@@ -322,6 +323,9 @@ async def _snipe_loop(
         else:
             await notify(user_id,
                 f"🎯 Начинаю ловить открытие «{event_name}» — запись уже открыта")
+        entry = _snipe_tasks.get((user_id, event_id))
+        if entry:
+            entry["active"] = True
         _log_snipe_attempt(user_id, event_id, event_name, "start", success=True, message=f"interval={snipe_interval:.1f}s priority={snipe_priority}")
 
         while True:

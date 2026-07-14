@@ -36,7 +36,7 @@
                     {% endif %}
                     <span class="badge badge-{{ 'success' if w.status == 'registered' else 'warning' if w.status == 'watching' else 'muted' }}">
                         {% if w.status == 'registered' %}Записан
-                        {% elif w.status == 'watching' %}{% if w._snipe_active %}Ловит{% else %}Ожидает{% endif %}
+                        {% elif w.status == 'watching' %}{% if w._snipe_active %}Ловит{% else %}Запланирован{% endif %}
                         {% elif w.status == 'failed' %}Ошибка
                         {% elif w.status == 'removed' %}Удалено
                         {% else %}{{ w.status }}{% endif %}

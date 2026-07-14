@@ -137,6 +137,32 @@ class SnipeLoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(released, ["uid-1"])
 
 
+class ScheduledSnipeStatusTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        poller._snipe_tasks.clear()
+
+    async def asyncTearDown(self):
+        tasks = [entry["task"] for entry in poller._snipe_tasks.values()]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        poller._snipe_tasks.clear()
+
+    async def test_future_snipe_is_not_active_before_warmup(self):
+        client = FakeClient([])
+        target = client.now() + dt.timedelta(hours=50)
+
+        poller.schedule_snipe(
+            "user-1", "token-1", "event-1", "Test event", client,
+            _notify_sink, target,
+        )
+        await asyncio.sleep(0)
+
+        self.assertIn(("user-1", "event-1"), poller._snipe_tasks)
+        self.assertFalse(poller.is_sniping("user-1", "event-1"))
+
+
 class ChangeDetectionTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         _notify_sink.messages = []
