@@ -26,6 +26,7 @@ function startNotificationPolling(userId) {
                         if (el.parentElement) el.remove();
                     }, 10000);
                 }
+                if (typeof refreshNotificationBadge === 'function') refreshNotificationBadge();
             }
         } catch (e) {
             // ignore polling errors
@@ -278,9 +279,11 @@ async function showSystemNotification(title, options) {
 }
 
 function handleNotificationMessage(msg) {
-    if (String(msg).startsWith('🔔')) {
-        showAlarmOverlay(msg);
-        startAlarmRepeat();
+    const text = String(msg);
+    if (text.startsWith('🚨')) {
+        showAlarmOverlay(text, {icon: '🚨', title: 'Тревога БПЛА', radar: true});
+    } else if (text.startsWith('🔔')) {
+        showAlarmOverlay(text);
     }
 }
 
@@ -339,7 +342,7 @@ function stopAlarmRepeat() {
     }
 }
 
-function showAlarmOverlay(msg) {
+function showAlarmOverlay(msg, options = {}) {
     let overlay = document.getElementById('alarm-overlay');
     if (!overlay) {
         overlay = document.createElement('div');
@@ -348,9 +351,9 @@ function showAlarmOverlay(msg) {
         document.body.appendChild(overlay);
     }
     overlay.innerHTML = `
-        <div class="alarm-card">
-            <div class="alarm-card__icon">🔔</div>
-            <div class="alarm-card__title">Напоминание</div>
+        <div class="alarm-card${options.radar ? ' alarm-card--radar' : ''}">
+            <div class="alarm-card__icon">${options.icon || '🔔'}</div>
+            <div class="alarm-card__title">${options.title || 'Напоминание'}</div>
             <div class="alarm-card__text">${escapeHtml(msg)}</div>
             <button class="btn btn-primary btn-block" onclick="dismissAlarm()">ОК</button>
         </div>

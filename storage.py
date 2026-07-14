@@ -761,6 +761,27 @@ def get_all_active_watches() -> list[sqlite3.Row]:
         ).fetchall()
 
 
+def get_all_active_watches_for_admin() -> list[sqlite3.Row]:
+    """Active auto-registrations with enough user data for the admin overview."""
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT w.user_id, w.event_id, w.event_name, w.event_start,
+                      w.snipe_priority, w.coin_cost, w.updated_at,
+                      COALESCE((SELECT k.uid FROM known_uids k
+                                WHERE k.user_id=w.user_id OR k.uid=w.user_id
+                                ORDER BY k.updated_at DESC LIMIT 1), w.user_id) AS uid,
+                      COALESCE((SELECT k.full_name FROM known_uids k
+                                WHERE k.user_id=w.user_id OR k.uid=w.user_id
+                                ORDER BY k.updated_at DESC LIMIT 1), '') AS full_name,
+                      COALESCE((SELECT k.team FROM known_uids k
+                                WHERE k.user_id=w.user_id OR k.uid=w.user_id
+                                ORDER BY k.updated_at DESC LIMIT 1), '') AS team
+               FROM watchlist w
+               WHERE w.status='watching'
+               ORDER BY w.updated_at DESC, w.event_start ASC"""
+        ).fetchall()
+
+
 def get_all_users_with_tokens() -> list[str]:
     with get_conn() as conn:
         rows = conn.execute(
@@ -1740,9 +1761,20 @@ def update_known_team(user_id: str, team: str):
         return
     with get_conn() as conn:
         conn.execute(
-            "UPDATE known_uids SET team=?, updated_at=? WHERE user_id=?",
-            (team, int(time.time()), user_id),
+            "UPDATE known_uids SET team=?, updated_at=? WHERE user_id=? OR uid=?",
+            (team, int(time.time()), user_id, user_id),
         )
+
+
+def get_known_team(user_id: str) -> str:
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT team FROM known_uids
+               WHERE user_id=? OR uid=?
+               ORDER BY updated_at DESC LIMIT 1""",
+            (user_id, user_id),
+        ).fetchone()
+        return str(row["team"] or "") if row else ""
 
 
 def get_all_known_uids() -> list[sqlite3.Row]:

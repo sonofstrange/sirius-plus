@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Пирожковый Диспетчер{% endblock %}</title>
     <link rel="icon" href="/static/sirius.png">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260714-4">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260714-5">
 </head>
 <body>
     <div class="app">
@@ -16,7 +16,6 @@
             <div class="header__container">
                 <a href="/" class="header__logo">
                     <img src="/static/sirius.png" alt="" width="96" height="96" class="header__logo-img">
-                    <span class="header__logo-plus">+</span>
                     <span class="header__logo-text">Пирожковый Диспетчер</span>
                 </a>
                 {% if user_id %}
@@ -54,7 +53,7 @@
                 <a href="/schedule" class="header__mobile-nav-link">Расписание</a>
                 <a href="/events?tab=register" class="header__mobile-nav-link">События</a>
                 <a href="/coins-info" class="header__mobile-nav-link">Сириус Коины · {{ coins_balance }}</a>
-                <a href="/custom-events" class="header__mobile-nav-link">Добавить событие</a>
+                <a href="/custom-events" class="header__mobile-nav-link">Свои события</a>
                 <a href="#" class="header__mobile-nav-link" onclick="showNotificationsHistory();toggleMobileMenu();return false">Уведомления</a>
                 <a href="#" class="header__mobile-nav-link" onclick="toggleDark();toggleMobileMenu();return false">Сменить тему</a>
                 {% if is_admin %}<a href="/admin" class="header__mobile-nav-link">Админ-панель</a>{% endif %}
@@ -453,6 +452,33 @@
         startNotificationPolling('{{ user_id }}');
         {% endif %}
 
+        const NOTIFICATIONS_SEEN_KEY = 'sirius_last_seen_notification_id';
+
+        function lastNotificationId(notifications) {
+            return (notifications || []).reduce((latest, item) => Math.max(latest, Number(item.id) || 0), 0);
+        }
+
+        function markNotificationsSeen(notifications) {
+            const latest = lastNotificationId(notifications);
+            if (latest) localStorage.setItem(NOTIFICATIONS_SEEN_KEY, String(latest));
+            document.querySelector('.header__notifications-btn')?.classList.remove('header__notifications-btn--unread');
+        }
+
+        async function refreshNotificationBadge() {
+            const button = document.querySelector('.header__notifications-btn');
+            if (!button) return;
+            try {
+                const response = await fetch('/api/notifications/history');
+                const data = await response.json();
+                if (!data.ok) return;
+                const latest = lastNotificationId(data.notifications);
+                const seen = Number(localStorage.getItem(NOTIFICATIONS_SEEN_KEY)) || 0;
+                button.classList.toggle('header__notifications-btn--unread', latest > seen);
+            } catch (e) {
+                // The indicator must not affect normal navigation when offline.
+            }
+        }
+
         function showUserInfo() {
             const modal = document.getElementById('user-modal');
             const body = document.getElementById('user-modal-body');
@@ -481,6 +507,7 @@
                             <tr><td>Имя</td><td>${escapeHtml(name)}</td></tr>
                             <tr><td>Email</td><td>${escapeHtml(data.email || '—')}</td></tr>
                             <tr><td>UID</td><td class="mono">${escapeHtml(data.id || '—')}</td></tr>
+                            <tr><td>Команда Sirius</td><td>${escapeHtml(data.team || 'Не указана в Sirius')}</td></tr>
                             <tr><td>Уровень аккаунта</td><td>${escapeHtml(trustNames[data.trustLevel] || '2 · Обычный')}</td></tr>
                             <tr><td>🪙 Сириус Коины</td><td><strong>${coins}</strong></td></tr>
                             <tr><td>Тип входа</td><td>${data.loginType === 'password' ? '🔐 Пароль (авто)' : data.loginType === 'token' ? '🔑 Токен (ручной)' : '—'}</td></tr>
@@ -515,17 +542,12 @@
                             </div>
                         </div>
                         <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;display:flex;flex-direction:column;gap:8px">
-                            <a href="/coins-info" class="btn btn-outline btn-block" style="text-align:center;text-decoration:none">Сириус Коины</a>
-                            <button class="btn btn-outline btn-block" onclick="toggleDark()">Сменить тему</button>
                             <button class="btn btn-outline btn-block" onclick="redeemPromocode()">Активировать промокод</button>
                             <button class="btn btn-outline btn-block" onclick="showMyFeedback()">Мои обращения</button>
                             <button class="btn btn-outline btn-block" onclick="showReferral()">Пригласить друга</button>
                             <button class="btn btn-outline btn-block" onclick="createLoginCode()">Получить код входа</button>
                             <button class="btn btn-outline btn-block" onclick="refreshToken()">🔄 Обновить токен</button>
                             <button class="btn btn-outline btn-block" onclick="ping()">Проверить связь с Sirius</button>
-                            {% if is_admin %}
-                            <a href="/admin" class="btn btn-outline btn-block" style="text-align:center;text-decoration:none">Админ-панель</a>
-                            {% endif %}
                             <button class="btn btn-outline btn-block" onclick="logout()">Выйти</button>
                         </div>
                         <div id="login-code-result" class="alert" style="display:none;margin-top:8px"></div>
@@ -556,6 +578,7 @@
                 const data = await response.json();
                 if (!data.ok) throw new Error(data.error || 'Не удалось загрузить уведомления');
                 const notifications = data.notifications || [];
+                markNotificationsSeen(notifications);
                 if (!notifications.length) {
                     list.innerHTML = '<div class="empty-state"><span class="material-symbols-outlined empty-state__icon">notifications</span><p>Уведомлений пока нет</p></div>';
                     return;
@@ -574,7 +597,10 @@
         async function deleteNotificationHistory(id) {
             const response = await fetch('/api/notifications/delete/' + id, {method: 'POST'});
             const data = await response.json();
-            if (data.ok) document.getElementById('notification-history-' + id)?.remove();
+            if (data.ok) {
+                document.getElementById('notification-history-' + id)?.remove();
+                refreshNotificationBadge();
+            }
         }
 
         async function clearNotificationsHistory() {
@@ -1077,6 +1103,7 @@
             {% if user_id %}
             requestNotify();
             {% endif %}
+            refreshNotificationBadge();
             // Close dialog modal on overlay click
             const dlg = document.getElementById('dialog-modal');
             if (dlg) dlg.addEventListener('click', () => closeDialog());

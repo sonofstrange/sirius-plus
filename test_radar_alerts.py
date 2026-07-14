@@ -30,6 +30,7 @@ class RadarAlertTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await sirius_radar.process_radar_state(active, notify))
         self.assertEqual({entry[0] for entry in sent}, {"alice", "bob"})
         self.assertTrue(all(entry[2] == "alarm" for entry in sent))
+        self.assertTrue(all(entry[1].startswith("🚨") for entry in sent))
 
         self.assertFalse(await sirius_radar.process_radar_state(active, notify))
         self.assertEqual(len(sent), 2)

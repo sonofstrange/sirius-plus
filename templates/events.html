@@ -18,14 +18,12 @@
     <div class="subtabs">
         <a href="/events?tab=register&status=all{% if search_q %}&q={{ search_q }}{% endif %}"
            class="subtab {% if cur_status == 'all' %}subtab-active{% endif %}">Предстоящие</a>
-        <a href="/events?tab=register&status=past{% if search_q %}&q={{ search_q }}{% endif %}"
-           class="subtab {% if cur_status == 'past' %}subtab-active{% endif %}">Прошедшие</a>
-        <a href="/events?tab=register&status=open{% if search_q %}&q={{ search_q }}{% endif %}"
-           class="subtab {% if cur_status == 'open' %}subtab-active{% endif %}">Открыто сейчас</a>
         <a href="/events?tab=register&status=willopen{% if search_q %}&q={{ search_q }}{% endif %}"
            class="subtab {% if cur_status == 'willopen' %}subtab-active{% endif %}">Скоро откроется</a>
-        <a href="/events?tab=register&status=reserve{% if search_q %}&q={{ search_q }}{% endif %}"
-           class="subtab {% if cur_status == 'reserve' %}subtab-active{% endif %}">Резерв</a>
+        <a href="/events?tab=register&status=open{% if search_q %}&q={{ search_q }}{% endif %}"
+           class="subtab {% if cur_status == 'open' %}subtab-active{% endif %}">Открыто сейчас</a>
+        <a href="/events?tab=register&status=past{% if search_q %}&q={{ search_q }}{% endif %}"
+           class="subtab {% if cur_status == 'past' %}subtab-active{% endif %}">Прошедшие</a>
     </div>
     <div class="filters" style="margin-top:-8px">
         <div class="filters__right" style="margin-left:0;flex:1;justify-content:space-between;flex-wrap:wrap">

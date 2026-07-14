@@ -483,10 +483,12 @@ def _decode_jwt(token: str) -> dict | None:
 def _team_from_schedule(events: list) -> str:
     counts: dict[str, int] = {}
     for event in events:
-        for team in getattr(event, "unions", []) or []:
-            if not isinstance(team, str) or not team.strip():
+        for raw_team in getattr(event, "unions", []) or []:
+            if isinstance(raw_team, dict):
+                raw_team = raw_team.get("name") or raw_team.get("title") or raw_team.get("unionName")
+            if not isinstance(raw_team, str) or not raw_team.strip():
                 continue
-            team = team.strip()
+            team = raw_team.strip()
             counts[team] = counts.get(team, 0) + 1
     return max(counts, key=counts.get) if counts else ""
 
@@ -1599,6 +1601,33 @@ async def api_admin_users(request: Request):
     })
 
 
+@app.get("/api/admin/watchlist")
+async def api_admin_watchlist(request: Request):
+    _, denied = _require_admin(request)
+    if denied:
+        return denied
+
+    priority_names = {"high": "Высокий", "medium": "Средний", "low": "Низкий"}
+    watches = storage.get_all_active_watches_for_admin()
+    return JSONResponse({
+        "ok": True,
+        "watches": [
+            {
+                "userId": row["user_id"],
+                "uid": row["uid"],
+                "name": row["full_name"],
+                "team": row["team"],
+                "eventId": row["event_id"],
+                "eventName": row["event_name"],
+                "eventStart": fmt_dt(row["event_start"]),
+                "priority": priority_names.get(str(row["snipe_priority"] or "high"), "Высокий"),
+                "isSniping": poller.is_sniping(row["user_id"], row["event_id"]),
+            }
+            for row in watches
+        ],
+    })
+
+
 @app.get("/api/admin/users/{target_uid}")
 async def api_admin_user_profile(target_uid: str, request: Request):
     _, denied = _require_admin(request)
@@ -2490,6 +2519,7 @@ async def api_user_info(request: Request):
         "lastName": payload.get("lastName"),
         "middleName": payload.get("middleName"),
         "id": uid,
+        "team": storage.get_known_team(uid),
         "trustLevel": trust_level,
         "expiresAt": dt.datetime.fromtimestamp(exp_ts, tz=dt.timezone.utc).isoformat() if exp_ts else None,
         "issuedAt": dt.datetime.fromtimestamp(iat_ts, tz=dt.timezone.utc).isoformat() if iat_ts else None,

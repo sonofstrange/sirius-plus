@@ -47,6 +47,11 @@
             <div class="loading">Загрузка...</div>
         </div>
 
+        <h2 style="font-size:18px;margin:32px 0 16px">Автозапись пользователей</h2>
+        <div id="admin-watchlist" class="profile-list">
+            <div class="loading">Загрузка...</div>
+        </div>
+
         <h2 style="font-size:18px;margin:32px 0 16px">Обращения пользователей</h2>
         <div id="feedback-list">
             <div class="loading">Загрузка...</div>
@@ -125,6 +130,34 @@ async function loadUsers() {
         filterSuggestions();
     } catch (e) {
         container.innerHTML = '<div class="alert alert-error">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
+    }
+}
+
+async function loadAdminWatchlist() {
+    const container = document.getElementById('admin-watchlist');
+    try {
+        const resp = await fetch('/api/admin/watchlist');
+        const data = await resp.json();
+        if (!data.ok) throw new Error(data.error || 'Не удалось загрузить автозаписи');
+        const watches = data.watches || [];
+        if (!watches.length) {
+            container.innerHTML = '<div class="profile-empty">Сейчас никто не использует автозапись</div>';
+            return;
+        }
+        container.innerHTML = watches.map(item => {
+            const user = escapeHtml(item.name || item.uid || item.userId);
+            const team = item.team ? ` · ${escapeHtml(item.team)}` : '';
+            const state = item.isSniping ? 'Ловит сейчас' : 'Запланирована';
+            return `<div class="profile-list-item">
+                <div class="profile-list-item__main">
+                    <div class="profile-list-item__title">${escapeHtml(item.eventName)}</div>
+                    <div class="profile-list-item__meta">${user}${team} · ${escapeHtml(item.eventStart)} · ${escapeHtml(item.priority)} приоритет</div>
+                </div>
+                <span class="badge ${item.isSniping ? 'badge-success' : ''}">${state}</span>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        container.innerHTML = '<div class="alert alert-error">' + escapeHtml(e.message) + '</div>';
     }
 }
 
@@ -423,6 +456,7 @@ async function grantCoins() {
 
 document.addEventListener('DOMContentLoaded', () => {
     loadUsers();
+    loadAdminWatchlist();
     loadFeedback();
     loadPromocodes();
 });

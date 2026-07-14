@@ -52,6 +52,23 @@ class AdminUserProfileTests(unittest.IsolatedAsyncioTestCase):
         main._save_schedule_team("user-1", events)
 
         self.assertEqual(storage.get_admin_user_profile("1001")["team"], "БВ3")
+        self.assertEqual(storage.get_known_team("1001"), "БВ3")
+
+    def test_admin_watchlist_includes_owner_and_event(self):
+        storage.save_token("user-1", "token")
+        storage.set_user_uid("user-1", "1001")
+        storage.save_known_uid("1001", "1001", "Ivan Ivanov", "БВ3")
+        storage.add_watch(
+            "1001", "event-1", "Morning training",
+            event_start="2026-07-20T08:00:00Z", snipe_priority="medium",
+        )
+
+        watches = storage.get_all_active_watches_for_admin()
+
+        self.assertEqual(len(watches), 1)
+        self.assertEqual(watches[0]["full_name"], "Ivan Ivanov")
+        self.assertEqual(watches[0]["team"], "БВ3")
+        self.assertEqual(watches[0]["event_name"], "Morning training")
 
     async def test_admin_profile_api_requires_verified_admin_session(self):
         storage.save_token("admin", "verified-token")
@@ -69,6 +86,26 @@ class AdminUserProfileTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(json.loads(response.body)["user"]["team"], "BV3")
+
+    async def test_admin_watchlist_api_requires_verified_admin_session(self):
+        storage.save_token("admin", "verified-token")
+        storage.set_user_uid("admin", "admin")
+        storage.mark_token_verified("admin", "verified-token")
+        storage.add_admin("admin")
+        session_id = storage.create_session_for_user("admin")
+        storage.save_token("user-1", "token")
+        storage.set_user_uid("user-1", "1001")
+        storage.save_known_uid("1001", "1001", "Ivan Ivanov", "БВ3")
+        storage.add_watch("1001", "event-1", "Event")
+
+        request = _Request()
+        request.cookies = {"session_id": session_id}
+        response = await main.api_admin_watchlist(request)
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload["watches"][0]["name"], "Ivan Ivanov")
+        self.assertEqual(payload["watches"][0]["team"], "БВ3")
 
 
 if __name__ == "__main__":

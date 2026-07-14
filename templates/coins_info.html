@@ -38,11 +38,8 @@
             <div><strong>Появилось Android-приложение.</strong> Оно сохраняет посещённые страницы для просмотра без интернета. <a href="https://github.com/sonofstrange/sirius-plus/releases" target="_blank" rel="noopener noreferrer">Скачать APK</a> и получи <strong>+2 Сириус Коина</strong> за первый вход через приложение.</div>
         </div>
         {% endif %}
-        <h2 style="font-size:18px;margin-bottom:12px">Твой баланс</h2>
+        <h2 style="font-size:18px;margin-bottom:12px">Есть</h2>
         <div style="font-size:28px;font-weight:700;margin-bottom:4px" id="coins-balance">—</div>
-        <p style="color:var(--text-muted);font-size:14px;margin-bottom:20px">
-            Доступно: <strong id="coins-available">—</strong>
-        </p>
 
         <h2 style="font-size:18px;margin-bottom:12px">Как это работает?</h2>
         <ol style="padding-left:20px;color:var(--text-muted);margin-bottom:20px;line-height:2">
@@ -94,8 +91,7 @@ async function loadCoins() {
         const resp = await fetch('/api/coins/balance');
         const data = await resp.json();
         if (data.ok) {
-            document.getElementById('coins-balance').textContent = data.total + ' 🪙';
-            document.getElementById('coins-available').textContent = data.coins;
+            document.getElementById('coins-balance').textContent = data.coins + ' 🪙';
         }
     } catch (e) { /* ignore */ }
 }
