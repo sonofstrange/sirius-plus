@@ -2155,6 +2155,12 @@ body.dark-theme .badge-muted {
     border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
     box-shadow: 0 1px 3px rgba(68, 47, 146, 0.15);
 }
+.events-tabs .tab-active {
+    color: #fff;
+    background: var(--primary);
+    border-color: var(--primary);
+    box-shadow: 0 3px 9px rgba(68, 47, 146, 0.28);
+}
 .subtabs {
     gap: 5px;
     margin-bottom: 10px;
@@ -2167,11 +2173,17 @@ body.dark-theme .badge-muted {
     border-radius: 8px;
     white-space: nowrap;
 }
-.subtab:hover,
-.subtab-active {
+.subtab:hover {
     color: var(--primary);
     border-bottom-color: transparent;
     background: color-mix(in srgb, var(--primary) 8%, var(--bg-card));
+}
+.subtab-active {
+    color: var(--primary);
+    font-weight: 700;
+    border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+    background: color-mix(in srgb, var(--primary) 14%, var(--bg-card));
+    box-shadow: inset 0 -2px 0 var(--primary);
 }
 .filters {
     padding: 8px 0 14px;
@@ -2227,6 +2239,45 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
     to { opacity: 1; transform: translateY(0); }
 }
 .alarm-card--radar { border-top-color: var(--danger); }
+
+/* Profile summaries keep account details readable without turning the modal into a wall of rows. */
+.user-profile__summary,
+.admin-user-profile__summary {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    margin-bottom: 14px;
+    padding: 12px;
+    border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--border));
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--primary) 6%, var(--bg-card));
+}
+.user-profile__avatar {
+    display: grid;
+    width: 38px;
+    height: 38px;
+    place-items: center;
+    flex: 0 0 38px;
+    border-radius: 50%;
+    color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 16%, var(--bg-card));
+}
+.user-profile__avatar .material-symbols-outlined { font-size: 23px; }
+.user-profile__name,
+.admin-user-profile__name {
+    color: var(--text);
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.25;
+}
+.user-profile__meta,
+.admin-user-profile__meta {
+    margin-top: 2px;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+.admin-user-profile .info-table { margin-bottom: 14px; }
+.admin-user-profile .profile-section { margin-top: 14px; }
 
 @media (max-width: 768px) {
     .header__container {
@@ -2289,6 +2340,18 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
     .main { padding: 16px 10px 24px; }
     .tabs { width: 100%; overflow-x: auto; }
     .tab { flex: 1 0 auto; text-align: center; }
+    .events-tabs { overflow: hidden; }
+    .events-tabs .tab {
+        display: flex;
+        min-width: 0;
+        min-height: 46px;
+        flex: 1 1 50%;
+        align-items: center;
+        justify-content: center;
+        padding: 7px 8px;
+        line-height: 1.18;
+        white-space: normal;
+    }
     .subtabs { overflow-x: auto; }
     .filters { padding-bottom: 12px; }
     .event-card { min-height: 0; padding: 13px; }

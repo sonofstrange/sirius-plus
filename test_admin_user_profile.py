@@ -1,8 +1,9 @@
+import json
 import tempfile
 import unittest
-import json
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import config
 import main
@@ -10,8 +11,13 @@ import storage
 
 
 class _Request:
-    cookies = {}
-    state = SimpleNamespace()
+    def __init__(self, cookies=None, data=None):
+        self.cookies = cookies or {}
+        self.state = SimpleNamespace()
+        self._data = data or {}
+
+    async def json(self):
+        return self._data
 
 
 class AdminUserProfileTests(unittest.IsolatedAsyncioTestCase):
@@ -44,33 +50,17 @@ class AdminUserProfileTests(unittest.IsolatedAsyncioTestCase):
         storage.set_user_uid("user-1", "1001")
         storage.save_known_uid("1001", "user-1", "Ivan Ivanov")
         events = [
-            SimpleNamespace(unions=["БВ3"]),
-            SimpleNamespace(unions=["БВ3", "БВ4"]),
-            SimpleNamespace(unions=["БВ4"]),
+            SimpleNamespace(unions=["BV3"]),
+            SimpleNamespace(unions=["BV3", "BV4"]),
+            SimpleNamespace(unions=["BV4"]),
         ]
 
         main._save_schedule_team("user-1", events)
 
-        self.assertEqual(storage.get_admin_user_profile("1001")["team"], "БВ3")
-        self.assertEqual(storage.get_known_team("1001"), "БВ3")
+        self.assertEqual(storage.get_admin_user_profile("1001")["team"], "BV3")
+        self.assertEqual(storage.get_known_team("1001"), "BV3")
 
-    def test_admin_watchlist_includes_owner_and_event(self):
-        storage.save_token("user-1", "token")
-        storage.set_user_uid("user-1", "1001")
-        storage.save_known_uid("1001", "1001", "Ivan Ivanov", "БВ3")
-        storage.add_watch(
-            "1001", "event-1", "Morning training",
-            event_start="2026-07-20T08:00:00Z", snipe_priority="medium",
-        )
-
-        watches = storage.get_all_active_watches_for_admin()
-
-        self.assertEqual(len(watches), 1)
-        self.assertEqual(watches[0]["full_name"], "Ivan Ivanov")
-        self.assertEqual(watches[0]["team"], "БВ3")
-        self.assertEqual(watches[0]["event_name"], "Morning training")
-
-    async def test_admin_profile_api_requires_verified_admin_session(self):
+    async def test_admin_profile_returns_watches_and_request_statistics(self):
         storage.save_token("admin", "verified-token")
         storage.set_user_uid("admin", "admin")
         storage.mark_token_verified("admin", "verified-token")
@@ -79,15 +69,19 @@ class AdminUserProfileTests(unittest.IsolatedAsyncioTestCase):
         storage.save_token("user-1", "token")
         storage.set_user_uid("user-1", "1001")
         storage.save_known_uid("1001", "user-1", "Ivan Ivanov", "BV3")
+        storage.add_watch("user-1", "event-1", "Morning training", snipe_priority="medium")
+        storage.increment_sirius_request("user-1")
+        storage.increment_sirius_request("user-1")
 
-        request = _Request()
-        request.cookies = {"session_id": session_id}
-        response = await main.api_admin_user_profile("1001", request)
+        response = await main.api_admin_user_profile("1001", _Request({"session_id": session_id}))
+        payload = json.loads(response.body)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(json.loads(response.body)["user"]["team"], "BV3")
+        self.assertEqual(payload["user"]["team"], "BV3")
+        self.assertEqual(payload["user"]["siriusRequestCount"], 2)
+        self.assertEqual(payload["user"]["watches"][0]["eventName"], "Morning training")
 
-    async def test_admin_watchlist_api_requires_verified_admin_session(self):
+    async def test_admin_message_creates_user_feedback_thread(self):
         storage.save_token("admin", "verified-token")
         storage.set_user_uid("admin", "admin")
         storage.mark_token_verified("admin", "verified-token")
@@ -95,17 +89,18 @@ class AdminUserProfileTests(unittest.IsolatedAsyncioTestCase):
         session_id = storage.create_session_for_user("admin")
         storage.save_token("user-1", "token")
         storage.set_user_uid("user-1", "1001")
-        storage.save_known_uid("1001", "1001", "Ivan Ivanov", "БВ3")
-        storage.add_watch("1001", "event-1", "Event")
+        storage.save_known_uid("1001", "user-1", "Ivan Ivanov", "BV3")
+        storage.save_known_uid("admin", "admin", "Admin Name")
 
-        request = _Request()
-        request.cookies = {"session_id": session_id}
-        response = await main.api_admin_watchlist(request)
-        payload = json.loads(response.body)
+        request = _Request({"session_id": session_id}, {"message": "Check this event"})
+        with patch.object(main, "web_notify", new=AsyncMock()) as notify:
+            response = await main.api_admin_message_user("1001", request)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(payload["watches"][0]["name"], "Ivan Ivanov")
-        self.assertEqual(payload["watches"][0]["team"], "БВ3")
+        feedback = storage.get_user_feedback_messages("user-1")[0]
+        self.assertEqual(feedback["initiated_by"], "admin")
+        self.assertEqual(feedback["initiator_name"], "Admin Name")
+        notify.assert_awaited_once()
 
 
 if __name__ == "__main__":

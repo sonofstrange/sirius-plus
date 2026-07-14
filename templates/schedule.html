@@ -39,7 +39,7 @@
     <div class="schedule-list">
         {% for ev in events %}
         <div class="schedule-card {% if ev.event_type == 'customEvent' %}schedule-card--custom{% else %}schedule-card-{{ ev.event_type | lower }}{% endif %} {% if ev.status == 'finished' %}schedule-card--finished{% elif ev.status == 'ongoing' %}schedule-card--ongoing{% endif %}"
-             onclick="showScheduleDetail('{{ ev.event_id }}')" style="cursor:pointer">
+             {% if ev.event_type == 'customEvent' %}onclick='showCustomScheduleDetail({{ ev.event_name | tojson }}, {{ ev.start_time | tojson }}, {{ ev.end_time | tojson }}, {{ ev.location | tojson }}, {{ ev.description | tojson }})'{% else %}onclick="showScheduleDetail('{{ ev.event_id }}')"{% endif %} style="cursor:pointer">
             {% if ev.event_type == 'transferEvent' %}
             <div class="schedule-card__bus-icon">
                 <span class="material-symbols-outlined">directions_bus_filled</span>
@@ -193,6 +193,22 @@ async function showScheduleDetail(eventId) {
     } catch(e) {
         body.innerHTML = '<div class="alert alert-error">Ошибка соединения: ' + escapeHtml(e.message) + '</div>';
     }
+}
+
+function showCustomScheduleDetail(name, start, end, location, description) {
+    const modal = document.getElementById('sched-detail-modal');
+    const title = document.getElementById('sched-detail-title');
+    const body = document.getElementById('sched-detail-body');
+    title.textContent = name || 'Своё событие';
+    body.innerHTML = `
+        <table class="info-table">
+            <tr><td>Тип</td><td>Своё событие</td></tr>
+            <tr><td>Начало</td><td>${start ? new Date(start).toLocaleString('ru-RU') : '—'}</td></tr>
+            ${end ? '<tr><td>Конец</td><td>' + new Date(end).toLocaleString('ru-RU') + '</td></tr>' : ''}
+            ${location && location.length ? '<tr><td>Место</td><td>' + escapeHtml(location.join(', ')) + '</td></tr>' : ''}
+            ${description ? '<tr><td>Описание</td><td style="white-space:pre-wrap">' + escapeHtml(description) + '</td></tr>' : ''}
+        </table>`;
+    modal.style.display = 'flex';
 }
 </script>
 {% endblock %}

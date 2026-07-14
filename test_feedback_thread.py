@@ -39,6 +39,16 @@ class FeedbackThreadTests(unittest.TestCase):
 
         self.assertEqual(storage.get_feedback_replies(feedback["id"]), [])
 
+    def test_admin_can_start_a_feedback_thread(self):
+        feedback_id = storage.create_admin_feedback("user", "Check the schedule", "Nikolai")
+
+        feedback = storage.get_user_feedback_messages("user")[0]
+
+        self.assertEqual(feedback["id"], feedback_id)
+        self.assertEqual(feedback["message"], "Check the schedule")
+        self.assertEqual(feedback["initiated_by"], "admin")
+        self.assertEqual(feedback["initiator_name"], "Nikolai")
+
 
 if __name__ == "__main__":
     unittest.main()

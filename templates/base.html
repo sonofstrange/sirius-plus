@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Пирожковый Диспетчер{% endblock %}</title>
     <link rel="icon" href="/static/sirius.png">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260715-1">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260715-2">
 </head>
 <body>
     <div class="app">
@@ -102,7 +102,7 @@
                     </a>
                 </div>
                 <div class="footer__copyright">
-                    © Пирожковый Диспетчер, 2026 · v1.6 · Создатель: Николай Русанов · <a href="https://t.me/sirius_pirozhki" target="_blank" rel="noopener noreferrer">Telegram-канал</a> · <a href="https://t.me/sonofstrange" target="_blank" rel="noopener noreferrer">Telegram</a> · <a href="https://discord.com/users/891370219866583091" target="_blank" rel="noopener noreferrer">Discord</a> · <a href="https://github.com/sonofstrange/sirius-plus" target="_blank" rel="noopener noreferrer">Открытый исходный код</a>
+                    © Пирожковый Диспетчер, 2026 · v2.0.0 · Создатель: Николай Русанов · <a href="https://t.me/sirius_pirozhki" target="_blank" rel="noopener noreferrer">Telegram-канал</a> · <a href="https://t.me/sonofstrange" target="_blank" rel="noopener noreferrer">Telegram</a> · <a href="https://discord.com/users/891370219866583091" target="_blank" rel="noopener noreferrer">Discord</a> · <a href="https://github.com/sonofstrange/sirius-plus" target="_blank" rel="noopener noreferrer">Открытый исходный код</a>
                 </div>
             </div>
         </footer>
@@ -235,6 +235,15 @@
             </div>
             <div class="modal__body">
                 <div class="changelog">
+                    <div class="changelog__release">
+                        <div class="changelog__version">Версия 2.0.0</div>
+                        <div class="changelog__date">События и профиль</div>
+                        <ul class="changelog__list">
+                            <li>Переработаны вкладки событий, фильтры и экран профиля.</li>
+                            <li>Автозаписи и статистика запросов к Sirius доступны в профиле пользователя для администраторов.</li>
+                            <li>Администратор может начать обращение с пользователем прямо из его профиля.</li>
+                        </ul>
+                    </div>
                     <div class="changelog__release">
                         <div class="changelog__version">Версия 1.6</div>
                         <div class="changelog__date">Админ-панель и оповещения</div>
@@ -446,9 +455,9 @@
         </div>
     </div>
 
-    <script src="/static/js/app.js?v=20260708-7"></script>
+    <script src="/static/js/app.js?v=20260715-2"></script>
     <script>
-        const CHANGELOG_VERSION = '1.6';
+        const CHANGELOG_VERSION = '2.0.0';
         const CHANGELOG_STORAGE_KEY = 'sirius_seen_changelog_version';
 
         {% if user_id %}
@@ -506,6 +515,11 @@
                     const coins = coinsData.ok ? coinsData.coins : 0;
                     const trustNames = {0: '0 · Админ', 1: '1 · Доверенный', 2: '2 · Обычный', 3: '3 · Недоверенный'};
                     body.innerHTML = `
+                        <div class="user-profile">
+                            <div class="user-profile__summary">
+                                <div class="user-profile__avatar"><span class="material-symbols-outlined">account_circle</span></div>
+                                <div><div class="user-profile__name">${escapeHtml(name)}</div><div class="user-profile__meta">${escapeHtml(data.team || 'Команда Sirius не указана')}</div></div>
+                            </div>
                         <table class="info-table">
                             <tr><td>Имя</td><td>${escapeHtml(name)}</td></tr>
                             <tr><td>Email</td><td>${escapeHtml(data.email || '—')}</td></tr>
@@ -519,6 +533,7 @@
                             <tr><td>Действует ещё</td><td>${escapeHtml(remaining)}</td></tr>
                             <tr><td>Автозаписей</td><td>${escapeHtml(data.watchedCount || 0)}</td></tr>
                             <tr><td>Записей</td><td>${escapeHtml(data.registeredCount || 0)}</td></tr>
+                            <tr><td>Запросов к Sirius</td><td>${escapeHtml(data.siriusRequestCount || 0)}</td></tr>
                         </table>
                         <div class="profile-section">
                             <div class="profile-section__header">
@@ -555,6 +570,7 @@
                         </div>
                         <div id="login-code-result" class="alert" style="display:none;margin-top:8px"></div>
                         <div id="ping-result" class="alert" style="display:none;margin-top:8px"></div>
+                        </div>
                     `;
                     updateNotificationSettingsStatus();
                     loadProfileReminders();
@@ -778,7 +794,7 @@
                             <button class="btn btn-danger-text btn-sm" onclick="hideMyFeedback(${m.id})">Скрыть</button>
                         </div>
                         <div class="feedback-thread">
-                            <div class="feedback-message feedback-message--user"><div class="feedback-message__meta">Ты · ${profileDateTime(m.created_at)}</div><div>${escapeHtml(m.message || '')}</div></div>
+                            <div class="feedback-message feedback-message--${m.initiated_by === 'admin' ? 'admin' : 'user'}"><div class="feedback-message__meta">${escapeHtml(m.initiator_name || (m.initiated_by === 'admin' ? 'Администратор' : 'Ты'))} · ${profileDateTime(m.created_at)}</div><div>${escapeHtml(m.message || '')}</div></div>
                             ${(m.replies || []).map(reply => `<div class="feedback-message feedback-message--${reply.sender_type}"><div class="feedback-message__meta">${escapeHtml(reply.sender_name || (reply.sender_type === 'admin' ? 'Администратор' : 'Ты'))} · ${profileDateTime(reply.created_at)}</div><div>${escapeHtml(reply.message)}</div></div>`).join('')}
                         </div>
                         <div class="feedback-reply-form">

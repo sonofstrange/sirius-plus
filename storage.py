@@ -227,6 +227,8 @@ def init_db():
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id      TEXT NOT NULL DEFAULT '',
                 message      TEXT NOT NULL,
+                initiated_by TEXT NOT NULL DEFAULT 'user',
+                initiator_name TEXT NOT NULL DEFAULT '',
                 answer       TEXT NOT NULL DEFAULT '',
                 answered_at  INTEGER NOT NULL DEFAULT 0,
                 answered_by  TEXT NOT NULL DEFAULT '',
@@ -249,6 +251,12 @@ def init_db():
 
             CREATE INDEX IF NOT EXISTS idx_feedback_replies_feedback
                 ON feedback_replies(feedback_id, created_at);
+
+            CREATE TABLE IF NOT EXISTS sirius_request_stats (
+                user_id      TEXT PRIMARY KEY,
+                request_count INTEGER NOT NULL DEFAULT 0,
+                updated_at   INTEGER NOT NULL DEFAULT 0
+            );
 
             CREATE TABLE IF NOT EXISTS token_verifications (
                 user_id      TEXT PRIMARY KEY,
@@ -383,6 +391,10 @@ def init_db():
             conn.execute("ALTER TABLE feedback_messages ADD COLUMN user_hidden INTEGER NOT NULL DEFAULT 0")
         if "admin_hidden" not in feedback_cols:
             conn.execute("ALTER TABLE feedback_messages ADD COLUMN admin_hidden INTEGER NOT NULL DEFAULT 0")
+        if "initiated_by" not in feedback_cols:
+            conn.execute("ALTER TABLE feedback_messages ADD COLUMN initiated_by TEXT NOT NULL DEFAULT 'user'")
+        if "initiator_name" not in feedback_cols:
+            conn.execute("ALTER TABLE feedback_messages ADD COLUMN initiator_name TEXT NOT NULL DEFAULT ''")
 
         market_cols = [r["name"] for r in conn.execute("PRAGMA table_info(prediction_markets)").fetchall()]
         if "unit" not in market_cols:
@@ -761,27 +773,6 @@ def get_all_active_watches() -> list[sqlite3.Row]:
         ).fetchall()
 
 
-def get_all_active_watches_for_admin() -> list[sqlite3.Row]:
-    """Active auto-registrations with enough user data for the admin overview."""
-    with get_conn() as conn:
-        return conn.execute(
-            """SELECT w.user_id, w.event_id, w.event_name, w.event_start,
-                      w.snipe_priority, w.coin_cost, w.updated_at,
-                      COALESCE((SELECT k.uid FROM known_uids k
-                                WHERE k.user_id=w.user_id OR k.uid=w.user_id
-                                ORDER BY k.updated_at DESC LIMIT 1), w.user_id) AS uid,
-                      COALESCE((SELECT k.full_name FROM known_uids k
-                                WHERE k.user_id=w.user_id OR k.uid=w.user_id
-                                ORDER BY k.updated_at DESC LIMIT 1), '') AS full_name,
-                      COALESCE((SELECT k.team FROM known_uids k
-                                WHERE k.user_id=w.user_id OR k.uid=w.user_id
-                                ORDER BY k.updated_at DESC LIMIT 1), '') AS team
-               FROM watchlist w
-               WHERE w.status='watching'
-               ORDER BY w.updated_at DESC, w.event_start ASC"""
-        ).fetchall()
-
-
 def get_all_users_with_tokens() -> list[str]:
     with get_conn() as conn:
         rows = conn.execute(
@@ -979,15 +970,29 @@ def delete_notification(user_id: str, notif_id: int):
 def add_feedback(user_id: str | None, message: str):
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO feedback_messages (user_id, message, created_at) VALUES (?, ?, ?)",
+            """INSERT INTO feedback_messages
+               (user_id, message, initiated_by, initiator_name, created_at)
+               VALUES (?, ?, 'user', '', ?)""",
             (user_id or "", message, int(time.time())),
         )
+
+
+def create_admin_feedback(user_id: str, message: str, admin_name: str) -> int:
+    with get_conn() as conn:
+        cursor = conn.execute(
+            """INSERT INTO feedback_messages
+               (user_id, message, initiated_by, initiator_name, is_read, created_at)
+               VALUES (?, ?, 'admin', ?, 1, ?)""",
+            (user_id, message, admin_name, int(time.time())),
+        )
+        return int(cursor.lastrowid)
 
 
 def get_feedback_messages(limit: int = 200) -> list[sqlite3.Row]:
     with get_conn() as conn:
         return conn.execute(
-            """SELECT f.id, f.user_id, f.message, f.answer, f.answered_at, f.answered_by, f.is_read, f.created_at,
+            """SELECT f.id, f.user_id, f.message, f.initiated_by, f.initiator_name,
+                      f.answer, f.answered_at, f.answered_by, f.is_read, f.created_at,
                       COALESCE(k.full_name, '') AS full_name
                FROM feedback_messages f
                LEFT JOIN known_uids k ON k.user_id = f.user_id
@@ -1001,7 +1006,8 @@ def get_feedback_messages(limit: int = 200) -> list[sqlite3.Row]:
 def get_user_feedback_messages(user_id: str, limit: int = 50) -> list[sqlite3.Row]:
     with get_conn() as conn:
         return conn.execute(
-            """SELECT id, message, answer, answered_at, answered_by, is_read, created_at
+            """SELECT id, message, initiated_by, initiator_name,
+                      answer, answered_at, answered_by, is_read, created_at
                FROM feedback_messages
                WHERE user_id=? AND user_hidden=0
                ORDER BY created_at DESC
@@ -1056,6 +1062,37 @@ def get_known_name(uid: str) -> str:
             (uid, uid),
         ).fetchone()
         return row["full_name"] if row and row["full_name"] else ""
+
+
+# ---------- Sirius request statistics ----------
+
+def increment_sirius_request(user_id: str) -> None:
+    if not user_id:
+        return
+    now = int(time.time())
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                """INSERT INTO sirius_request_stats (user_id, request_count, updated_at)
+                   VALUES (?, 1, ?)
+                   ON CONFLICT(user_id) DO UPDATE SET
+                     request_count=sirius_request_stats.request_count+1,
+                     updated_at=excluded.updated_at""",
+                (user_id, now),
+            )
+    except sqlite3.Error as exc:
+        # Statistics must never delay or cancel a Sirius request, including during a DB migration.
+        import logging
+        logging.getLogger("storage").warning("Could not record Sirius request for %s: %s", user_id, exc)
+
+
+def get_sirius_request_count(user_id: str) -> int:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT request_count FROM sirius_request_stats WHERE user_id=?",
+            (user_id,),
+        ).fetchone()
+        return int(row["request_count"]) if row else 0
 
 
 def mark_feedback_read(feedback_id: int, is_read: bool = True):

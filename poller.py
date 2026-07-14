@@ -342,6 +342,7 @@ async def _snipe_loop(
 
             t0 = time.perf_counter()
             try:
+                storage.increment_sirius_request(user_id)
                 result = await client.subscribe(event_id, token=token)
             except Exception as e:
                 _log_snipe_attempt(user_id, event_id, event_name, "error", success=False, message=str(e), latency_ms=int((time.perf_counter() - t0) * 1000))
@@ -366,6 +367,7 @@ async def _snipe_loop(
                 final_reserved = result.reserved
                 if hasattr(client, "fetch_schedule"):
                     try:
+                        storage.increment_sirius_request(user_id)
                         fresh = await client.fetch_schedule(token=token)
                         _persist_events_cache(user_id, fresh)
                         actual = next((e for e in fresh if e.event_id == event_id), None)
@@ -422,6 +424,7 @@ async def poll_user_once(
                 log.warning("auto-refresh failed for %s: %s", user_id, e)
 
     try:
+        storage.increment_sirius_request(user_id)
         events = await client.fetch_schedule(token=token)
         _persist_events_cache(user_id, events)
     except Exception as e:
@@ -493,6 +496,7 @@ async def run_poller(notify: NotifyFn, client: SiriusClient):
         token = storage.get_token(user_id)
         if token:
             try:
+                storage.increment_sirius_request(user_id)
                 all_events = await client.fetch_schedule(token=token)
                 _persist_events_cache(user_id, all_events)
                 by_id = {e.event_id: e for e in all_events}

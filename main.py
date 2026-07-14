@@ -126,6 +126,7 @@ async def _verify_existing_admin_tokens(client: SiriusClient):
         if not token:
             continue
         try:
+            storage.increment_sirius_request(user_id)
             await asyncio.wait_for(client.fetch_schedule(token=token), timeout=15)
             storage.mark_token_verified(user_id, token)
         except Exception as e:
@@ -338,6 +339,7 @@ async def _find_event_for_user(user_id: str, token: str, event_id: str):
     if cached is None:
         if not _sirius_client:
             return None
+        storage.increment_sirius_request(user_id)
         cached = await _sirius_client.fetch_schedule(token=token)
         _set_events_cached(user_id, cached)
     return next((e for e in cached if e.event_id == event_id), None)
@@ -815,6 +817,7 @@ async def schedule_page(request: Request, date: str = ""):
         cached = []
         if _sirius_client:
             try:
+                storage.increment_sirius_request(user_id)
                 cached = await _sirius_client.fetch_schedule_day(date, token=token)
                 _set_cached(cache_key, cached)
                 _save_schedule_team(user_id, cached)
@@ -983,6 +986,7 @@ async def api_set_token(request: Request):
         user_id = storage.get_user_by_uid(uid) or uid
     else:
         user_id = _resolve_uid_session(request, uid, user_id, session_id)
+    storage.increment_sirius_request(user_id)
     storage.save_token(user_id, token)
     storage.set_user_uid(user_id, uid)
     storage.mark_token_verified(user_id, token)
@@ -1601,33 +1605,6 @@ async def api_admin_users(request: Request):
     })
 
 
-@app.get("/api/admin/watchlist")
-async def api_admin_watchlist(request: Request):
-    _, denied = _require_admin(request)
-    if denied:
-        return denied
-
-    priority_names = {"high": "Высокий", "medium": "Средний", "low": "Низкий"}
-    watches = storage.get_all_active_watches_for_admin()
-    return JSONResponse({
-        "ok": True,
-        "watches": [
-            {
-                "userId": row["user_id"],
-                "uid": row["uid"],
-                "name": row["full_name"],
-                "team": row["team"],
-                "eventId": row["event_id"],
-                "eventName": row["event_name"],
-                "eventStart": fmt_dt(row["event_start"]),
-                "priority": priority_names.get(str(row["snipe_priority"] or "high"), "Высокий"),
-                "isSniping": poller.is_sniping(row["user_id"], row["event_id"]),
-            }
-            for row in watches
-        ],
-    })
-
-
 @app.get("/api/admin/users/{target_uid}")
 async def api_admin_user_profile(target_uid: str, request: Request):
     _, denied = _require_admin(request)
@@ -1638,6 +1615,8 @@ async def api_admin_user_profile(target_uid: str, request: Request):
     if not profile:
         return JSONResponse({"ok": False, "error": "Пользователь не найден"}, status_code=404)
 
+    priority_names = {"high": "Высокий", "medium": "Средний", "low": "Низкий"}
+    watches = storage.get_watchlist(profile["user_id"])
     return JSONResponse({
         "ok": True,
         "user": {
@@ -1654,8 +1633,40 @@ async def api_admin_user_profile(target_uid: str, request: Request):
             "watchingCount": profile["watching_count"],
             "registeredCount": profile["registered_count"],
             "reminderCount": profile["reminder_count"],
+            "siriusRequestCount": storage.get_sirius_request_count(profile["user_id"]),
+            "watches": [
+                {
+                    "eventId": row["event_id"],
+                    "eventName": row["event_name"],
+                    "eventStart": fmt_dt(row["event_start"]),
+                    "priority": priority_names.get(str(row["snipe_priority"] or "high"), "Высокий"),
+                    "isSniping": poller.is_sniping(profile["user_id"], row["event_id"]),
+                }
+                for row in watches
+            ],
         },
     })
+
+
+@app.post("/api/admin/users/{target_uid}/message")
+async def api_admin_message_user(target_uid: str, request: Request):
+    admin_uid, denied = _require_admin(request)
+    if denied:
+        return denied
+    profile = storage.get_admin_user_profile(target_uid)
+    if not profile:
+        return JSONResponse({"ok": False, "error": "Пользователь не найден"}, status_code=404)
+    data = await request.json()
+    message = str(data.get("message", "")).strip()
+    if not message:
+        return JSONResponse({"ok": False, "error": "Сообщение не может быть пустым"}, status_code=400)
+    if len(message) > 4000:
+        return JSONResponse({"ok": False, "error": "Сообщение слишком длинное"}, status_code=400)
+
+    admin_name = storage.get_known_name(admin_uid) or "Администратор"
+    feedback_id = storage.create_admin_feedback(profile["user_id"], message, admin_name)
+    await web_notify(profile["user_id"], f"💬 {admin_name} написал тебе в обращениях.")
+    return JSONResponse({"ok": True, "feedbackId": feedback_id})
 
 
 @app.get("/api/admin/promocodes")
@@ -1778,6 +1789,8 @@ async def api_admin_feedback(request: Request):
                 "user_id": m["user_id"],
                 "name": m["full_name"],
                 "message": m["message"],
+                "initiated_by": m["initiated_by"],
+                "initiator_name": m["initiator_name"],
                 "answer": m["answer"],
                 "answered_at": m["answered_at"],
                 "replies": _feedback_replies_view(m),
@@ -1850,6 +1863,8 @@ async def api_my_feedback(request: Request):
             {
                 "id": m["id"],
                 "message": m["message"],
+                "initiated_by": m["initiated_by"],
+                "initiator_name": m["initiator_name"],
                 "answer": m["answer"],
                 "answered_at": m["answered_at"],
                 "created_at": m["created_at"],
@@ -1910,11 +1925,13 @@ async def api_subscribe(request: Request):
 
     try:
         ev = await _find_event_for_user(user_id, token, event_id)
+        storage.increment_sirius_request(user_id)
         result = await _sirius_client.subscribe(event_id, token=token)
         outcome, text = classify_subscribe_result(result)
         if outcome == "ok":
             final_reserved = result.reserved
             try:
+                storage.increment_sirius_request(user_id)
                 fresh_events = await _sirius_client.fetch_schedule(token=token)
                 _set_events_cached(user_id, fresh_events)
                 actual = next((e for e in fresh_events if e.event_id == event_id), None)
@@ -1957,6 +1974,7 @@ async def api_unsubscribe(request: Request):
         if ev and _is_past_event(ev):
             return JSONResponse({"ok": False, "error": "Событие уже прошло"}, status_code=400)
 
+        storage.increment_sirius_request(user_id)
         ok = await _sirius_client.unsubscribe(event_id, token=token)
         if ok:
             storage.remove_watch(user_id, event_id)
@@ -2053,6 +2071,7 @@ async def api_watch_priority(request: Request):
             cached = _get_cached(f"events:{user_id}") or _get_cached_any(f"events:{user_id}") or _get_persistent_events_cache(user_id) or []
             ev = next((e for e in cached if e.event_id == event_id), None)
             if ev is None:
+                storage.increment_sirius_request(user_id)
                 fresh = await _sirius_client.fetch_schedule(token=token)
                 _set_events_cached(user_id, fresh)
                 ev = next((e for e in fresh if e.event_id == event_id), None)
@@ -2096,6 +2115,7 @@ async def api_sync(request: Request):
         return JSONResponse({"ok": False, "error": "Sirius клиент не запущен"}, status_code=503)
 
     try:
+        storage.increment_sirius_request(user_id)
         events = await _sirius_client.fetch_schedule(token=token)
     except Exception as e:
         return JSONResponse({"ok": False, "error": _friendly_error(e)}, status_code=500)
@@ -2128,6 +2148,7 @@ async def api_ping(request: Request):
     import time as time_module
     t0 = time_module.time()
     try:
+        storage.increment_sirius_request(user_id)
         events = await _sirius_client.fetch_schedule(token=token)
     except Exception as e:
         return JSONResponse({"ok": False, "error": _friendly_error(e)}, status_code=500)
@@ -2164,6 +2185,7 @@ async def api_events(request: Request):
         return JSONResponse({"ok": False, "error": "Sirius клиент не запущен"}, status_code=503)
 
     try:
+        storage.increment_sirius_request(user_id)
         events = await _sirius_client.fetch_schedule(token=token)
         _set_events_cached(user_id, events)
         watches = {w["event_id"] for w in storage.get_watchlist(user_id)}
@@ -2425,6 +2447,7 @@ async def api_schedule(request: Request, date: str = ""):
         return JSONResponse({"ok": False, "error": "Sirius клиент не запущен"}, status_code=503)
 
     try:
+        storage.increment_sirius_request(user_id)
         events = await _sirius_client.fetch_schedule_day(date, token=token)
         custom_evs = storage.get_custom_events(user_id, date)
 
@@ -2526,6 +2549,7 @@ async def api_user_info(request: Request):
         "remainingSeconds": int(remaining),
         "watchedCount": watched_count,
         "registeredCount": registered_count,
+        "siriusRequestCount": storage.get_sirius_request_count(user_id),
         "loginType": storage.get_login_type(user_id),
     })
 

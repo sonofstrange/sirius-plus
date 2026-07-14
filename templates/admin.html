@@ -47,11 +47,6 @@
             <div class="loading">Загрузка...</div>
         </div>
 
-        <h2 style="font-size:18px;margin:32px 0 16px">Автозапись пользователей</h2>
-        <div id="admin-watchlist" class="profile-list">
-            <div class="loading">Загрузка...</div>
-        </div>
-
         <h2 style="font-size:18px;margin:32px 0 16px">Обращения пользователей</h2>
         <div id="feedback-list">
             <div class="loading">Загрузка...</div>
@@ -133,34 +128,6 @@ async function loadUsers() {
     }
 }
 
-async function loadAdminWatchlist() {
-    const container = document.getElementById('admin-watchlist');
-    try {
-        const resp = await fetch('/api/admin/watchlist');
-        const data = await resp.json();
-        if (!data.ok) throw new Error(data.error || 'Не удалось загрузить автозаписи');
-        const watches = data.watches || [];
-        if (!watches.length) {
-            container.innerHTML = '<div class="profile-empty">Сейчас никто не использует автозапись</div>';
-            return;
-        }
-        container.innerHTML = watches.map(item => {
-            const user = escapeHtml(item.name || item.uid || item.userId);
-            const team = item.team ? ` · ${escapeHtml(item.team)}` : '';
-            const state = item.isSniping ? 'Ловит сейчас' : 'Запланирована';
-            return `<div class="profile-list-item">
-                <div class="profile-list-item__main">
-                    <div class="profile-list-item__title">${escapeHtml(item.eventName)}</div>
-                    <div class="profile-list-item__meta">${user}${team} · ${escapeHtml(item.eventStart)} · ${escapeHtml(item.priority)} приоритет</div>
-                </div>
-                <span class="badge ${item.isSniping ? 'badge-success' : ''}">${state}</span>
-            </div>`;
-        }).join('');
-    } catch (e) {
-        container.innerHTML = '<div class="alert alert-error">' + escapeHtml(e.message) + '</div>';
-    }
-}
-
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]); }
 
 function fmtDate(ts) {
@@ -200,7 +167,7 @@ async function loadFeedback() {
                     </div>
                 </div>
                 <div class="feedback-thread">
-                    <div class="feedback-message feedback-message--user"><div class="feedback-message__meta">${escapeHtml(m.name || 'Пользователь')} · ${fmtDate(m.created_at)}</div><div>${escapeHtml(m.message)}</div></div>
+                    <div class="feedback-message feedback-message--${m.initiated_by === 'admin' ? 'admin' : 'user'}"><div class="feedback-message__meta">${escapeHtml(m.initiator_name || (m.initiated_by === 'admin' ? 'Администратор' : m.name || 'Пользователь'))} · ${fmtDate(m.created_at)}</div><div>${escapeHtml(m.message)}</div></div>
                     ${(m.replies || []).map(reply => `<div class="feedback-message feedback-message--${reply.sender_type}"><div class="feedback-message__meta">${escapeHtml(reply.sender_name || (reply.sender_type === 'admin' ? 'Администратор' : 'Пользователь'))} · ${fmtDate(reply.created_at)}</div><div>${escapeHtml(reply.message)}</div></div>`).join('')}
                 </div>
                 <div class="feedback-reply-form">
@@ -312,10 +279,25 @@ async function showAdminUser(uid) {
         const data = await response.json();
         if (!data.ok) throw new Error(data.error || 'Не удалось загрузить профиль');
         const u = data.user;
+        const safeUid = String(u.uid || '').replace(/'/g, "\\'");
         const trustNames = {0: 'Админ', 1: 'Доверенный', 2: 'Обычный', 3: 'Недоверенный'};
         const loginNames = {password: 'Пароль', token: 'Токен'};
         const fmt = value => value ? fmtDate(value) : '—';
-        body.innerHTML = `<table class="info-table">
+        const watches = u.watches || [];
+        const watchesHtml = watches.length ? watches.map(w => `
+            <div class="profile-list-item">
+                <div class="profile-list-item__main">
+                    <div class="profile-list-item__title">${escapeHtml(w.eventName)}</div>
+                    <div class="profile-list-item__meta">${escapeHtml(w.eventStart)} · ${escapeHtml(w.priority)} приоритет</div>
+                </div>
+                <span class="badge ${w.isSniping ? 'badge-success' : ''}">${w.isSniping ? 'Ловит сейчас' : 'Запланирована'}</span>
+            </div>`).join('') : '<div class="profile-empty">Активной автозаписи нет</div>';
+        body.innerHTML = `<div class="admin-user-profile">
+            <div class="admin-user-profile__summary">
+                <div class="admin-user-profile__name">${escapeHtml(u.name || 'Без имени')}</div>
+                <div class="admin-user-profile__meta">${escapeHtml(u.team || 'Команда не указана')} · ${escapeHtml(trustNames[u.trustLevel] || 'Обычный')}</div>
+            </div>
+            <table class="info-table">
             <tr><td>Имя</td><td>${escapeHtml(u.name || '—')}</td></tr>
             <tr><td>Команда Sirius</td><td>${escapeHtml(u.team || 'Не указана в Sirius')}</td></tr>
             <tr><td>UID</td><td class="mono">${escapeHtml(u.uid)}</td></tr>
@@ -327,10 +309,45 @@ async function showAdminUser(uid) {
             <tr><td>Активно следит</td><td>${u.watchingCount}</td></tr>
             <tr><td>Записан</td><td>${u.registeredCount}</td></tr>
             <tr><td>Будильников</td><td>${u.reminderCount}</td></tr>
-        </table>`;
+            <tr><td>Запросов к Sirius</td><td>${u.siriusRequestCount || 0}</td></tr>
+            </table>
+            <section class="profile-section">
+                <div class="profile-section__header"><span>Автозапись</span><span class="profile-section__hint">${watches.length}</span></div>
+                <div class="profile-list">${watchesHtml}</div>
+            </section>
+            <section class="profile-section">
+                <div class="profile-section__header"><span>Написать пользователю</span></div>
+                <div class="feedback-reply-form">
+                    <textarea class="form-textarea" id="admin-message-${escapeHtml(u.uid)}" rows="3" placeholder="Сообщение появится у пользователя в обращениях..."></textarea>
+                    <button class="btn btn-primary btn-sm" onclick="sendAdminMessage('${safeUid}')">Отправить</button>
+                </div>
+            </section>
+        </div>`;
     } catch (error) {
         body.innerHTML = '<div class="alert alert-error">' + escapeHtml(error.message) + '</div>';
     }
+}
+
+async function sendAdminMessage(uid) {
+    const textarea = document.getElementById('admin-message-' + uid);
+    const message = (textarea?.value || '').trim();
+    if (!message) {
+        dlgAlert('Сообщение', 'Напиши сообщение для пользователя.');
+        return;
+    }
+    const response = await fetch('/api/admin/users/' + encodeURIComponent(uid) + '/message', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message}),
+    });
+    const data = await response.json();
+    if (!data.ok) {
+        dlgAlert('Ошибка', data.error || 'Не удалось отправить сообщение');
+        return;
+    }
+    textarea.value = '';
+    dlgAlert('Отправлено', 'Создано обращение, пользователь получил уведомление.');
+    loadFeedback();
 }
 
 function fillUid(uid) {
@@ -456,7 +473,6 @@ async function grantCoins() {
 
 document.addEventListener('DOMContentLoaded', () => {
     loadUsers();
-    loadAdminWatchlist();
     loadFeedback();
     loadPromocodes();
 });
