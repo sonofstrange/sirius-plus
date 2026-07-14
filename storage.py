@@ -1056,6 +1056,22 @@ def get_community_events_for_date(user_id: str, date_iso: str) -> list[sqlite3.R
         ).fetchall()
 
 
+def get_community_events_for_user(user_id: str) -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT e.*, COALESCE(k.full_name, '') AS owner_name,
+                      (SELECT COUNT(*) FROM community_event_registrations r WHERE r.event_id=e.id) AS people_current,
+                      EXISTS(SELECT 1 FROM community_event_registrations r
+                             WHERE r.event_id=e.id AND r.user_id=?) AS is_registered,
+                      (e.owner_user_id=? OR EXISTS(SELECT 1 FROM community_event_coorganizers c
+                                                    WHERE c.event_id=e.id AND c.user_id=?)) AS can_manage
+               FROM community_events e
+               LEFT JOIN known_uids k ON k.user_id=e.owner_user_id
+               ORDER BY e.date_iso, e.start_time, e.id""",
+            (user_id, user_id, user_id),
+        ).fetchall()
+
+
 def get_managed_community_events(user_id: str) -> list[sqlite3.Row]:
     with get_conn() as conn:
         return conn.execute(

@@ -87,6 +87,7 @@
             </div>
             <div class="event-card__info">
                 <div class="event-card__title">{{ ev.event_name }}</div>
+                {% if ev.event_type == 'communityEvent' %}<span class="badge badge-community">Событие сообщества</span>{% endif %}
                 <div class="event-card__meta">
                     {% if ev.people_max > 0 %}
                     <span class="event-card__people">
@@ -126,6 +127,15 @@
                 <span class="badge badge-muted">Событие уже прошло</span>
                 {% elif ev._is_past %}
                 <span class="badge" style="background:var(--danger);color:white">🔒 Запись закрыта</span>
+                {% elif ev.event_type == 'communityEvent' %}
+                {% if ev.community_is_registered %}
+                <button class="btn btn-danger-text btn-sm" onclick="toggleCommunityRegistration({{ ev.community_id }}, true)">Отписаться</button>
+                <span class="btn btn-success btn-sm event-card__state">Записан</span>
+                {% elif ev.community_registration_open %}
+                <button class="btn btn-primary btn-sm" onclick="toggleCommunityRegistration({{ ev.community_id }}, false)">Записаться</button>
+                {% else %}
+                <span class="badge" style="background:var(--danger);color:white">🔒 Регистрация закрыта</span>
+                {% endif %}
                 {% elif ev.is_recorded %}
                 <button class="btn btn-danger-text btn-sm" onclick="showUnsubscribeModal('{{ ev.event_id }}', this)">Отписаться</button>
                 <span class="btn btn-success btn-sm event-card__state">Записан</span>
@@ -320,6 +330,22 @@ async function subscribe(eventId, btn) {
     }
 }
 
+async function toggleCommunityRegistration(eventId, isRegistered) {
+    const title = isRegistered ? 'Отписаться от события' : 'Записаться на событие сообщества';
+    const message = isRegistered
+        ? 'Ты действительно хочешь отписаться от этого события?'
+        : 'Это неофициальное событие, созданное пользователем Пирожкового Диспетчера, а не Sirius. Проверь описание, время и место у организатора перед записью.';
+    if (!await dlgConfirm(title, message)) return;
+    try {
+        const response = await fetch('/api/community-events/' + eventId + '/register', {method: isRegistered ? 'DELETE' : 'POST'});
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error || 'Не удалось изменить запись');
+        location.reload();
+    } catch (error) {
+        dlgAlert('Ошибка', error.message);
+    }
+}
+
 async function toggleWatch(btn) {
     const eventId = btn.dataset.eventId;
     const eventName = btn.dataset.eventName;
@@ -476,6 +502,27 @@ async function showEventDetail(eventId) {
     body.innerHTML = '<div class="loading">Загрузка...</div>';
     title.textContent = '...';
     try {
+        if (eventId.startsWith('community_')) {
+            const response = await fetch('/api/community-events/' + eventId.slice('community_'.length));
+            const data = await response.json();
+            if (!data.ok) throw new Error(data.error || 'Не удалось загрузить событие');
+            const ev = data.event;
+            title.textContent = escapeHtml(ev.event_name);
+            body.innerHTML = `
+                <div class="alert community-event-warning"><span class="material-symbols-outlined">public</span><span>Неофициальное событие пользователей Пирожкового Диспетчера.</span></div>
+                <table class="info-table">
+                    <tr><td>Дата</td><td>${escapeHtml(ev.date_iso || '—')}</td></tr>
+                    <tr><td>Начало</td><td>${escapeHtml(ev.start_time || '—')}</td></tr>
+                    <tr><td>Конец</td><td>${escapeHtml(ev.end_time || '—')}</td></tr>
+                    <tr><td>Место</td><td>${escapeHtml((ev.location || []).join(', ') || '—')}</td></tr>
+                    <tr><td>Участников</td><td>${ev.people_current}/${ev.people_max}</td></tr>
+                    <tr><td>Организатор</td><td>${escapeHtml(ev.community_owner || '—')}</td></tr>
+                    ${ev.community_coorganizers?.length ? `<tr><td>Соорганизаторы</td><td>${escapeHtml(ev.community_coorganizers.join(', '))}</td></tr>` : ''}
+                </table>
+                ${ev.description ? '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)"><strong>Описание:</strong><p style="margin-top:6px;color:var(--text-muted);font-size:14px;line-height:1.6">' + escapeHtml(ev.description) + '</p></div>' : ''}
+            `;
+            return;
+        }
         const resp = await fetch('/api/events');
         const data = await resp.json();
         if (!data.ok) { body.innerHTML = '<div class="alert alert-error">Ошибка загрузки</div>'; return; }

@@ -153,6 +153,26 @@ def _community_event_payload(event, user_id: str, is_admin: bool = False) -> dic
     }
 
 
+def _community_event_for_events_page(event, user_id: str, is_admin: bool = False):
+    payload = _community_event_payload(event, user_id, is_admin)
+    payload.update({
+        "day_iso": event["date_iso"],
+        "raw": {"eventEnd": payload["end_time"]},
+        "event_start": payload["start_time"],
+        "event_end": payload["end_time"],
+        "is_recorded": payload["community_is_registered"],
+        "is_reserved": False,
+        "is_available": payload["community_registration_open"],
+        "will_open_at": event["registration_open_at"],
+        "reasons": [],
+        "_watched": False,
+        "_watch": None,
+        "_conflict": False,
+        "_conflict_with": [],
+    })
+    return type("_CommunityEvent", (), payload)()
+
+
 def _fmt_countdown(delta: dt.timedelta) -> str:
     total = max(0, int(delta.total_seconds()))
     if total < 60:
@@ -748,6 +768,7 @@ async def events_page(request: Request, tab: str = "register", status: str = "al
     elif _sirius_client is None:
         error = "Sirius клиент не запущен"
 
+    session_uid = _session_uid(user_id) or ""
     now = _now()
     watches = {w["event_id"]: w for w in storage.get_watchlist(user_id)}
 
@@ -757,6 +778,12 @@ async def events_page(request: Request, tab: str = "register", status: str = "al
         watch = watches.get(ev.event_id)
         if watch:
             _decorate_auto_registration(ev, watch, user_id, now)
+
+    community_events = [
+        _community_event_for_events_page(event, user_id, storage.is_admin(session_uid))
+        for event in storage.get_community_events_for_user(user_id)
+    ]
+    all_events = list(all_events) + community_events
 
     # Compute overlaps: which events overlap with user's registered/watched events
     _user_event_names = {ev.event_id: ev.event_name for ev in all_events}
@@ -927,12 +954,6 @@ async def schedule_page(request: Request, date: str = ""):
             "arrival_location": "",
             "unions": [],
         })())
-
-    session_uid = _session_uid(user_id) or ""
-    for community_event in storage.get_community_events_for_date(user_id, date):
-        events.append(type("_CommunityEvent", (), _community_event_payload(
-            community_event, user_id, storage.is_admin(session_uid)
-        ))())
 
     events.sort(key=lambda e: parse_sirius_time(e.start_time) or dt.datetime.max.replace(tzinfo=dt.timezone.utc))
 
@@ -2591,11 +2612,6 @@ async def api_schedule(request: Request, date: str = ""):
                 "arrival_location": "",
                 "transport_info": None,
             })
-        session_uid = _session_uid(user_id) or ""
-        for community_event in storage.get_community_events_for_date(user_id, date):
-            result.append(_community_event_payload(
-                community_event, user_id, storage.is_admin(session_uid)
-            ))
         result.sort(key=lambda e: parse_sirius_time(e["start_time"]) or dt.datetime.max.replace(tzinfo=dt.timezone.utc))
         return JSONResponse({"ok": True, "events": result, "date": date})
     except Exception as e:
