@@ -245,13 +245,16 @@ function renderTable() {
             </select>`;
         html += `<tr>
             <td class="admin-users-table__person">
-                <button class="admin-user-link" type="button" onclick="showAdminUser('${safeUid}')" title="Открыть профиль пользователя">${escapeHtml(u.name || '(без имени)')}</button>
-                <button class="admin-user-uid" type="button" onclick="fillUid('${safeUid}')" title="Подставить UID в выдачу коинов">${escapeHtml(u.uid)}</button>
+                <strong class="admin-user-name">${escapeHtml(u.name || '(без имени)')}</strong>
+                <span class="admin-user-uid">${escapeHtml(u.uid)}</span>
             </td>
             <td class="admin-users-table__coins"><strong>${u.coins}</strong></td>
             <td>${trustHtml}</td>
             <td>
                 <div class="admin-users-table__actions">
+                    <button class="btn btn-sm btn-outline admin-users-table__action-btn" onclick="showAdminUser('${safeUid}')" title="Открыть профиль пользователя" aria-label="Открыть профиль пользователя">
+                        <span class="material-symbols-outlined">person</span>
+                    </button>
                     <button class="btn btn-sm btn-outline admin-users-table__action-btn" onclick="startGrant('${safeUid}')" title="Выдать Сириус Коины" aria-label="Выдать Сириус Коины">
                         <span class="material-symbols-outlined">paid</span>
                     </button>

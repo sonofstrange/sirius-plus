@@ -694,24 +694,11 @@ body.dark-theme .alert-warning {
     font-family: monospace;
     font-size: 12px;
     color: var(--text-muted);
-    background: transparent;
-    border: 0;
-    cursor: pointer;
     overflow-wrap: anywhere;
 }
 
-.admin-user-link {
-    border: 0;
-    padding: 0;
-    color: var(--link);
-    background: transparent;
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-}
-
-.admin-user-link:hover {
-    text-decoration: underline;
+.admin-user-name {
+    display: block;
 }
 
 .admin-users-table__select {
