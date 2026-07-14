@@ -2,7 +2,6 @@ package ru.sonofstrange.siriusplus;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
-import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -33,7 +32,6 @@ import com.google.firebase.FirebaseApp;
 import com.google.firebase.messaging.FirebaseMessaging;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -47,7 +45,6 @@ import javax.net.ssl.HttpsURLConnection;
 public class MainActivity extends android.app.Activity {
     private static final String APP_URL = "https://sirius.rusanoff.ru/";
     private static final String HEALTH_URL = APP_URL + "healthz";
-    private static final String LAST_PAGE_URL_FILE = "last_page_url.txt";
     private static final int NOTIFICATION_PERMISSION_REQUEST = 1001;
     private static final Pattern MATERIAL_ICON_IN_ARCHIVE = Pattern.compile(
         "(<span[^>]*class=3D\"[^\"]*material-symbols-outlined[^\"]*\"[^>]*>)"
@@ -60,11 +57,15 @@ public class MainActivity extends android.app.Activity {
     private WebView webView;
     private TextView offlineBadge;
     private LinearLayout offlineNotice;
+    private LinearLayout offlineLoading;
     private SwipeRefreshLayout swipeRefresh;
     private final ExecutorService probeExecutor = Executors.newSingleThreadExecutor();
     private boolean loadingOfflineSnapshot;
     private boolean serverReachable;
     private boolean offlineMode;
+    private String currentAppUrl = APP_URL;
+    private String offlineSnapshotUrl;
+    private long probeSequence;
 
     @Override
     @SuppressLint("SetJavaScriptEnabled")
@@ -95,6 +96,33 @@ public class MainActivity extends android.app.Activity {
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
         ));
         root.addView(swipeRefresh, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+
+        offlineLoading = new LinearLayout(this);
+        offlineLoading.setOrientation(LinearLayout.VERTICAL);
+        offlineLoading.setGravity(Gravity.CENTER);
+        offlineLoading.setPadding(dp(32), dp(32), dp(32), dp(32));
+        offlineLoading.setBackgroundColor(Color.rgb(237, 238, 242));
+        TextView loadingTitle = new TextView(this);
+        loadingTitle.setText("Открываю сохранённую страницу");
+        loadingTitle.setTextColor(Color.rgb(26, 26, 46));
+        loadingTitle.setTextSize(20);
+        loadingTitle.setGravity(Gravity.CENTER);
+        offlineLoading.addView(loadingTitle, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        TextView loadingHint = new TextView(this);
+        loadingHint.setText("Данные уже на устройстве");
+        loadingHint.setTextColor(Color.rgb(98, 103, 127));
+        loadingHint.setTextSize(14);
+        loadingHint.setGravity(Gravity.CENTER);
+        loadingHint.setPadding(0, dp(8), 0, 0);
+        offlineLoading.addView(loadingHint, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+        offlineLoading.setVisibility(View.GONE);
+        root.addView(offlineLoading, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
         ));
 
@@ -154,7 +182,7 @@ public class MainActivity extends android.app.Activity {
     protected void onResume() {
         super.onResume();
         appForeground = true;
-        if (webView != null && offlineMode) probeServer(webView.getUrl());
+        if (webView != null && offlineMode) probeServer(currentAppUrl);
     }
 
     @Override
@@ -200,27 +228,38 @@ public class MainActivity extends android.app.Activity {
 
     private void loadApp(String requestedUrl) {
         String url = isAppUrl(requestedUrl) ? requestedUrl : APP_URL;
-        if (hasSnapshot(url)) loadOfflineSnapshot(url);
+        currentAppUrl = url;
+        if (hasSnapshot(url) && !isShowingOfflineSnapshot(url)) loadOfflineSnapshot(url);
         probeServer(url);
     }
 
     private void refreshCurrentPage() {
-        loadApp(webView.getUrl());
+        probeServer(currentAppUrl, true);
     }
 
     private void probeServer(String url) {
+        probeServer(url, false);
+    }
+
+    private void probeServer(String url, boolean forceLiveReload) {
+        long sequence = ++probeSequence;
         probeExecutor.execute(() -> {
             boolean reachable = canReachServer();
             runOnUiThread(() -> {
+                if (sequence != probeSequence) return;
                 serverReachable = reachable;
+                swipeRefresh.setRefreshing(false);
                 if (reachable) {
                     leaveOfflineMode();
-                    loadingOfflineSnapshot = false;
-                    webView.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
-                    webView.loadUrl(url);
+                    if (loadingOfflineSnapshot || forceLiveReload || !url.equals(webView.getUrl())) {
+                        loadingOfflineSnapshot = false;
+                        offlineSnapshotUrl = null;
+                        webView.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
+                        webView.loadUrl(url);
+                    }
                 } else {
                     enterOfflineMode();
-                    loadOfflineSnapshot(url);
+                    if (!isShowingOfflineSnapshot(url)) loadOfflineSnapshot(url);
                 }
             });
         });
@@ -261,21 +300,33 @@ public class MainActivity extends android.app.Activity {
         offlineMode = false;
         offlineBadge.setVisibility(View.GONE);
         offlineNotice.setVisibility(View.GONE);
+        hideOfflineLoading();
         setWebContentBottomInset(0);
     }
 
     private void loadOfflineSnapshot(String requestedUrl) {
-        String url = isAppUrl(requestedUrl) ? requestedUrl : readFile(LAST_PAGE_URL_FILE);
+        String url = isAppUrl(requestedUrl) ? requestedUrl : currentAppUrl;
         File archive = url == null ? null : snapshotArchive(url);
         loadingOfflineSnapshot = true;
+        offlineSnapshotUrl = url;
+        showOfflineLoading();
         webView.stopLoading();
         webView.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ONLY);
         if (archive == null || !archive.isFile() || archive.length() == 0) {
+            offlineSnapshotUrl = null;
             webView.loadUrl("file:///android_asset/offline.html");
             return;
         }
         replaceArchiveIconNames(archive);
         webView.loadUrl(Uri.fromFile(archive).toString());
+    }
+
+    private void showOfflineLoading() {
+        offlineLoading.setVisibility(View.VISIBLE);
+    }
+
+    private void hideOfflineLoading() {
+        offlineLoading.setVisibility(View.GONE);
     }
 
     private void saveSnapshot(String url) {
@@ -286,7 +337,6 @@ public class MainActivity extends android.app.Activity {
         webView.evaluateJavascript(archiveStyle, ignored -> webView.saveWebArchive(archive.getAbsolutePath(), false, savedPath -> {
             replaceArchiveIconNames(archive);
             webView.post(() -> webView.evaluateJavascript("(function(){var e=document.getElementById('sirius-archive-cleanup');if(e)e.remove();})()", null));
-            if (savedPath != null) writeFile(LAST_PAGE_URL_FILE, url);
         }));
     }
 
@@ -366,22 +416,8 @@ public class MainActivity extends android.app.Activity {
         return archive.isFile() && archive.length() > 0;
     }
 
-    private String readFile(String name) {
-        try {
-            File file = new File(getFilesDir(), name);
-            if (!file.exists()) return null;
-            return new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
-        } catch (Exception ignored) {
-            return null;
-        }
-    }
-
-    private void writeFile(String name, String content) {
-        try (FileOutputStream output = openFileOutput(name, Context.MODE_PRIVATE)) {
-            output.write(content.getBytes(StandardCharsets.UTF_8));
-        } catch (Exception ignored) {
-            // The live site remains usable if the local cache cannot be written.
-        }
+    private boolean isShowingOfflineSnapshot(String url) {
+        return loadingOfflineSnapshot && url.equals(offlineSnapshotUrl);
     }
 
     private File snapshotArchive(String url) {
@@ -481,7 +517,8 @@ public class MainActivity extends android.app.Activity {
                 startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
                 return true;
             }
-            if (!serverReachable) {
+            currentAppUrl = url;
+            if (offlineMode) {
                 enterOfflineMode();
                 loadOfflineSnapshot(url);
                 return true;
@@ -497,6 +534,7 @@ public class MainActivity extends android.app.Activity {
                 disableOfflineActions();
                 return;
             }
+            if (isAppUrl(url)) currentAppUrl = url;
             leaveOfflineMode();
             saveSnapshot(url);
             installNativeNotificationBridge();
@@ -508,6 +546,12 @@ public class MainActivity extends android.app.Activity {
         }
 
         @Override
+        public void onPageCommitVisible(WebView view, String url) {
+            super.onPageCommitVisible(view, url);
+            if (loadingOfflineSnapshot) hideOfflineLoading();
+        }
+
+        @Override
         public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
             if (request.isForMainFrame() && !loadingOfflineSnapshot) {
                 showOfflineFallback(request.getUrl().toString());
@@ -516,7 +560,7 @@ public class MainActivity extends android.app.Activity {
 
         @Override
         public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
-            if (request.isForMainFrame() && response.getStatusCode() >= 400 && !loadingOfflineSnapshot) {
+            if (request.isForMainFrame() && response.getStatusCode() >= 500 && !loadingOfflineSnapshot) {
                 showOfflineFallback(request.getUrl().toString());
             }
         }
@@ -532,7 +576,8 @@ public class MainActivity extends android.app.Activity {
 
     private void showOfflineFallback(String url) {
         serverReachable = false;
+        if (isAppUrl(url)) currentAppUrl = url;
         enterOfflineMode();
-        loadOfflineSnapshot(url);
+        if (!isShowingOfflineSnapshot(currentAppUrl)) loadOfflineSnapshot(currentAppUrl);
     }
 }
