@@ -35,6 +35,7 @@ import java.io.File;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
@@ -49,6 +50,9 @@ public class MainActivity extends android.app.Activity {
     private static final Pattern MATERIAL_ICON_IN_ARCHIVE = Pattern.compile(
         "(<span[^>]*class=3D\"[^\"]*material-symbols-outlined[^\"]*\"[^>]*>)"
             + "((?:[a-z_]|=\\r?\\n)+)(</span>)"
+    );
+    private static final Pattern SNAPSHOT_LOCATION = Pattern.compile(
+        "(?m)^Snapshot-Content-Location: (https?://[^\\r\\n]+)"
     );
     static final String PUSH_PREFS = "sirius_push";
     static final String FCM_TOKEN_KEY = "fcm_token";
@@ -306,9 +310,9 @@ public class MainActivity extends android.app.Activity {
 
     private void loadOfflineSnapshot(String requestedUrl) {
         String url = isAppUrl(requestedUrl) ? requestedUrl : currentAppUrl;
-        File archive = url == null ? null : snapshotArchive(url);
+        File archive = url == null ? null : findSnapshotArchive(url);
         loadingOfflineSnapshot = true;
-        offlineSnapshotUrl = url;
+        offlineSnapshotUrl = snapshotKey(url);
         showOfflineLoading();
         webView.stopLoading();
         webView.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ONLY);
@@ -343,6 +347,12 @@ public class MainActivity extends android.app.Activity {
     private void replaceArchiveIconNames(File archive) {
         try {
             String content = new String(java.nio.file.Files.readAllBytes(archive.toPath()), StandardCharsets.UTF_8);
+            content = content
+                .replace("&#128100;", "&#9678;")
+                .replace("&#128172;", "&#9993;&#xFE0E;")
+                .replace("&#128652;", "&#9646;")
+                .replace("&#128276;", "!")
+                .replace("&#128241;", "&#9742;&#xFE0E;");
             Matcher matcher = MATERIAL_ICON_IN_ARCHIVE.matcher(content);
             StringBuffer rewritten = new StringBuffer();
             boolean changed = false;
@@ -359,8 +369,15 @@ public class MainActivity extends android.app.Activity {
                 ));
             }
             matcher.appendTail(rewritten);
-            if (changed) {
-                java.nio.file.Files.write(archive.toPath(), rewritten.toString().getBytes(StandardCharsets.UTF_8));
+            String normalized = rewritten.toString();
+            if (!normalized.contains("data-sirius-offline-icons=3D\"1\"")) {
+                normalized = normalized.replace(
+                    "class=3D\"material-symbols-outlined\"",
+                    "class=3D\"material-symbols-outlined\" data-sirius-offline-icons=3D\"1\" style=3D\"font-family:system-ui,sans-serif;font-feature-settings:normal\""
+                );
+            }
+            if (changed || !normalized.equals(content)) {
+                java.nio.file.Files.write(archive.toPath(), normalized.getBytes(StandardCharsets.UTF_8));
             }
         } catch (Exception ignored) {
             // A damaged offline archive is handled by the normal offline fallback.
@@ -369,26 +386,26 @@ public class MainActivity extends android.app.Activity {
 
     private String offlineIcon(String name) {
         return switch (name) {
-            case "account_circle", "person" -> "&#128100;";
+            case "account_circle", "person" -> "&#9678;";
             case "add" -> "+";
-            case "add_chart" -> "&#9637;";
-            case "admin_panel_settings" -> "&#9881;";
-            case "alarm" -> "&#9200;";
+            case "add_chart" -> "&#9636;";
+            case "admin_panel_settings" -> "&#9881;&#xFE0E;";
+            case "alarm" -> "&#9201;&#xFE0E;";
             case "block", "visibility_off" -> "&#8856;";
-            case "calendar_month" -> "&#9635;";
-            case "chat_bubble_outline" -> "&#128172;";
+            case "calendar_month" -> "&#9638;";
+            case "chat_bubble_outline" -> "&#9993;&#xFE0E;";
             case "close" -> "&times;";
             case "dark_mode" -> "&#9680;";
             case "delete" -> "&#9003;";
-            case "directions_bus_filled" -> "&#128652;";
+            case "directions_bus_filled" -> "&#9646;";
             case "error" -> "!";
             case "help_outline" -> "?";
             case "location_on" -> "&#8982;";
             case "menu" -> "&#9776;";
             case "new_releases" -> "&#10022;";
-            case "notifications", "notifications_active" -> "&#128276;";
+            case "notifications", "notifications_active" -> "!";
             case "paid" -> "&#8381;";
-            case "phone_android" -> "&#128241;";
+            case "phone_android" -> "&#9742;&#xFE0E;";
             case "query_stats" -> "&#9636;";
             case "radar" -> "&#9673;";
             case "schedule" -> "&#9687;";
@@ -414,15 +431,49 @@ public class MainActivity extends android.app.Activity {
     }
 
     private boolean hasSnapshot(String url) {
-        File archive = snapshotArchive(url);
-        return archive.isFile() && archive.length() > 0;
+        File archive = findSnapshotArchive(url);
+        return archive != null && archive.isFile() && archive.length() > 0;
     }
 
     private boolean isShowingOfflineSnapshot(String url) {
-        return loadingOfflineSnapshot && url.equals(offlineSnapshotUrl);
+        return loadingOfflineSnapshot && snapshotKey(url).equals(offlineSnapshotUrl);
     }
 
     private File snapshotArchive(String url) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                .digest(snapshotKey(url).getBytes(StandardCharsets.UTF_8));
+            StringBuilder fileName = new StringBuilder("page_");
+            for (byte value : digest) fileName.append(String.format("%02x", value));
+            return new File(getFilesDir(), fileName.append(".mht").toString());
+        } catch (Exception ignored) {
+            return new File(getFilesDir(), "page_fallback.mht");
+        }
+    }
+
+    private File findSnapshotArchive(String url) {
+        File current = snapshotArchive(url);
+        if (current.isFile() && current.length() > 0) return current;
+
+        File legacy = legacySnapshotArchive(url);
+        if (legacy.isFile() && legacy.length() > 0) return legacy;
+
+        File[] archives = getFilesDir().listFiles((dir, name) -> name.startsWith("page_") && name.endsWith(".mht"));
+        if (archives == null) return null;
+        String key = snapshotKey(url);
+        for (File archive : archives) {
+            try {
+                String header = new String(java.nio.file.Files.readAllBytes(archive.toPath()), StandardCharsets.UTF_8);
+                Matcher location = SNAPSHOT_LOCATION.matcher(header);
+                if (location.find() && key.equals(snapshotKey(location.group(1)))) return archive;
+            } catch (Exception ignored) {
+                // Ignore a damaged cached page and keep looking for another copy.
+            }
+        }
+        return null;
+    }
+
+    private File legacySnapshotArchive(String url) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
                 .digest(url.getBytes(StandardCharsets.UTF_8));
@@ -432,6 +483,15 @@ public class MainActivity extends android.app.Activity {
         } catch (Exception ignored) {
             return new File(getFilesDir(), "page_fallback.mht");
         }
+    }
+
+    private String snapshotKey(String url) {
+        if (url == null) return APP_URL;
+        Uri parsed = Uri.parse(url);
+        String path = parsed.getPath();
+        if (path == null || path.isEmpty()) path = "/";
+        if (path.length() > 1 && path.endsWith("/")) path = path.substring(0, path.length() - 1);
+        return APP_URL + path.substring(1).toLowerCase(Locale.ROOT);
     }
 
     private void installNativeNotificationBridge() {
