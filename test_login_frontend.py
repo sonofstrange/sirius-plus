@@ -30,7 +30,7 @@ class LoginFrontendTests(unittest.TestCase):
             """, content_type="text/html"))
             page.route("https://test.local/api/login", lambda route: (
                 requests.append(route.request),
-                route.fulfill(body=json.dumps({"ok": True, "redirect": "/events?tab=register"}), content_type="application/json"),
+                route.fulfill(body=json.dumps({"ok": True, "redirect": "/schedule"}), content_type="application/json"),
             ))
             page.goto("https://test.local/")
             page.add_script_tag(content=script)
@@ -45,7 +45,7 @@ class LoginFrontendTests(unittest.TestCase):
         self.assertEqual(requests[0].method, "POST")
         self.assertIn('name="email"', requests[0].post_data)
         self.assertIn("user@example.com", requests[0].post_data)
-        self.assertEqual(result["redirect"], "/events?tab=register")
+        self.assertEqual(result["redirect"], "/schedule")
 
 
 if __name__ == "__main__":

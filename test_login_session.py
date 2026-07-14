@@ -80,7 +80,7 @@ class LoginSessionTests(unittest.IsolatedAsyncioTestCase):
 
         response = await main.api_login(_AjaxLoginRequest())
 
-        self.assertEqual(json.loads(response.body), {"ok": True, "redirect": "/events?tab=register"})
+        self.assertEqual(json.loads(response.body), {"ok": True, "redirect": "/schedule"})
         cookie = SimpleCookie()
         cookie.load(response.headers["set-cookie"])
         self.assertEqual(storage.get_user_by_session(cookie["session_id"].value), uid)
@@ -93,7 +93,7 @@ class LoginSessionTests(unittest.IsolatedAsyncioTestCase):
 
         response = await main.api_login(_AjaxFormLoginRequest())
 
-        self.assertEqual(json.loads(response.body), {"ok": True, "redirect": "/events?tab=register"})
+        self.assertEqual(json.loads(response.body), {"ok": True, "redirect": "/schedule"})
         cookie = SimpleCookie()
         cookie.load(response.headers["set-cookie"])
         self.assertEqual(storage.get_user_by_session(cookie["session_id"].value), uid)

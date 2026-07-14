@@ -175,7 +175,7 @@ async function saveToken() {
         });
         const data = await resp.json();
         if (data.ok) {
-            window.location.href = '/events?tab=register';
+            window.location.href = '/schedule';
         } else {
             alert('Ошибка: ' + (data.error || 'неизвестная ошибка'));
         }

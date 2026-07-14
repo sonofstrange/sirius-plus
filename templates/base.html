@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Пирожковый Диспетчер{% endblock %}</title>
     <link rel="icon" href="/static/sirius.png">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260714-3">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260714-4">
 </head>
 <body>
     <div class="app">
@@ -28,6 +28,18 @@
                     <span class="material-symbols-outlined">menu</span>
                 </button>
                 <div class="header__right">
+                    <a class="header__utility-tab header__coins" href="/coins-info" title="Сириус Коины">
+                        <span class="material-symbols-outlined">toll</span>
+                        <span>{{ coins_balance }}</span>
+                    </a>
+                    <button class="header__auth-btn header__theme" onclick="toggleDark()" title="Сменить тему" aria-label="Сменить тему">
+                        <span class="material-symbols-outlined">dark_mode</span>
+                    </button>
+                    {% if is_admin %}
+                    <a class="header__auth-btn header__admin" href="/admin" title="Админ-панель" aria-label="Админ-панель">
+                        <span class="material-symbols-outlined">admin_panel_settings</span>
+                    </a>
+                    {% endif %}
                     <button class="header__auth-btn header__notifications-btn" onclick="showNotificationsHistory()" title="Уведомления" aria-label="Уведомления">
                         <span class="material-symbols-outlined">notifications</span>
                     </button>
@@ -42,9 +54,10 @@
                 <a href="/schedule" class="header__mobile-nav-link">Расписание</a>
                 <a href="/events?tab=register" class="header__mobile-nav-link">События</a>
                 <a href="/coins-info" class="header__mobile-nav-link">Сириус Коины · {{ coins_balance }}</a>
-                <a href="/custom-events" class="header__mobile-nav-link">Создать своё событие</a>
+                <a href="/custom-events" class="header__mobile-nav-link">Добавить событие</a>
                 <a href="#" class="header__mobile-nav-link" onclick="showNotificationsHistory();toggleMobileMenu();return false">Уведомления</a>
                 <a href="#" class="header__mobile-nav-link" onclick="toggleDark();toggleMobileMenu();return false">Сменить тему</a>
+                {% if is_admin %}<a href="/admin" class="header__mobile-nav-link">Админ-панель</a>{% endif %}
                 <a href="#" class="header__mobile-nav-link" onclick="showChangelog(true);toggleMobileMenu();return false">Что нового</a>
                 <a href="/howto" class="header__mobile-nav-link">Как получить токен</a>
                 <a href="/help" class="header__mobile-nav-link">Справка</a>

@@ -33,15 +33,7 @@
                 <span class="material-symbols-outlined">sync</span> Обновить
             </button>
             <span id="sync-result" style="font-size:13px;color:var(--text-muted)"></span>
-            {% if dates %}
-            <select class="form-select" onchange="window.location.href='/events?tab=register&status={{ cur_status }}&sort={{ cur_sort }}&date='+this.value{% if search_q %}+'&q={{ search_q }}'{% endif %}">
-                <option value="">Все даты</option>
-                {% for d in dates %}
-                <option value="{{ d }}" {% if cur_date == d %}selected{% endif %}>{{ d }}</option>
-                {% endfor %}
-            </select>
-            {% endif %}
-            <select class="form-select" onchange="window.location.href='/events?tab=register&status={{ cur_status }}&date={{ cur_date }}&sort='+this.value{% if search_q %}+'&q={{ search_q }}'{% endif %}">
+            <select class="form-select" onchange="window.location.href='/events?tab=register&status={{ cur_status }}&sort='+this.value{% if search_q %}+'&q={{ search_q }}'{% endif %}">
                 <option value="date" {% if cur_sort == 'date' %}selected{% endif %}>По дате события</option>
                 <option value="register" {% if cur_sort == 'register' %}selected{% endif %}>По дате регистрации</option>
                 <option value="alpha" {% if cur_sort == 'alpha' %}selected{% endif %}>По алфавиту</option>
@@ -126,7 +118,7 @@
                 {% if cur_tab == 'my' and cur_sub == 'watch' and ev._watch %}
                 <div class="event-card__autoreg-details">
                     <span>{{ ev._watch.priority }}</span>
-                    <span>{{ ev._watch.status }}</span>
+                    <span class="snipe-watch-state"{% if ev._watch.target %} data-target="{{ ev._watch.target }}"{% endif %}>{{ ev._watch.status }}</span>
                     {% if ev._watch.cost %}<span>{{ ev._watch.cost }} 🪙</span>{% else %}<span>Бесплатно</span>{% endif %}
                 </div>
                 {% endif %}
@@ -143,6 +135,15 @@
                 <button class="btn btn-danger-text btn-sm" onclick="showUnsubscribeModal('{{ ev.event_id }}', this)">Отписаться</button>
                 <span class="btn btn-warning btn-sm event-card__state">В резерве</span>
                 {% elif ev._watched %}
+                {% if cur_tab == 'my' and cur_sub == 'watch' %}
+                <select class="form-select snipe-priority-select" data-prev="{{ ev._watch.priority_code }}" onchange="changeWatchPriority('{{ ev.event_id }}', this.value, this)" aria-label="Приоритет автозаписи">
+                    <option value="low" {% if ev._watch.priority_code == 'low' %}selected{% endif %}>Низкий · бесплатно</option>
+                    <option value="medium" {% if ev._watch.priority_code == 'medium' %}selected{% endif %}>Средний · 1 🪙</option>
+                    <option value="high" {% if ev._watch.priority_code == 'high' %}selected{% endif %}>Высокий · 2 🪙</option>
+                </select>
+                <button class="btn btn-outline btn-sm" onclick='showSnipeLog("{{ ev.event_id }}", {{ ev.event_name|tojson }})'>Журнал</button>
+                <button class="btn btn-danger-text btn-sm" onclick="removeAutoRegistration('{{ ev.event_id }}')">Отключить</button>
+                {% else %}
                 <button class="btn btn-primary btn-sm watch-btn"
                     data-event-id="{{ ev.event_id }}"
                     data-event-name="{{ ev.event_name|e }}"
@@ -150,6 +151,7 @@
                     onclick="toggleWatch(this)">
                     <span class="material-symbols-outlined">bolt</span> Автозапись
                 </button>
+                {% endif %}
                 {% elif 'recordClosed' in ev.reasons %}
                 <span class="badge" style="background:var(--danger);color:white">🔒 Запись закрыта</span>
                 {% elif ev.is_available and ev.people_max > 0 and ev.people_current >= ev.people_max %}
@@ -195,16 +197,28 @@
     {% if total_pages > 1 %}
     <div class="pagination">
         {% if page > 1 %}
-        <a href="/events?tab={{ cur_tab }}&status={{ cur_status }}&sort={{ cur_sort }}&page={{ page-1 }}{% if cur_date %}&date={{ cur_date }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}{% if cur_tab == 'my' %}&sub={{ cur_sub }}{% endif %}"
+        <a href="/events?tab={{ cur_tab }}&status={{ cur_status }}&sort={{ cur_sort }}&page={{ page-1 }}{% if search_q %}&q={{ search_q }}{% endif %}{% if cur_tab == 'my' %}&sub={{ cur_sub }}{% endif %}"
            class="btn btn-outline btn-sm">← Назад</a>
         {% endif %}
         <span class="pagination__info">{{ page }} / {{ total_pages }} ({{ total }})</span>
         {% if page < total_pages %}
-        <a href="/events?tab={{ cur_tab }}&status={{ cur_status }}&sort={{ cur_sort }}&page={{ page+1 }}{% if cur_date %}&date={{ cur_date }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}{% if cur_tab == 'my' %}&sub={{ cur_sub }}{% endif %}"
+        <a href="/events?tab={{ cur_tab }}&status={{ cur_status }}&sort={{ cur_sort }}&page={{ page+1 }}{% if search_q %}&q={{ search_q }}{% endif %}{% if cur_tab == 'my' %}&sub={{ cur_sub }}{% endif %}"
            class="btn btn-outline btn-sm">Вперёд →</a>
         {% endif %}
     </div>
     {% endif %}
+</div>
+
+<div class="modal-overlay" id="snipe-log-modal" onclick="closeModal('snipe-log-modal')">
+    <div class="modal modal-lg" onclick="event.stopPropagation()">
+        <div class="modal__header">
+            <h2 id="snipe-log-title">Журнал автозаписи</h2>
+            <button class="modal__close" onclick="closeModal('snipe-log-modal')">
+                <span class="material-symbols-outlined">close</span>
+            </button>
+        </div>
+        <div class="modal__body" id="snipe-log-body"></div>
+    </div>
 </div>
 
 <!-- Unsubscribe confirmation modal -->
@@ -336,6 +350,110 @@ async function toggleWatch(btn) {
         }
     } catch (e) { alert('Ошибка: ' + e); }
 }
+
+function snipePhaseLabel(phase) {
+    return ({
+        prewarm: 'Прогрев',
+        prewarm_error: 'Ошибка прогрева',
+        start: 'Старт',
+        try: 'Попытка',
+        error: 'Ошибка',
+        success: 'Успех',
+        timeout: 'Таймаут',
+    })[phase] || phase;
+}
+
+async function changeWatchPriority(eventId, priority, selectEl) {
+    const oldValue = selectEl.dataset.prev || priority;
+    selectEl.disabled = true;
+    try {
+        const resp = await fetch('/api/watch/priority', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({event_id: eventId, snipe_priority: priority}),
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+            selectEl.value = oldValue;
+            dlgAlert(resp.status === 402 ? 'Не хватает Сириус Коинов' : 'Ошибка', data.error || 'Не удалось поменять приоритет');
+            return;
+        }
+        location.reload();
+    } catch (e) {
+        selectEl.value = oldValue;
+        dlgAlert('Ошибка', 'Ошибка соединения: ' + e);
+    } finally {
+        selectEl.disabled = false;
+    }
+}
+
+async function showSnipeLog(eventId, eventName) {
+    const modal = document.getElementById('snipe-log-modal');
+    const title = document.getElementById('snipe-log-title');
+    const body = document.getElementById('snipe-log-body');
+    title.textContent = 'Журнал: ' + eventName;
+    body.innerHTML = '<p class="muted">Загружаю...</p>';
+    modal.style.display = 'flex';
+    try {
+        const resp = await fetch('/api/snipe-log/' + encodeURIComponent(eventId));
+        const data = await resp.json();
+        if (!data.ok) {
+            body.innerHTML = '<p class="muted">' + escapeHtml(data.error || 'Не удалось загрузить журнал') + '</p>';
+            return;
+        }
+        if (!data.attempts.length) {
+            body.innerHTML = '<p class="muted">Попыток пока не было.</p>';
+            return;
+        }
+        body.innerHTML = `<div class="snipe-log-list">${data.attempts.map(a => `
+            <div class="snipe-log-row ${a.success ? 'snipe-log-row--ok' : ''}">
+                <div class="snipe-log-row__top"><strong>${escapeHtml(snipePhaseLabel(a.phase))}</strong><span>${escapeHtml(a.created_at || '')}</span></div>
+                <div class="snipe-log-row__meta">${a.status_code ? `HTTP ${a.status_code}` : 'без HTTP'}${a.latency_ms ? ` · ${a.latency_ms} мс` : ''}${a.reserved ? ' · резерв' : ''}</div>
+                ${a.message ? `<div class="snipe-log-row__message">${escapeHtml(a.message)}</div>` : ''}
+            </div>`).join('')}</div>`;
+    } catch (e) {
+        body.innerHTML = '<p class="muted">Ошибка соединения: ' + escapeHtml(String(e)) + '</p>';
+    }
+}
+
+async function removeAutoRegistration(eventId) {
+    const ok = await dlgConfirm('Отключить автозапись', 'Автозапись будет отменена, а зарезервированные коины вернутся.');
+    if (!ok) return;
+    try {
+        const resp = await fetch('/api/unwatch', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({event_id: eventId}),
+        });
+        const data = await resp.json();
+        if (data.ok) location.reload();
+        else dlgAlert('Ошибка', data.error || 'Не удалось отключить автозапись');
+    } catch (e) {
+        dlgAlert('Ошибка', 'Ошибка соединения: ' + e);
+    }
+}
+
+function updateAutoRegistrationCountdowns() {
+    document.querySelectorAll('.snipe-watch-state[data-target]').forEach(el => {
+        if (el.textContent.includes('Ловит открытие')) return;
+        const target = new Date(el.dataset.target).getTime();
+        const remaining = target - Date.now();
+        if (remaining <= 0) return;
+        const seconds = Math.floor(remaining / 1000);
+        const minutes = Math.floor(seconds / 60);
+        const hours = Math.floor(minutes / 60);
+        if (seconds <= 30) {
+            el.textContent = 'Подготовка к открытию';
+        } else if (hours) {
+            el.textContent = `Запись откроется через ${hours}ч ${minutes % 60}м`;
+        } else {
+            el.textContent = `Запись откроется через ${minutes}м ${seconds % 60}с`;
+        }
+    });
+}
+
+updateAutoRegistrationCountdowns();
+setInterval(updateAutoRegistrationCountdowns, 1000);
 
 function showUnsubscribeModal(eventId, btn) {
     document.getElementById('unsubscribe-confirm-btn').dataset.eventId = eventId;

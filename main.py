@@ -603,17 +603,18 @@ def _decorate_auto_registration(event, watch, user_id: str, now: dt.datetime) ->
     if target:
         remaining = (target - now).total_seconds()
         opening = target.astimezone(_MSK).strftime("%d.%m %H:%M")
-        if remaining > poller.WARMUP_WINDOW:
+        if is_active:
+            label = "Ловит открытие сейчас"
+        elif remaining > poller.WARMUP_WINDOW:
             label = f"Запланирована до открытия {opening}"
         elif remaining > 0:
             label = f"Подготовка к открытию {opening}"
-        elif is_active:
-            label = "Ловит открытие сейчас"
         else:
             label = f"Ожидает запись, открытие было {opening}"
 
     event._watched = True
     event._watch = {
+        "priority_code": priority,
         "priority": priority_names.get(priority, "Высокий приоритет"),
         "cost": int(watch["coin_cost"] or 0),
         "status": label,
@@ -638,7 +639,7 @@ async def index(request: Request):
     if not user_id:
         error = request.query_params.get("error", "")
         return _render("login.html", request, error=error)
-    return RedirectResponse(url="/events?tab=register")
+    return RedirectResponse(url="/schedule")
 
 
 @app.get("/events", response_class=HTMLResponse)
@@ -1064,7 +1065,7 @@ async def api_login(request: Request):
         if referrer_uid:
             storage.add_notification(referrer_uid, "🎁 Друг зарегистрировался по твоей ссылке: начислено 5 Сириус Коинов.", "success")
 
-    redirect_url = "/events?tab=register"
+    redirect_url = "/schedule"
     response = JSONResponse({"ok": True, "redirect": redirect_url}) if wants_json else RedirectResponse(
         url=redirect_url, status_code=303
     )
@@ -1114,7 +1115,7 @@ async def api_login_code(request: Request):
     if wants_json:
         response = JSONResponse({"ok": True})
     else:
-        response = RedirectResponse(url="/events?tab=register", status_code=303)
+        response = RedirectResponse(url="/schedule", status_code=303)
     response.set_cookie(key="session_id", value=session_id, max_age=86400 * 365, httponly=True, samesite="lax")
     return response
 
