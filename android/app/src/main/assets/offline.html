@@ -9,12 +9,14 @@
         main { max-width: 420px; margin: 18vh auto 0; text-align: center; }
         h1 { font-size: 24px; margin: 16px 0 8px; }
         p { color: #62677f; line-height: 1.5; }
+        button { margin-top: 12px; padding: 11px 16px; border: 0; border-radius: 8px; background: #6c5ce7; color: #fff; font: inherit; }
     </style>
 </head>
 <body>
     <main>
         <h1>Оффлайн режим</h1>
         <p>Эта страница ещё не была сохранена на устройстве. Подключись к сайту, открой её один раз, и потом она будет доступна без сети.</p>
+        <button type="button" onclick="window.SiriusAndroid && window.SiriusAndroid.openLastSavedPage()">К сохранённой странице</button>
     </main>
 </body>
 </html>

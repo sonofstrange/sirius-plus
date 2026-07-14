@@ -19,6 +19,7 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.window.OnBackInvokedDispatcher;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -46,6 +47,13 @@ import javax.net.ssl.HttpsURLConnection;
 public class MainActivity extends android.app.Activity {
     private static final String APP_URL = "https://sirius.rusanoff.ru/";
     private static final String HEALTH_URL = APP_URL + "healthz";
+    private static final String OFFLINE_PREFS = "sirius_offline";
+    private static final String LAST_PRECACHE_AT = "last_precache_at";
+    private static final long PRECACHE_INTERVAL_MS = 12L * 60 * 60 * 1000;
+    private static final String[] PRECACHE_ROUTES = {
+        "/", "/events?tab=register", "/schedule", "/custom-events", "/watchlist",
+        "/coins-info", "/coins-info?tab=dronebet", "/howto", "/help"
+    };
     private static final int NOTIFICATION_PERMISSION_REQUEST = 1001;
     private static final Pattern MATERIAL_ICON_IN_ARCHIVE = Pattern.compile(
         "(<span[^>]*class=3D\"[^\"]*material-symbols-outlined[^\"]*\"[^>]*>)"
@@ -59,6 +67,7 @@ public class MainActivity extends android.app.Activity {
     private static volatile boolean appForeground;
 
     private WebView webView;
+    private WebView prefetchWebView;
     private TextView offlineBadge;
     private LinearLayout offlineNotice;
     private LinearLayout offlineLoading;
@@ -70,6 +79,9 @@ public class MainActivity extends android.app.Activity {
     private String currentAppUrl = APP_URL;
     private String offlineSnapshotUrl;
     private long probeSequence;
+    private boolean precaching;
+    private int precacheIndex;
+    private String prefetchPendingUrl;
 
     @Override
     @SuppressLint("SetJavaScriptEnabled")
@@ -102,6 +114,16 @@ public class MainActivity extends android.app.Activity {
         root.addView(swipeRefresh, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
         ));
+
+        prefetchWebView = new WebView(this);
+        WebSettings prefetchSettings = prefetchWebView.getSettings();
+        prefetchSettings.setJavaScriptEnabled(true);
+        prefetchSettings.setDomStorageEnabled(true);
+        prefetchSettings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        prefetchSettings.setAllowFileAccess(true);
+        prefetchWebView.setAlpha(0f);
+        prefetchWebView.setWebViewClient(new PrefetchWebViewClient());
+        root.addView(prefetchWebView, new FrameLayout.LayoutParams(dp(1), dp(1), Gravity.BOTTOM | Gravity.END));
 
         offlineLoading = new LinearLayout(this);
         offlineLoading.setOrientation(LinearLayout.VERTICAL);
@@ -179,6 +201,11 @@ public class MainActivity extends android.app.Activity {
         createNotificationChannel();
         requestNotificationPermission();
         initializeFirebaseMessaging();
+        if (Build.VERSION.SDK_INT >= 33) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::handleBackNavigation
+            );
+        }
         loadApp(appUrlFromIntent());
     }
 
@@ -214,6 +241,16 @@ public class MainActivity extends android.app.Activity {
 
     @Override
     public void onBackPressed() {
+        handleBackNavigation();
+    }
+
+    private void handleBackNavigation() {
+        if (loadingOfflineSnapshot && offlineSnapshotUrl == null) {
+            // Never let an unavailable offline page close the app. If a cache exists,
+            // this opens it; otherwise the explanatory page stays on screen.
+            openLatestOfflineSnapshot();
+            return;
+        }
         if (webView.canGoBack() && !loadingOfflineSnapshot) {
             webView.goBack();
         } else {
@@ -342,6 +379,55 @@ public class MainActivity extends android.app.Activity {
             replaceArchiveIconNames(archive);
             webView.post(() -> webView.evaluateJavascript("(function(){var e=document.getElementById('sirius-archive-cleanup');if(e)e.remove();})()", null));
         }));
+    }
+
+    private void startPrecacheIfNeeded() {
+        if (precaching || loadingOfflineSnapshot || offlineMode) return;
+        long lastPrecache = getSharedPreferences(OFFLINE_PREFS, MODE_PRIVATE).getLong(LAST_PRECACHE_AT, 0);
+        if (System.currentTimeMillis() - lastPrecache < PRECACHE_INTERVAL_MS) return;
+        webView.evaluateJavascript(
+            "fetch('/api/token-status',{credentials:'same-origin'}).then(r=>r.ok).catch(()=>false)",
+            result -> {
+                if (!"true".equals(result) || precaching || offlineMode) return;
+                precaching = true;
+                precacheIndex = 0;
+                loadNextPrecachePage();
+            }
+        );
+    }
+
+    private void loadNextPrecachePage() {
+        if (!precaching) return;
+        if (precacheIndex >= PRECACHE_ROUTES.length) {
+            precaching = false;
+            getSharedPreferences(OFFLINE_PREFS, MODE_PRIVATE).edit()
+                .putLong(LAST_PRECACHE_AT, System.currentTimeMillis()).apply();
+            return;
+        }
+        prefetchPendingUrl = APP_URL + PRECACHE_ROUTES[precacheIndex++].replaceFirst("^/", "");
+        prefetchWebView.loadUrl(prefetchPendingUrl);
+    }
+
+    private void savePrefetchedSnapshot(String url) {
+        if (!url.equals(prefetchPendingUrl)) return;
+        prefetchPendingUrl = null;
+        if (!isAppUrl(url)) {
+            loadNextPrecachePage();
+            return;
+        }
+        File archive = snapshotArchive(url);
+        if (archive.exists() && !archive.delete()) {
+            loadNextPrecachePage();
+            return;
+        }
+        String cleanup = "(function(){const old=document.getElementById('sirius-archive-cleanup');if(old)old.remove();const style=document.createElement('style');style.id='sirius-archive-cleanup';style.textContent='.modal-overlay,.toast-container{display:none!important}';document.head.appendChild(style);})()";
+        prefetchWebView.evaluateJavascript(cleanup, ignored -> prefetchWebView.saveWebArchive(
+            archive.getAbsolutePath(), false, savedPath -> {
+                replaceArchiveIconNames(archive);
+                prefetchWebView.evaluateJavascript("(function(){var e=document.getElementById('sirius-archive-cleanup');if(e)e.remove();})()", null);
+                prefetchWebView.postDelayed(this::loadNextPrecachePage, 700);
+            }
+        ));
     }
 
     private void replaceArchiveIconNames(File archive) {
@@ -473,6 +559,35 @@ public class MainActivity extends android.app.Activity {
         return null;
     }
 
+    private boolean openLatestOfflineSnapshot() {
+        File[] archives = getFilesDir().listFiles((dir, name) -> name.startsWith("page_") && name.endsWith(".mht"));
+        if (archives == null || archives.length == 0) return false;
+        File latest = null;
+        for (File archive : archives) {
+            if (archive.length() > 0 && (latest == null || archive.lastModified() > latest.lastModified())) latest = archive;
+        }
+        if (latest == null) return false;
+        String url = snapshotSourceUrl(latest);
+        currentAppUrl = url == null ? APP_URL : url;
+        loadingOfflineSnapshot = true;
+        offlineSnapshotUrl = snapshotKey(currentAppUrl);
+        showOfflineLoading();
+        webView.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ONLY);
+        replaceArchiveIconNames(latest);
+        webView.loadUrl(Uri.fromFile(latest).toString());
+        return true;
+    }
+
+    private String snapshotSourceUrl(File archive) {
+        try {
+            String content = new String(java.nio.file.Files.readAllBytes(archive.toPath()), StandardCharsets.UTF_8);
+            Matcher location = SNAPSHOT_LOCATION.matcher(content);
+            return location.find() ? location.group(1) : null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
     private File legacySnapshotArchive(String url) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
@@ -491,7 +606,11 @@ public class MainActivity extends android.app.Activity {
         String path = parsed.getPath();
         if (path == null || path.isEmpty()) path = "/";
         if (path.length() > 1 && path.endsWith("/")) path = path.substring(0, path.length() - 1);
-        return APP_URL + path.substring(1).toLowerCase(Locale.ROOT);
+        String normalizedPath = path.substring(1).toLowerCase(Locale.ROOT);
+        if ("coins-info".equals(normalizedPath) && "dronebet".equals(parsed.getQueryParameter("tab"))) {
+            return APP_URL + "coins-info?tab=dronebet";
+        }
+        return APP_URL + normalizedPath;
     }
 
     private void installNativeNotificationBridge() {
@@ -569,6 +688,28 @@ public class MainActivity extends android.app.Activity {
         public void notify(String message) {
             if (isAppForeground()) runOnUiThread(() -> showNativeNotification(message));
         }
+
+        @JavascriptInterface
+        public void openLastSavedPage() {
+            runOnUiThread(() -> openLatestOfflineSnapshot());
+        }
+    }
+
+    private final class PrefetchWebViewClient extends WebViewClient {
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            super.onPageFinished(view, url);
+            if (!precaching) return;
+            view.postDelayed(() -> savePrefetchedSnapshot(url), 1500);
+        }
+
+        @Override
+        public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+            if (request.isForMainFrame()) {
+                prefetchPendingUrl = null;
+                view.postDelayed(MainActivity.this::loadNextPrecachePage, 700);
+            }
+        }
     }
 
     private final class SiriusWebViewClient extends WebViewClient {
@@ -593,12 +734,14 @@ public class MainActivity extends android.app.Activity {
             super.onPageFinished(view, url);
             swipeRefresh.setRefreshing(false);
             if (loadingOfflineSnapshot) {
-                disableOfflineActions();
+                // The fallback itself must keep its native "return" button active.
+                if (!url.startsWith("file:///android_asset/offline.html")) disableOfflineActions();
                 return;
             }
             if (isAppUrl(url)) currentAppUrl = url;
             leaveOfflineMode();
             saveSnapshot(url);
+            startPrecacheIfNeeded();
             installNativeNotificationBridge();
             syncFcmToken();
             view.evaluateJavascript(
