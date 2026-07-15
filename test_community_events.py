@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 import config
+import main
 import storage
 
 
@@ -52,6 +53,24 @@ class CommunityEventStorageTests(unittest.TestCase):
         removed = storage.remove_watches_for_event(f"community_{event_id}")
         self.assertEqual(len(removed), 1)
         self.assertIsNone(storage.get_watch("member", f"community_{event_id}"))
+
+    def test_community_contact_is_saved_and_visible_in_event(self):
+        event_id = storage.add_community_event(
+            "owner", "100", "Community event", "2026-08-01", "12:00", "13:00",
+            "", "", 5, "Description", "Hall", [], contact="@organizer",
+        )
+
+        self.assertEqual(storage.get_community_event(event_id)["contact"], "@organizer")
+
+    def test_community_change_summary_mentions_time_and_place(self):
+        before = {"date_iso": "2026-08-01", "start_time": "12:00", "location": "Hall", "people_max": 5, "contact": "@old", "description": "Old"}
+        after = {"date_iso": "2026-08-02", "start_time": "13:00", "location": "Park", "people_max": 10, "contact": "@new", "description": "New"}
+
+        changes = main._community_event_change_lines(before, after)
+
+        self.assertTrue(any(line.startswith("время:") for line in changes))
+        self.assertTrue(any(line.startswith("место:") for line in changes))
+        self.assertIn("обновлён контакт организатора", changes)
 
 
 if __name__ == "__main__":

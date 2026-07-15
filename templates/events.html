@@ -517,6 +517,7 @@ async function showEventDetail(eventId) {
                     <tr><td>Место</td><td>${escapeHtml((ev.location || []).join(', ') || '—')}</td></tr>
                     <tr><td>Участников</td><td>${ev.people_current}/${ev.people_max}</td></tr>
                     <tr><td>Организатор</td><td>${escapeHtml(ev.community_owner || '—')}</td></tr>
+                    ${ev.community_contact ? `<tr><td>Связь</td><td>${escapeHtml(ev.community_contact)} <button class="btn btn-outline btn-sm" onclick='openCommunityContact(${JSON.stringify(ev.community_contact)})'>Написать</button></td></tr>` : ''}
                     ${ev.community_coorganizers?.length ? `<tr><td>Соорганизаторы</td><td>${escapeHtml(ev.community_coorganizers.join(', '))}</td></tr>` : ''}
                 </table>
                 ${ev.description ? '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)"><strong>Описание:</strong><p style="margin-top:6px;color:var(--text-muted);font-size:14px;line-height:1.6">' + escapeHtml(ev.description) + '</p></div>' : ''}

@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Пирожковый Диспетчер{% endblock %}</title>
     <link rel="icon" href="/static/sirius.png">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260715-6">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260715-7">
 </head>
 <body>
     <div class="app">
@@ -656,6 +656,23 @@
             const d = new Date(raw);
             if (isNaN(d.getTime())) return value;
             return d.toLocaleString('ru-RU', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
+        }
+
+        async function openCommunityContact(contact) {
+            const value = String(contact || '').trim();
+            if (!value) return;
+            const telegram = /^@([A-Za-z0-9_]{5,})$/.exec(value);
+            const url = /^https?:\/\//i.test(value) ? value : telegram ? 'https://t.me/' + telegram[1] : '';
+            if (url) {
+                window.open(url, '_blank', 'noopener,noreferrer');
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(value);
+                dlgAlert('Контакт скопирован', value);
+            } catch (e) {
+                dlgAlert('Контакт организатора', value);
+            }
         }
 
         function profileStatusBadge(text, kind) {

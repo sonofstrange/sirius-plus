@@ -15,7 +15,7 @@
     <!-- Horizontal date strip -->
     <div class="date-strip">
         {% for d in dates %}
-        <a href="/schedule?date={{ d.iso }}"
+        <a href="/schedule?date={{ d.iso }}{% if search_q %}&q={{ search_q | urlencode }}{% endif %}"
            class="date-chip {% if d.iso == cur_date %}date-chip--active{% endif %} {% if d.is_today %}date-chip--today{% endif %}"
            {% if d.is_today %}id="today-date-chip"{% endif %}>
             <span class="date-chip__weekday">{{ d.weekday }}</span>
@@ -23,6 +23,13 @@
         </a>
         {% endfor %}
     </div>
+
+    <form class="schedule-search" method="get" action="/schedule">
+        <input type="hidden" name="date" value="{{ cur_date }}">
+        <span class="material-symbols-outlined">search</span>
+        <input class="form-input" type="search" name="q" value="{{ search_q }}" placeholder="Поиск: событие, место, преподаватель, команда">
+        {% if search_q %}<a class="schedule-search__clear" href="/schedule?date={{ cur_date }}" aria-label="Очистить поиск"><span class="material-symbols-outlined">close</span></a>{% endif %}
+    </form>
 
     {% if error %}
     <div class="alert alert-error">{{ error }}</div>
@@ -200,6 +207,7 @@ async function showScheduleDetail(eventId) {
                 ${ev.transport_info ? '<tr><td>Трансфер</td><td>' + escapeHtml(ev.transport_info.kind || '') + ' ' + escapeHtml(ev.transport_info.number || '') + (ev.departure_location ? ' · ' + escapeHtml(ev.departure_location) + ' → ' + escapeHtml(ev.arrival_location) : '') + '</td></tr>' : ev.departure_location ? '<tr><td>Трансфер</td><td>' + escapeHtml(ev.departure_location) + ' → ' + escapeHtml(ev.arrival_location) + '</td></tr>' : ''}
                 ${ev.description ? '<tr><td>Описание</td><td style="white-space:pre-wrap">' + escapeHtml(ev.description) + '</td></tr>' : ''}
                 ${ev.event_type === 'communityEvent' ? '<tr><td>Организатор</td><td>' + escapeHtml(ev.community_owner || '—') + '</td></tr>' : ''}
+                ${ev.event_type === 'communityEvent' && ev.community_contact ? '<tr><td>Связь</td><td>' + escapeHtml(ev.community_contact) + ' <button class="btn btn-outline btn-sm" onclick=\'openCommunityContact(' + JSON.stringify(ev.community_contact) + ')\'>Написать</button></td></tr>' : ''}
                 ${ev.event_type === 'communityEvent' && ev.community_coorganizers?.length ? '<tr><td>Соорганизаторы</td><td>' + escapeHtml(ev.community_coorganizers.join(', ')) + '</td></tr>' : ''}
                 ${ev.event_type === 'communityEvent' && ev.registration_open_at ? '<tr><td>Открытие регистрации</td><td>' + new Date(ev.registration_open_at).toLocaleString('ru-RU') + '</td></tr>' : ''}
                 ${ev.event_type === 'communityEvent' && ev.registration_close_at ? '<tr><td>Закрытие регистрации</td><td>' + new Date(ev.registration_close_at).toLocaleString('ru-RU') + '</td></tr>' : ''}

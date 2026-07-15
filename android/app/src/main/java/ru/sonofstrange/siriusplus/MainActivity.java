@@ -51,8 +51,9 @@ public class MainActivity extends android.app.Activity {
     private static final String LAST_PRECACHE_AT = "last_precache_at";
     private static final long PRECACHE_INTERVAL_MS = 12L * 60 * 60 * 1000;
     private static final String[] PRECACHE_ROUTES = {
-        "/", "/events?tab=register", "/schedule", "/custom-events", "/watchlist",
-        "/coins-info", "/coins-info?tab=dronebet", "/howto", "/help"
+        "/", "/events?tab=register", "/events?tab=my&sub=current", "/events?tab=my&sub=watch",
+        "/schedule", "/custom-events", "/coins-info", "/coins-info?tab=dronebet",
+        "/coins-info?tab=polymarket", "/howto", "/help"
     };
     private static final int NOTIFICATION_PERMISSION_REQUEST = 1001;
     private static final Pattern MATERIAL_ICON_IN_ARCHIVE = Pattern.compile(
@@ -358,7 +359,6 @@ public class MainActivity extends android.app.Activity {
             webView.loadUrl("file:///android_asset/offline.html");
             return;
         }
-        replaceArchiveIconNames(archive);
         webView.loadUrl(Uri.fromFile(archive).toString());
     }
 
@@ -376,7 +376,6 @@ public class MainActivity extends android.app.Activity {
         if (archive.exists() && !archive.delete()) return;
         String archiveStyle = "(function(){const old=document.getElementById('sirius-archive-cleanup');if(old)old.remove();const style=document.createElement('style');style.id='sirius-archive-cleanup';style.textContent='.modal-overlay,.toast-container{display:none!important}';document.head.appendChild(style);})()";
         webView.evaluateJavascript(archiveStyle, ignored -> webView.saveWebArchive(archive.getAbsolutePath(), false, savedPath -> {
-            replaceArchiveIconNames(archive);
             webView.post(() -> webView.evaluateJavascript("(function(){var e=document.getElementById('sirius-archive-cleanup');if(e)e.remove();})()", null));
         }));
     }
@@ -423,7 +422,6 @@ public class MainActivity extends android.app.Activity {
         String cleanup = "(function(){const old=document.getElementById('sirius-archive-cleanup');if(old)old.remove();const style=document.createElement('style');style.id='sirius-archive-cleanup';style.textContent='.modal-overlay,.toast-container{display:none!important}';document.head.appendChild(style);})()";
         prefetchWebView.evaluateJavascript(cleanup, ignored -> prefetchWebView.saveWebArchive(
             archive.getAbsolutePath(), false, savedPath -> {
-                replaceArchiveIconNames(archive);
                 prefetchWebView.evaluateJavascript("(function(){var e=document.getElementById('sirius-archive-cleanup');if(e)e.remove();})()", null);
                 prefetchWebView.postDelayed(this::loadNextPrecachePage, 700);
             }
@@ -529,7 +527,7 @@ public class MainActivity extends android.app.Activity {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
                 .digest(snapshotKey(url).getBytes(StandardCharsets.UTF_8));
-            StringBuilder fileName = new StringBuilder("page_");
+            StringBuilder fileName = new StringBuilder("page_v4_");
             for (byte value : digest) fileName.append(String.format("%02x", value));
             return new File(getFilesDir(), fileName.append(".mht").toString());
         } catch (Exception ignored) {
@@ -541,10 +539,7 @@ public class MainActivity extends android.app.Activity {
         File current = snapshotArchive(url);
         if (current.isFile() && current.length() > 0) return current;
 
-        File legacy = legacySnapshotArchive(url);
-        if (legacy.isFile() && legacy.length() > 0) return legacy;
-
-        File[] archives = getFilesDir().listFiles((dir, name) -> name.startsWith("page_") && name.endsWith(".mht"));
+        File[] archives = getFilesDir().listFiles((dir, name) -> name.startsWith("page_v4_") && name.endsWith(".mht"));
         if (archives == null) return null;
         String key = snapshotKey(url);
         for (File archive : archives) {
@@ -560,7 +555,7 @@ public class MainActivity extends android.app.Activity {
     }
 
     private boolean openLatestOfflineSnapshot() {
-        File[] archives = getFilesDir().listFiles((dir, name) -> name.startsWith("page_") && name.endsWith(".mht"));
+        File[] archives = getFilesDir().listFiles((dir, name) -> name.startsWith("page_v4_") && name.endsWith(".mht"));
         if (archives == null || archives.length == 0) return false;
         File latest = null;
         for (File archive : archives) {
@@ -610,7 +605,22 @@ public class MainActivity extends android.app.Activity {
         if ("coins-info".equals(normalizedPath) && "dronebet".equals(parsed.getQueryParameter("tab"))) {
             return APP_URL + "coins-info?tab=dronebet";
         }
-        return APP_URL + normalizedPath;
+        StringBuilder key = new StringBuilder(APP_URL).append(normalizedPath);
+        if ("events".equals(normalizedPath)) {
+            String tab = parsed.getQueryParameter("tab");
+            String sub = parsed.getQueryParameter("sub");
+            String status = parsed.getQueryParameter("status");
+            if (tab != null) key.append("?tab=").append(tab);
+            if (sub != null) key.append(key.indexOf("?") < 0 ? "?sub=" : "&sub=").append(sub);
+            if (status != null) key.append(key.indexOf("?") < 0 ? "?status=" : "&status=").append(status);
+        } else if ("schedule".equals(normalizedPath)) {
+            String date = parsed.getQueryParameter("date");
+            if (date != null) key.append("?date=").append(date);
+        } else if ("coins-info".equals(normalizedPath)) {
+            String tab = parsed.getQueryParameter("tab");
+            if (tab != null) key.append("?tab=").append(tab);
+        }
+        return key.toString();
     }
 
     private void installNativeNotificationBridge() {

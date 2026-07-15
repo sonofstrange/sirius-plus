@@ -178,6 +178,7 @@ def init_db():
                 people_max      INTEGER NOT NULL DEFAULT 0,
                 description     TEXT NOT NULL DEFAULT '',
                 location        TEXT NOT NULL DEFAULT '',
+                contact         TEXT NOT NULL DEFAULT '',
                 created_at      INTEGER NOT NULL,
                 updated_at      INTEGER NOT NULL
             );
@@ -402,6 +403,10 @@ def init_db():
         coorganizer_cols = [r["name"] for r in conn.execute("PRAGMA table_info(community_event_coorganizers)").fetchall()]
         if "display_name" not in coorganizer_cols:
             conn.execute("ALTER TABLE community_event_coorganizers ADD COLUMN display_name TEXT NOT NULL DEFAULT ''")
+
+        community_event_cols = [r["name"] for r in conn.execute("PRAGMA table_info(community_events)").fetchall()]
+        if "contact" not in community_event_cols:
+            conn.execute("ALTER TABLE community_events ADD COLUMN contact TEXT NOT NULL DEFAULT ''")
 
         coin_cols = [r["name"] for r in conn.execute("PRAGMA table_info(sirius_coins)").fetchall()]
         if "reserved_coins" not in coin_cols:
@@ -996,6 +1001,7 @@ def add_community_event(
     description: str,
     location: str,
     coorganizers: list[tuple[str, str, str]],
+    contact: str = "",
 ) -> int:
     now = int(time.time())
     with get_conn() as conn:
@@ -1003,11 +1009,11 @@ def add_community_event(
             """INSERT INTO community_events
                (owner_user_id, owner_uid, event_name, date_iso, start_time, end_time,
                 registration_open_at, registration_close_at, people_max, description,
-                location, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                location, contact, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (owner_user_id, owner_uid, event_name, date_iso, start_time, end_time,
              registration_open_at, registration_close_at, people_max, description,
-             location, now, now),
+             location, contact, now, now),
         )
         event_id = int(cur.lastrowid)
         for entry in coorganizers:
@@ -1109,6 +1115,7 @@ def update_community_event(
     description: str,
     location: str,
     coorganizers: list[tuple[str, str, str]],
+    contact: str = "",
 ) -> bool:
     now = int(time.time())
     with get_conn() as conn:
@@ -1116,10 +1123,10 @@ def update_community_event(
             """UPDATE community_events
                SET event_name=?, date_iso=?, start_time=?, end_time=?,
                    registration_open_at=?, registration_close_at=?, people_max=?,
-                   description=?, location=?, updated_at=?
+                   description=?, location=?, contact=?, updated_at=?
                WHERE id=?""",
             (event_name, date_iso, start_time, end_time, registration_open_at,
-             registration_close_at, people_max, description, location, now, event_id),
+             registration_close_at, people_max, description, location, contact, now, event_id),
         )
         if cur.rowcount != 1:
             return False

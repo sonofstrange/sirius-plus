@@ -133,6 +133,7 @@ def _community_event_payload(event, user_id: str, is_admin: bool = False) -> dic
         "date_iso": event["date_iso"],
         "status": "",
         "location": [event["location"]] if event["location"] else [],
+        "community_contact": event["contact"],
         "tutors": [],
         "description": event["description"],
         "people_max": event["people_max"],
@@ -876,7 +877,7 @@ async def events_page(request: Request, tab: str = "register", status: str = "al
 
 
 @app.get("/schedule", response_class=HTMLResponse)
-async def schedule_page(request: Request, date: str = ""):
+async def schedule_page(request: Request, date: str = "", q: str = ""):
     user_id = get_user_id(request)
     if not user_id:
         return RedirectResponse(url="/")
@@ -963,6 +964,18 @@ async def schedule_page(request: Request, date: str = ""):
             community_event, user_id, storage.is_admin(session_uid)
         ))())
 
+    if q.strip():
+        needle = q.casefold().strip()
+        def _schedule_matches(event) -> bool:
+            parts = [event.event_name, event.description]
+            parts.extend(event.location or [])
+            parts.extend(event.tutors or [])
+            parts.extend(event.unions or [])
+            if event.event_type == "communityEvent":
+                parts.extend([event.community_owner, event.community_contact])
+            return needle in " ".join(str(part or "") for part in parts).casefold()
+        events = [event for event in events if _schedule_matches(event)]
+
     events.sort(key=lambda e: parse_sirius_time(e.start_time) or dt.datetime.max.replace(tzinfo=dt.timezone.utc))
 
     groups = sorted(set(g for ev in events for g in ev.unions))
@@ -976,6 +989,7 @@ async def schedule_page(request: Request, date: str = ""):
         cur_date=date,
         dates=date_list,
         groups=groups,
+        search_q=q,
         reminder_event_ids=reminder_event_ids,
     )
 
@@ -2723,6 +2737,7 @@ def _community_event_input(data: dict) -> tuple[dict | None, str | None]:
     registration_close_at = str(data.get("registration_close_at") or "").strip()
     description = str(data.get("description") or "").strip()
     location = str(data.get("location") or "").strip()
+    contact = str(data.get("contact") or "").strip()
     try:
         people_max = int(data.get("people_max") or 0)
         dt.date.fromisoformat(date_iso)
@@ -2734,6 +2749,8 @@ def _community_event_input(data: dict) -> tuple[dict | None, str | None]:
         return None, "Укажи время начала события"
     if people_max < 1 or people_max > 1000:
         return None, "Лимит участников должен быть от 1 до 1000"
+    if len(contact) > 200:
+        return None, "Контакт организатора должен быть не длиннее 200 символов"
     open_at = _community_datetime(registration_open_at)
     close_at = _community_datetime(registration_close_at)
     starts_at = _community_datetime(f"{date_iso}T{start_time}")
@@ -2755,6 +2772,7 @@ def _community_event_input(data: dict) -> tuple[dict | None, str | None]:
         "people_max": people_max,
         "description": description,
         "location": location,
+        "contact": contact,
     }, None
 
 
@@ -2790,6 +2808,29 @@ def _community_coorganizer_input(data: dict, owner_user_id: str) -> tuple[list[t
 def _can_manage_community_event(event_id: int, user_id: str) -> bool:
     uid = _session_uid(user_id) or ""
     return storage.is_admin(uid) or storage.can_manage_community_event(event_id, user_id)
+
+
+def _community_event_change_lines(before, after: dict) -> list[str]:
+    lines: list[str] = []
+    old_time = f"{before['date_iso']} {before['start_time']}"
+    new_time = f"{after['date_iso']} {after['start_time']}"
+    if old_time != new_time:
+        lines.append(f"время: {old_time} → {new_time}")
+    if before["location"] != after["location"]:
+        lines.append(f"место: {before['location'] or 'не указано'} → {after['location'] or 'не указано'}")
+    if before["people_max"] != after["people_max"]:
+        lines.append(f"мест: {before['people_max']} → {after['people_max']}")
+    if before["contact"] != after["contact"]:
+        lines.append("обновлён контакт организатора")
+    if before["description"] != after["description"]:
+        lines.append("обновлено описание")
+    return lines
+
+
+async def _notify_community_participants(event_id: int, text: str, exclude_user_id: str = "") -> None:
+    for participant in storage.get_community_event_participants(event_id):
+        if participant["user_id"] != exclude_user_id:
+            await web_notify(participant["user_id"], text)
 
 
 @app.get("/api/community-events/{event_id}")
@@ -2846,7 +2887,14 @@ async def api_update_community_event(event_id: int, request: Request):
     coorganizers, error = _community_coorganizer_input(data, event["owner_user_id"])
     if error:
         return JSONResponse({"ok": False, "error": error}, status_code=400)
+    changes = _community_event_change_lines(event, event_data)
     storage.update_community_event(event_id, coorganizers=coorganizers or [], **event_data)
+    if changes:
+        await _notify_community_participants(
+            event_id,
+            f"✏️ Организатор изменил событие «{event['event_name']}»:\n" + "\n".join(changes),
+            user_id,
+        )
     return JSONResponse({"ok": True})
 
 
@@ -2857,6 +2905,14 @@ async def api_delete_community_event(event_id: int, request: Request):
         return JSONResponse({"ok": False, "error": "Не авторизован"}, status_code=401)
     if not _can_manage_community_event(event_id, user_id):
         return JSONResponse({"ok": False, "error": "Нет прав на удаление события"}, status_code=403)
+    event = storage.get_community_event(event_id)
+    if not event:
+        return JSONResponse({"ok": False, "error": "Событие не найдено"}, status_code=404)
+    await _notify_community_participants(
+        event_id,
+        f"🗑 Событие сообщества «{event['event_name']}» отменено организатором.",
+        user_id,
+    )
     for watch in storage.remove_watches_for_event(f"community_{event_id}"):
         poller.cancel_snipe(watch["user_id"], watch["event_id"])
         watched_uid = storage.get_user_uid(watch["user_id"])

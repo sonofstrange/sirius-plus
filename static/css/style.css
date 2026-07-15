@@ -2675,6 +2675,13 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
 .community-events-notice .material-symbols-outlined { color: var(--accent); }
 .community-event-warning { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 16px; }
 .custom-events-time-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.schedule-search { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); }
+.schedule-search:focus-within { border-color: color-mix(in srgb, var(--primary) 55%, var(--border)); }
+.schedule-search > .material-symbols-outlined { color: var(--text-muted); font-size: 20px; }
+.schedule-search .form-input { min-width: 0; flex: 1; padding: 3px 0; border: 0; background: transparent; box-shadow: none; }
+.schedule-search .form-input:focus { box-shadow: none; }
+.schedule-search__clear { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 50%; color: var(--text-muted); text-decoration: none; }
+.schedule-search__clear:hover { color: var(--text); background: var(--bg); }
 .create-event-types { display: grid; gap: 10px; }
 .create-event-type { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card); color: var(--text); text-align: left; cursor: pointer; transition: border-color .15s ease, background .15s ease, transform .15s ease; }
 .create-event-type:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--bg-card)); transform: translateY(-1px); }
