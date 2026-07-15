@@ -34,17 +34,6 @@
             <a class="btn btn-outline btn-sm" href="https://dronebet.cloudpub.ru/" target="_blank" rel="noopener noreferrer">Открыть DroneBet</a>
         </div>
     </section>
-    <section class="dronebet-linking" id="dronebet-linking">
-        <div class="dronebet-linking__way">
-            <span class="material-symbols-outlined" aria-hidden="true">download</span>
-            <div><strong>Код из DroneBet</strong><small>Создай код на DroneBet и введи его здесь.</small></div>
-        </div>
-        <span class="material-symbols-outlined dronebet-linking__divider" aria-hidden="true">compare_arrows</span>
-        <div class="dronebet-linking__way">
-            <span class="material-symbols-outlined" aria-hidden="true">upload</span>
-            <div><strong>Код Sirius Plus</strong><small>Получи код здесь и введи его на DroneBet.</small></div>
-        </div>
-    </section>
     <section class="dronebet-exchange" id="dronebet-exchange" hidden aria-live="polite">
         <div class="dronebet-exchange__balances">
             <div><span>Сириус Коины</span><strong id="dronebet-coins">—</strong></div>
@@ -214,7 +203,7 @@ async function createDroneBetLinkCode() {
             return;
         }
         const until = new Date(data.expires_at * 1000).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});
-        dlgAlert('Код Sirius Plus', 'Введи этот одноразовый код на DroneBet:<br><br><strong style="font-size:24px;letter-spacing:2px">' + escapeHtml(data.code) + '</strong><br><br>Он действует до ' + until + '.');
+        dlgAlert('Код Sirius Plus', 'Введи на DroneBet код ' + data.code + '. Он одноразовый и действует до ' + until + '.');
     } catch (e) {
         dlgAlert('Не получилось', 'Не удалось соединиться с сервером.');
     }
