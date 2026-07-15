@@ -1767,6 +1767,8 @@ async def api_dronebet_summary(request: Request):
         response["cookies"] = remote.get("balance")
     else:
         response["remote_error"] = _dronebet_error_message(status, remote)
+        response["remote_status"] = status
+        response["remote_code"] = str(remote.get("code") or remote.get("error") or "")[:64]
     return JSONResponse(response)
 
 
