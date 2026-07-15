@@ -1696,7 +1696,7 @@ async def _complete_dronebet_exchange(exchange: dict) -> tuple[bool, dict, int]:
         if not local["ok"]:
             storage.fail_partner_exchange(DRONEBET_PARTNER, key)
             return False, {"error": "Недостаточно доступных Сириус Коинов." if local["code"] == "insufficient_coins" else "Не удалось списать Сириус Коины."}, 409
-        status, remote, retryable = await _dronebet_request("POST", "/coins/credit", {
+        status, remote, retryable = await _dronebet_request("POST", "/credit.php", {
             "sirius_uid": exchange["uid"], "amount": exchange["cookies"], "idempotency_key": key,
             "reason": f"Обмен {exchange['coins']} Сириус Коин(ов) в Sirius Plus",
         })
@@ -1713,7 +1713,7 @@ async def _complete_dronebet_exchange(exchange: dict) -> tuple[bool, dict, int]:
             return False, {"error": _dronebet_error_message(status, remote)}, status or 400
         return False, {"pending": True, "error": "Обмен ожидает подтверждения DroneBet. Нажми «Повторить» через несколько секунд."}, 503
 
-    status, remote, retryable = await _dronebet_request("POST", "/coins/debit", {
+    status, remote, retryable = await _dronebet_request("POST", "/debit.php", {
         "sirius_uid": exchange["uid"], "amount": exchange["cookies"], "idempotency_key": key,
         "reason": f"Обмен печенек DroneBet на {exchange['coins']} Сириус Коин(ов)",
     })
@@ -1761,7 +1761,9 @@ async def api_dronebet_summary(request: Request):
     }
     if not link:
         return JSONResponse(response)
-    status, remote, _ = await _dronebet_request("GET", f"/accounts/{urllib.parse.quote(uid, safe='')}/balance")
+    status, remote, _ = await _dronebet_request(
+        "GET", f"/balance.php?sirius_uid={urllib.parse.quote(uid, safe='')}"
+    )
     response["dronebet_user_id"] = link["external_user_id"]
     if 200 <= status < 300 and remote.get("ok"):
         response["cookies"] = remote.get("balance")
@@ -1784,7 +1786,7 @@ async def api_dronebet_claim_link(request: Request):
         return JSONResponse({"ok": False, "error": "Неверный формат запроса."}, status_code=400)
     if len(code) < 8:
         return JSONResponse({"ok": False, "error": "Введи одноразовый код из DroneBet."}, status_code=400)
-    status, remote, _ = await _dronebet_request("POST", "/links/claim", {"code": code, "sirius_uid": uid})
+    status, remote, _ = await _dronebet_request("POST", "/links_claim.php", {"code": code, "sirius_uid": uid})
     if not (200 <= status < 300 and remote.get("ok")):
         log.warning("DroneBet link claim rejected: status=%s code=%s", status, remote.get("code") or remote.get("error") or "unknown")
         return JSONResponse({"ok": False, "error": _dronebet_error_message(status, remote)}, status_code=status or 503)
