@@ -2319,21 +2319,39 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
 .admin-user-profile .profile-section { margin-top: 14px; }
 
 @media (max-width: 768px) {
-    .header__container {
-        height: auto;
-        min-height: 54px;
+    .header__container--signed-in {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 36px auto;
+        grid-template-rows: 54px 44px;
+        height: 105px;
+        min-height: 0;
         padding: 0 10px 7px;
-        flex-wrap: wrap;
-        row-gap: 6px;
+        column-gap: 5px;
+        row-gap: 0;
     }
-    .header__logo { width: auto; min-width: 0; flex: 1 1 auto; height: 54px; gap: 5px; }
+    .header__container--signed-in .header__logo {
+        grid-column: 1;
+        grid-row: 1;
+        width: auto;
+        min-width: 0;
+        height: 54px;
+        gap: 5px;
+        overflow: hidden;
+    }
     .header__logo-img { width: 42px; height: 42px; }
-    .header__logo-text { font-size: 15px; white-space: nowrap; overflow-wrap: normal; }
-    .header__nav {
+    .header__container--signed-in .header__logo-text {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-size: 15px;
+        white-space: nowrap;
+        overflow-wrap: normal;
+    }
+    .header__container--signed-in .header__nav {
+        grid-column: 1 / -1;
+        grid-row: 2;
         position: static;
-        order: 4;
         width: 100%;
-        flex: 0 0 100%;
         transform: none;
         display: flex;
         gap: 3px;
@@ -2346,12 +2364,22 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
         padding: 8px 10px;
         font-size: 14px;
     }
-    .header__right { height: 54px; margin-left: 0; }
+    .header__container--signed-in .header__menu-btn {
+        grid-column: 2;
+        grid-row: 1;
+        margin-left: 0;
+    }
+    .header__container--signed-in .header__right {
+        grid-column: 3;
+        grid-row: 1;
+        height: 54px;
+        min-width: 76px;
+        margin-left: 0;
+    }
     .header__coins, .header__theme, .header__admin { display: none; }
     .header__auth-btn, .header__menu-btn { width: 36px; height: 36px; }
-    .header__menu-btn { margin-left: 0; }
     .header__mobile-nav {
-        top: 112px;
+        top: 105px;
         padding: 10px;
         gap: 10px;
         border-radius: 0 0 8px 8px;

@@ -8,12 +8,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Пирожковый Диспетчер{% endblock %}</title>
     <link rel="icon" href="/static/sirius.png">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260715-7">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260715-8">
 </head>
 <body>
     <div class="app">
         <header class="header">
-            <div class="header__container">
+            <div class="header__container{% if user_id %} header__container--signed-in{% endif %}">
                 <a href="/" class="header__logo">
                     <img src="/static/sirius.png" alt="" width="96" height="96" class="header__logo-img">
                     <span class="header__logo-text">Пирожковый Диспетчер</span>
