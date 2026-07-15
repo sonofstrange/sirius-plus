@@ -21,9 +21,13 @@ TOKEN_ENCRYPTION_KEY = os.environ.get("TOKEN_ENCRYPTION_KEY") or (
 HOST = os.environ.get("SIRIUS_HOST", "127.0.0.1")
 PORT = int(os.environ.get("SIRIUS_PORT", "8000"))
 
-# Server-to-server credential for DroneBet. It must only be configured on the
-# production server; never expose it to a browser or commit its value.
-DRONEBET_PARTNER_TOKEN = os.environ.get("DRONEBET_PARTNER_TOKEN", "")
+# The two directions use independent secrets. Neither belongs in browser code,
+# APKs, logs or the repository. The legacy variable is outbound-only fallback.
+DRONEBET_OUTBOUND_TOKEN = (
+    os.environ.get("DRONEBET_OUTBOUND_TOKEN")
+    or os.environ.get("DRONEBET_PARTNER_TOKEN", "")
+)
+DRONEBET_INBOUND_TOKEN = os.environ.get("DRONEBET_INBOUND_TOKEN", "")
 DRONEBET_API_BASE = os.environ.get(
     "DRONEBET_API_BASE", "https://dronebet.cloudpub.ru/api/partner/sirius"
 ).rstrip("/")

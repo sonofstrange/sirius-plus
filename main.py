@@ -1612,9 +1612,9 @@ def _partner_request_allowed(request: Request) -> bool:
 
 
 def _require_dronebet_partner(request: Request) -> JSONResponse | None:
-    expected = app_config.DRONEBET_PARTNER_TOKEN
+    expected = app_config.DRONEBET_INBOUND_TOKEN
     if not expected:
-        log.error("DroneBet partner API is requested but DRONEBET_PARTNER_TOKEN is not configured")
+        log.error("DroneBet partner API is requested but DRONEBET_INBOUND_TOKEN is not configured")
         return JSONResponse({"ok": False, "code": "partner_api_disabled"}, status_code=503)
     authorization = request.headers.get("authorization", "")
     supplied = authorization.removeprefix("Bearer ").strip() if authorization.startswith("Bearer ") else ""
@@ -1631,7 +1631,7 @@ def _partner_json_error(code: str, status_code: int = 400, **extra) -> JSONRespo
 
 async def _dronebet_request(method: str, path: str, payload: dict | None = None) -> tuple[int, dict, bool]:
     """Call DroneBet from the server. The boolean means that retry is needed."""
-    token = app_config.DRONEBET_PARTNER_TOKEN
+    token = app_config.DRONEBET_OUTBOUND_TOKEN
     if not token:
         return 503, {"ok": False, "code": "integration_not_configured"}, False
     url = f"{app_config.DRONEBET_API_BASE}{path}"
@@ -1756,7 +1756,7 @@ async def api_dronebet_summary(request: Request):
         return _partner_json_error("unauthorized", 401)
     link = storage.get_partner_link_for_uid(DRONEBET_PARTNER, uid)
     response = {
-        "ok": True, "configured": bool(app_config.DRONEBET_PARTNER_TOKEN), "linked": bool(link),
+        "ok": True, "configured": bool(app_config.DRONEBET_OUTBOUND_TOKEN), "linked": bool(link),
         "coins": storage.get_coins(uid), "cookies": None, "rate": app_config.DRONEBET_COOKIE_RATE,
     }
     if not link:

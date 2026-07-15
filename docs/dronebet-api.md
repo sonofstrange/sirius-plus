@@ -1,7 +1,8 @@
 # Sirius Plus x DroneBet API
 
-Документ описывает двустороннюю интеграцию Sirius Plus и DroneBet. Секрет
-передаётся только между серверами и никогда не отдаётся браузеру.
+Документ описывает двустороннюю интеграцию Sirius Plus и DroneBet. Для двух
+направлений используются разные секреты; оба передаются только между серверами
+и никогда не отдаются браузеру.
 
 ## Рабочий сценарий в Sirius Plus
 
@@ -25,6 +26,9 @@ https://dronebet.cloudpub.ru/api/partner/sirius
 Authorization: Bearer <DRONEBET_PARTNER_TOKEN>
 Content-Type: application/json
 ```
+
+Это секрет, выданный DroneBet. На сервере Sirius Plus он хранится как
+`DRONEBET_OUTBOUND_TOKEN`.
 
 Курс фиксирован: **2 000 печенек DroneBet = 1 Сириус Коин**. В обмене
 используются только целые коины, поэтому поле `amount` у DroneBet всегда
@@ -93,10 +97,12 @@ Authorization: Bearer <DRONEBET_PARTNER_TOKEN>
 Content-Type: application/json
 ```
 
-`DRONEBET_PARTNER_TOKEN` - общий случайный секрет длиной не менее 32 байт. Его
-нельзя класть в репозиторий, JavaScript, APK или логи. Обмен идёт только по
-HTTPS. Sirius Plus дополнительно ограничивает партнёрский API до 30 запросов в
-минуту с одного IP; при превышении возвращается `429`.
+Здесь используется отдельный секрет Sirius Plus: `DRONEBET_INBOUND_TOKEN`.
+Он генерируется на сервере Sirius Plus и передаётся разработчику DroneBet для
+его запросов к этому API. Его нельзя класть в репозиторий, JavaScript, APK или
+логи. Обмен идёт только по HTTPS. Sirius Plus дополнительно ограничивает
+партнёрский API до 30 запросов в минуту с одного IP; при превышении возвращается
+`429`.
 
 Каждое изменение баланса требует уникального `idempotency_key` длиной 12-128
 символов. При повторе того же запроса Sirius Plus вернёт исходный результат и

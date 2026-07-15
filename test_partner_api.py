@@ -91,14 +91,14 @@ class PartnerApiTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.old_db_path = config.DB_PATH
-        self.old_token = config.DRONEBET_PARTNER_TOKEN
+        self.old_inbound_token = config.DRONEBET_INBOUND_TOKEN
         config.DB_PATH = str(Path(self.tmp.name) / "test.sqlite3")
-        config.DRONEBET_PARTNER_TOKEN = "test-partner-secret"
+        config.DRONEBET_INBOUND_TOKEN = "test-partner-secret"
         storage.init_db()
         storage.ensure_coins("sirius-user")
 
     def tearDown(self):
-        config.DRONEBET_PARTNER_TOKEN = self.old_token
+        config.DRONEBET_INBOUND_TOKEN = self.old_inbound_token
         config.DB_PATH = self.old_db_path
         self.tmp.cleanup()
 
