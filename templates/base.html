@@ -1010,7 +1010,13 @@
             if (!modal) return;
             if (!manual) {
                 try {
-                    if (localStorage.getItem(CHANGELOG_STORAGE_KEY) === CHANGELOG_VERSION) return;
+                    const seenVersion = localStorage.getItem(CHANGELOG_STORAGE_KEY);
+                    // A first visit is not an update: remember the current version quietly.
+                    if (seenVersion === null) {
+                        localStorage.setItem(CHANGELOG_STORAGE_KEY, CHANGELOG_VERSION);
+                        return;
+                    }
+                    if (seenVersion === CHANGELOG_VERSION) return;
                 } catch (e) {}
             }
             modal.style.display = 'flex';

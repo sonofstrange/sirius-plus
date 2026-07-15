@@ -54,8 +54,10 @@ public class MainActivity extends android.app.Activity {
     private static final String APP_HOST = "sirius.rusanoff.ru";
     private static final String HEALTH_URL = APP_URL + "healthz";
     private static final String OFFLINE_PREFS = "sirius_offline";
+    private static final String OFFLINE_DATA_KEY = "cached_account_data";
     private static final String LAST_PRECACHE_AT = "last_precache_at";
     private static final long PRECACHE_INTERVAL_MS = 12L * 60 * 60 * 1000;
+    private static final int MAX_OFFLINE_DATA_BYTES = 250_000;
     private static final String[] PRECACHE_ROUTES = {
         "/", "/events?tab=register", "/events?tab=my&sub=current", "/events?tab=my&sub=watch",
         "/schedule", "/custom-events", "/coins-info", "/coins-info?tab=dronebet",
@@ -530,6 +532,9 @@ public class MainActivity extends android.app.Activity {
     }
 
     private void prepareOfflineSnapshot() {
+        String cachedData = getSharedPreferences(OFFLINE_PREFS, MODE_PRIVATE)
+            .getString(OFFLINE_DATA_KEY, "");
+        String escapedData = org.json.JSONObject.quote(cachedData);
         webView.evaluateJavascript("""
             (function(){
                 if(window.__siriusOfflinePrepared)return;
@@ -537,8 +542,20 @@ public class MainActivity extends android.app.Activity {
                 // Navigation, the menu and the theme switcher are safe offline. Only
                 // form submission is stopped because it would require the server.
                 document.addEventListener('submit',event=>event.preventDefault(),true);
+                let cached={};
+                try{cached=JSON.parse(%s)||{};}catch(e){}
+                const originalFetch=window.fetch.bind(window);
+                window.fetch=function(input,init){
+                    const url=typeof input==='string'?input:(input&&input.url)||'';
+                    let response=null;
+                    if(url.includes('/api/user-info'))response=cached.userInfo;
+                    else if(url.includes('/api/coins/balance'))response=cached.coins;
+                    else if(url.includes('/api/notifications/history'))response=cached.notificationHistory;
+                    if(response)return Promise.resolve({ok:true,status:200,json:()=>Promise.resolve(response)});
+                    return originalFetch(input,init);
+                };
             })();
-        """, null);
+        """.formatted(escapedData), null);
     }
 
     private boolean hasSnapshot(String url) {
@@ -731,6 +748,25 @@ public class MainActivity extends android.app.Activity {
         );
     }
 
+    private void cacheOfflineAccountData() {
+        if (loadingOfflineSnapshot || !isAppUrl(webView.getUrl())) return;
+        webView.evaluateJavascript("""
+            (async function(){
+                if(!window.SiriusAndroid)return;
+                try{
+                    const [userInfo,coins,notificationHistory]=await Promise.all([
+                        fetch('/api/user-info',{credentials:'same-origin'}).then(r=>r.json()),
+                        fetch('/api/coins/balance',{credentials:'same-origin'}).then(r=>r.json()),
+                        fetch('/api/notifications/history',{credentials:'same-origin'}).then(r=>r.json())
+                    ]);
+                    if(userInfo&&userInfo.ok){
+                        window.SiriusAndroid.cacheOfflineAccountData(JSON.stringify({userInfo,coins,notificationHistory}));
+                    }
+                }catch(e){}
+            })();
+        """, null);
+    }
+
     private void setWebContentBottomInset(int bottomDp) {
         FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) swipeRefresh.getLayoutParams();
         params.bottomMargin = dp(bottomDp);
@@ -757,6 +793,17 @@ public class MainActivity extends android.app.Activity {
         @JavascriptInterface
         public void retryConnection() {
             runOnUiThread(() -> probeServer(currentAppUrl, true));
+        }
+
+        @JavascriptInterface
+        public void cacheOfflineAccountData(String payload) {
+            if (payload == null || payload.getBytes(StandardCharsets.UTF_8).length > MAX_OFFLINE_DATA_BYTES) return;
+            runOnUiThread(() -> {
+                if (webView != null && isAppUrl(webView.getUrl())) {
+                    getSharedPreferences(OFFLINE_PREFS, MODE_PRIVATE).edit()
+                        .putString(OFFLINE_DATA_KEY, payload).apply();
+                }
+            });
         }
     }
 
@@ -819,6 +866,7 @@ public class MainActivity extends android.app.Activity {
             startPrecacheIfNeeded();
             installNativeNotificationBridge();
             syncFcmToken();
+            cacheOfflineAccountData();
             view.evaluateJavascript(
                 "fetch('/api/app-bonus', {method: 'POST', credentials: 'same-origin'}).catch(function() {})",
                 null
