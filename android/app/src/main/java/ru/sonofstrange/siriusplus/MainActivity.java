@@ -377,7 +377,6 @@ public class MainActivity extends android.app.Activity {
             showOfflineUnavailablePage();
             return;
         }
-        replaceArchiveIconNames(archive);
         webView.loadUrl(Uri.fromFile(archive).toString());
     }
 
@@ -530,14 +529,14 @@ public class MainActivity extends android.app.Activity {
         };
     }
 
-    private void disableOfflineActions() {
+    private void prepareOfflineSnapshot() {
         webView.evaluateJavascript("""
             (function(){
-                const style=document.createElement('style');
-                style.textContent='button,input,textarea,select,[onclick]{opacity:.45!important;pointer-events:none!important}';
-                document.head.appendChild(style);
-                document.querySelectorAll('button,input,textarea,select').forEach(node=>{node.disabled=true;node.title='Недоступно в оффлайн режиме';});
-                document.querySelectorAll('form').forEach(form=>form.addEventListener('submit',event=>event.preventDefault()));
+                if(window.__siriusOfflinePrepared)return;
+                window.__siriusOfflinePrepared=true;
+                // Navigation, the menu and the theme switcher are safe offline. Only
+                // form submission is stopped because it would require the server.
+                document.addEventListener('submit',event=>event.preventDefault(),true);
             })();
         """, null);
     }
@@ -555,7 +554,7 @@ public class MainActivity extends android.app.Activity {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
                 .digest(snapshotKey(url).getBytes(StandardCharsets.UTF_8));
-            StringBuilder fileName = new StringBuilder("page_v4_");
+            StringBuilder fileName = new StringBuilder("page_v5_");
             for (byte value : digest) fileName.append(String.format("%02x", value));
             return new File(getFilesDir(), fileName.append(".mht").toString());
         } catch (Exception ignored) {
@@ -589,7 +588,7 @@ public class MainActivity extends android.app.Activity {
         File current = snapshotArchive(url);
         if (current.isFile() && current.length() > 0) return current;
 
-        File[] archives = getFilesDir().listFiles((dir, name) -> name.startsWith("page_v4_") && name.endsWith(".mht"));
+        File[] archives = getFilesDir().listFiles((dir, name) -> name.startsWith("page_v5_") && name.endsWith(".mht"));
         if (archives == null) return null;
         String key = snapshotKey(url);
         for (File archive : archives) {
@@ -605,7 +604,7 @@ public class MainActivity extends android.app.Activity {
     }
 
     private boolean openLatestOfflineSnapshot() {
-        File[] archives = getFilesDir().listFiles((dir, name) -> name.startsWith("page_v4_") && name.endsWith(".mht"));
+        File[] archives = getFilesDir().listFiles((dir, name) -> name.startsWith("page_v5_") && name.endsWith(".mht"));
         if (archives == null || archives.length == 0) return false;
         File latest = null;
         for (File archive : archives) {
@@ -618,7 +617,6 @@ public class MainActivity extends android.app.Activity {
         offlineSnapshotUrl = snapshotKey(currentAppUrl);
         showOfflineLoading();
         webView.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ONLY);
-        replaceArchiveIconNames(latest);
         webView.loadUrl(Uri.fromFile(latest).toString());
         return true;
     }
@@ -812,7 +810,7 @@ public class MainActivity extends android.app.Activity {
             swipeRefresh.setRefreshing(false);
             if (loadingOfflineSnapshot) {
                 // The fallback itself must keep its native "return" button active.
-                if (!url.startsWith(OFFLINE_PAGE_URL)) disableOfflineActions();
+                if (!url.startsWith(OFFLINE_PAGE_URL)) prepareOfflineSnapshot();
                 return;
             }
             if (isAppUrl(url)) currentAppUrl = url;
