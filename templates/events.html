@@ -131,8 +131,34 @@
                 {% if ev.community_is_registered %}
                 <button class="btn btn-danger-text btn-sm" onclick="toggleCommunityRegistration({{ ev.community_id }}, true)">Отписаться</button>
                 <span class="btn btn-success btn-sm event-card__state">Записан</span>
+                {% elif ev._watched %}
+                {% if cur_tab == 'my' and cur_sub == 'watch' %}
+                <select class="form-select snipe-priority-select" data-prev="{{ ev._watch.priority_code }}" onchange="changeWatchPriority('{{ ev.event_id }}', this.value, this)" aria-label="Режим автозаписи">
+                    <option value="low" {% if ev._watch.priority_code == 'low' %}selected{% endif %}>Низкий · бесплатно</option>
+                    <option value="medium" {% if ev._watch.priority_code == 'medium' %}selected{% endif %}>Средний · 1 🪙</option>
+                    <option value="high" {% if ev._watch.priority_code == 'high' %}selected{% endif %}>Высокий · 2 🪙</option>
+                </select>
+                <button class="btn btn-outline btn-sm" onclick='showSnipeLog("{{ ev.event_id }}", {{ ev.event_name|tojson }})'>Журнал</button>
+                <button class="btn btn-danger-text btn-sm" onclick="removeAutoRegistration('{{ ev.event_id }}')">Отключить</button>
+                {% else %}
+                <button class="btn btn-primary btn-sm watch-btn"
+                    data-event-id="{{ ev.event_id }}"
+                    data-event-name="{{ ev.event_name|e }}"
+                    data-event-start="{{ ev.event_start }}"
+                    onclick="toggleWatch(this)">
+                    <span class="material-symbols-outlined">bolt</span> Автозапись
+                </button>
+                {% endif %}
                 {% elif ev.community_registration_open %}
                 <button class="btn btn-primary btn-sm" onclick="toggleCommunityRegistration({{ ev.community_id }}, false)">Записаться</button>
+                {% elif ev.will_open_at %}
+                <button class="btn btn-primary btn-sm watch-btn"
+                    data-event-id="{{ ev.event_id }}"
+                    data-event-name="{{ ev.event_name|e }}"
+                    data-event-start="{{ ev.event_start }}"
+                    onclick="toggleWatch(this)">
+                    <span class="material-symbols-outlined">bolt</span> Автозапись
+                </button>
                 {% else %}
                 <span class="badge" style="background:var(--danger);color:white">🔒 Регистрация закрыта</span>
                 {% endif %}
@@ -357,11 +383,11 @@ async function toggleWatch(btn) {
             const data = await resp.json();
             if (data.ok) { location.reload(); }
         } else {
-            const choice = await showDialog('Приоритет автозаписи', 'Выбери скорость снайпинга:', {
+            const choice = await showDialog('Режим автозаписи', 'Коины списываются только после успешной записи. Выбери подходящий режим:', {
                 buttons: [
-                    {text: 'Низкий · бесплатно · когда не срочно'},
-                    {text: 'Средний · 1 коин · обычные события'},
-                    {text: 'Высокий · 2 коина · важные события', primary: true},
+                    {text: 'Низкий · бесплатно', description: 'Можно подождать. Подходит для неважных событий.'},
+                    {text: 'Средний · 1 🪙', description: 'Обычные события: экономный и достаточно быстрый.'},
+                    {text: 'Высокий · 2 🪙', description: 'Самые важные события: максимальная скорость.', primary: true},
                 ],
             });
             if (choice === null) return;

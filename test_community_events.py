@@ -1,4 +1,6 @@
 import tempfile
+import asyncio
+import datetime as dt
 import unittest
 from pathlib import Path
 
@@ -71,6 +73,48 @@ class CommunityEventStorageTests(unittest.TestCase):
         self.assertTrue(any(line.startswith("время:") for line in changes))
         self.assertTrue(any(line.startswith("место:") for line in changes))
         self.assertIn("обновлён контакт организатора", changes)
+
+
+class CommunityAutoRegistrationTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old_db_path = config.DB_PATH
+        config.DB_PATH = str(Path(self.tmp.name) / "test.sqlite3")
+        storage.init_db()
+        storage.save_known_uid("100", "owner", "Owner")
+        storage.save_known_uid("300", "member", "Member")
+        storage.ensure_coins("300")
+        self.messages = []
+
+    async def asyncTearDown(self):
+        import poller
+        for entry in list(poller._snipe_tasks.values()):
+            entry["task"].cancel()
+        poller._snipe_tasks.clear()
+        config.DB_PATH = self.old_db_path
+        self.tmp.cleanup()
+
+    async def test_community_auto_registration_registers_at_opening(self):
+        import poller
+        now = dt.datetime.now(dt.timezone.utc)
+        local_now = now.astimezone(dt.timezone(dt.timedelta(hours=3)))
+        event_id = storage.add_community_event(
+            "owner", "100", "Community event", local_now.strftime("%Y-%m-%d"),
+            (local_now + dt.timedelta(hours=1)).strftime("%H:%M"), "", now.isoformat(), "", 2,
+            "Description", "Hall", [],
+        )
+
+        async def notify(user_id, text):
+            self.messages.append((user_id, text))
+
+        await poller._community_snipe_loop(
+            "member", f"community_{event_id}", "Community event", now - dt.timedelta(seconds=1),
+            "300", notify, 0,
+        )
+
+        event = storage.get_community_events_for_user("member")[0]
+        self.assertTrue(event["is_registered"])
+        self.assertTrue(any("Ты теперь записан" in text for _, text in self.messages))
 
 
 if __name__ == "__main__":

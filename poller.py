@@ -127,6 +127,43 @@ def event_target_time(ev: EventInfo) -> dt.datetime | None:
     return parse_sirius_time(ev.record_start)
 
 
+def _community_target_time(event) -> dt.datetime | None:
+    value = event["registration_open_at"] if event else ""
+    if not value:
+        return None
+    try:
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=_MSK)
+        return parsed.astimezone(dt.timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def _community_registration_is_open(event, now: dt.datetime) -> bool:
+    target = _community_target_time(event)
+    if target and now < target:
+        return False
+    close = _parse_community_time(event["registration_close_at"])
+    if close and now >= close:
+        return False
+    start_value = f"{event['date_iso']}T{event['start_time']}" if event["start_time"] else ""
+    start = _parse_community_time(start_value)
+    return not start or now < start
+
+
+def _parse_community_time(value: str) -> dt.datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=_MSK)
+        return parsed.astimezone(dt.timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
 def _fmt_event_dt(iso_str: str | None) -> str:
     d = parse_sirius_time(iso_str)
     if not d:
@@ -144,6 +181,92 @@ def cancel_snipe(user_id: str, event_id: str):
     if entry:
         entry["task"].cancel()
     # Coin will be released by api_unwatch calling storage.release_coin
+
+
+def schedule_community_snipe(
+    user_id: str,
+    event_id: str,
+    event_name: str,
+    target_time: dt.datetime,
+    uid: str,
+    notify: NotifyFn,
+    coin_cost: int,
+):
+    """Register a user for a community event exactly when local registration opens."""
+    key = (user_id, event_id)
+    existing = _snipe_tasks.get(key)
+    if existing and not existing["task"].done():
+        previous = existing.get("target")
+        if previous and abs((previous - target_time).total_seconds()) <= RESCHEDULE_DRIFT:
+            return
+        existing["task"].cancel()
+    task = asyncio.create_task(
+        _community_snipe_loop(user_id, event_id, event_name, target_time, uid, notify, coin_cost)
+    )
+    _snipe_tasks[key] = {"task": task, "target": target_time, "active": False}
+
+
+def _release_snipe_coins(uid: str, coin_cost: int):
+    if not uid or coin_cost <= 0:
+        return
+    if coin_cost == 1:
+        storage.release_coin(uid)
+    else:
+        storage.release_coins(uid, coin_cost)
+
+
+def _spend_snipe_coins(uid: str, coin_cost: int):
+    if not uid or coin_cost <= 0:
+        return
+    if coin_cost == 1:
+        storage.spend_reserved_coin(uid)
+    elif not storage.spend_reserved_coins(uid, coin_cost):
+        storage.spend_reserved_coin(uid)
+
+
+async def _community_snipe_loop(
+    user_id: str,
+    event_id: str,
+    event_name: str,
+    target_time: dt.datetime,
+    uid: str,
+    notify: NotifyFn,
+    coin_cost: int,
+):
+    try:
+        delay = (target_time - dt.datetime.now(dt.timezone.utc)).total_seconds()
+        if delay > 0:
+            await asyncio.sleep(delay)
+        entry = _snipe_tasks.get((user_id, event_id))
+        if entry:
+            entry["active"] = True
+        await notify(user_id, f"🎯 Открылась регистрация на «{event_name}». Пытаюсь записать тебя.")
+        try:
+            community_id = int(event_id.split("_", 1)[1])
+        except (ValueError, IndexError):
+            community_id = 0
+        event = storage.get_community_event(community_id) if community_id else None
+        now = dt.datetime.now(dt.timezone.utc)
+        if not event or not _community_registration_is_open(event, now):
+            _release_snipe_coins(uid, coin_cost)
+            storage.set_watch_status(user_id, event_id, "failed")
+            await notify(user_id, f"😢 «{event_name}»: регистрация не открылась или событие уже завершилось.")
+            return
+        ok, reason = storage.add_community_registration(community_id, user_id)
+        if ok:
+            _spend_snipe_coins(uid, coin_cost)
+            storage.set_watch_status(user_id, event_id, "registered")
+            _log_snipe_attempt(user_id, event_id, event_name, "success", success=True, message="community registration")
+            await notify(user_id, f"✅ Ты теперь записан на «{event_name}».")
+            return
+        _release_snipe_coins(uid, coin_cost)
+        storage.set_watch_status(user_id, event_id, "failed")
+        _log_snipe_attempt(user_id, event_id, event_name, "error", message=reason)
+        await notify(user_id, f"😢 «{event_name}»: не успел записать, мест уже нет.")
+    except asyncio.CancelledError:
+        raise
+    finally:
+        _snipe_tasks.pop((user_id, event_id), None)
 
 
 def _is_subscribe_success(result) -> bool:
@@ -331,11 +454,7 @@ async def _snipe_loop(
         while True:
             if client.now() > deadline:
                 storage.set_watch_status(user_id, event_id, "failed")
-                if uid:
-                    if coin_cost <= 1:
-                        storage.release_coin(uid)
-                    else:
-                        storage.release_coins(uid, coin_cost)
+                _release_snipe_coins(uid, coin_cost)
                 _log_snipe_attempt(user_id, event_id, event_name, "timeout", success=False, message="deadline exceeded")
                 await notify(user_id, f"😢 «{event_name}»: так и не поймал открытие записи за отведённое время — похоже, сайт не открыл её вовремя.")
                 return
@@ -377,12 +496,7 @@ async def _snipe_loop(
                                 final_reserved = False
                     except Exception as e:
                         log.warning("final status fetch failed for %s: %s", event_id, e)
-                if uid:
-                    if coin_cost <= 1:
-                        storage.spend_reserved_coin(uid)
-                    else:
-                        if not storage.spend_reserved_coins(uid, coin_cost):
-                            storage.spend_reserved_coin(uid)
+                _spend_snipe_coins(uid, coin_cost)
                 storage.set_watch_status(user_id, event_id, "registered")
                 _log_snipe_attempt(user_id, event_id, event_name, "success", status_code=result.status_code, success=True, reserved=bool(final_reserved), message="registered")
                 await notify(user_id, f"✅ Ты теперь записан на «{event_name}».")
@@ -465,6 +579,9 @@ async def poll_user_once(
     uid = _uid_from_token(token)
 
     for event_id, watch in watches.items():
+        if event_id.startswith("community_"):
+            # Community registrations are handled by their own local timer.
+            continue
         ev = by_id.get(event_id)
         if ev is None:
             # Sirius removed the event altogether: leaving a watch here would keep a
@@ -494,6 +611,20 @@ async def run_poller(notify: NotifyFn, client: SiriusClient):
     all_watches = storage.get_all_active_watches()
     by_user: dict[str, list[tuple[str, str]]] = {}
     for w in all_watches:
+        if w["event_id"].startswith("community_"):
+            try:
+                community_id = int(w["event_id"].split("_", 1)[1])
+                event = storage.get_community_event(community_id)
+                target = _community_target_time(event)
+                uid = storage.get_user_uid(w["user_id"]) or ""
+                if event and target:
+                    schedule_community_snipe(
+                        w["user_id"], w["event_id"], event["event_name"], target,
+                        uid, notify, int(w["coin_cost"] or 0),
+                    )
+            except (TypeError, ValueError, IndexError):
+                log.warning("Could not restore community auto-registration %s", w["event_id"])
+            continue
         by_user.setdefault(w["user_id"], []).append((
             w["event_id"],
             w["event_name"],

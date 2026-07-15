@@ -1050,10 +1050,19 @@
             } else { inputArea.style.display = 'none'; }
             buttons.innerHTML = '';
             const btns = options.buttons || [{text: 'OK', primary: true}];
+            buttons.classList.toggle('dialog-choice-list', btns.some(b => b.description));
             btns.forEach((b, i) => {
                 const btn = document.createElement('button');
-                btn.className = 'btn ' + (b.primary ? 'btn-primary' : 'btn-outline') + ' btn-sm';
-                btn.textContent = b.text;
+                btn.className = 'btn ' + (b.primary ? 'btn-primary' : 'btn-outline') + ' btn-sm' + (b.description ? ' dialog-choice' : '');
+                if (b.description) {
+                    const title = document.createElement('strong');
+                    title.textContent = b.text;
+                    const description = document.createElement('small');
+                    description.textContent = b.description;
+                    btn.append(title, description);
+                } else {
+                    btn.textContent = b.text;
+                }
                 btn.onclick = () => {
                     const val = options.input ? (options.textarea ? textarea.value.trim() : input.value.trim()) : i;
                     if (_dialogResolve) { _dialogResolve(val); _dialogResolve = null; }

@@ -45,7 +45,7 @@ class SnipeLoopTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         _notify_sink.messages = []
 
-    async def _run_snipe(self, client, uid="uid-1", target_time=None, max_duration=1200):
+    async def _run_snipe(self, client, uid="uid-1", target_time=None, max_duration=1200, coin_cost=1):
         statuses = []
         spent = []
         released = []
@@ -71,6 +71,7 @@ class SnipeLoopTests(unittest.IsolatedAsyncioTestCase):
                 notify=_notify_sink,
                 target_time=target_time,
                 uid=uid,
+                coin_cost=coin_cost,
             )
         return statuses, spent, released
 
@@ -93,6 +94,15 @@ class SnipeLoopTests(unittest.IsolatedAsyncioTestCase):
             _notify_sink.messages[-1][1],
             "✅ Ты теперь записан на «Test event».",
         )
+
+    async def test_free_low_priority_does_not_spend_a_coin(self):
+        client = FakeClient([SubscribeResult(True, False, 204, "")])
+
+        statuses, spent, released = await self._run_snipe(client, coin_cost=0)
+
+        self.assertIn(("user-1", "event-1", "registered"), statuses)
+        self.assertEqual(spent, [])
+        self.assertEqual(released, [])
 
     async def test_error_body_retries_until_success(self):
         client = FakeClient([

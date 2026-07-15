@@ -689,7 +689,11 @@ def _decorate_auto_registration(event, watch, user_id: str, now: dt.datetime) ->
         "medium": "Средний приоритет",
         "low": "Низкий приоритет",
     }
-    target = poller.event_target_time(event) or parse_sirius_time(watch["event_start"])
+    if getattr(event, "event_type", "") == "communityEvent":
+        target = _community_datetime(getattr(event, "registration_open_at", ""))
+    else:
+        target = poller.event_target_time(event)
+    target = target or parse_sirius_time(watch["event_start"])
     is_active = poller.is_sniping(user_id, event.event_id)
     label = "Автозапись ожидает обновления"
     if target:
@@ -777,18 +781,18 @@ async def events_page(request: Request, tab: str = "register", status: str = "al
     now = _now()
     watches = {w["event_id"]: w for w in storage.get_watchlist(user_id)}
 
+    community_events = [
+        _community_event_for_events_page(event, user_id, storage.is_admin(session_uid))
+        for event in storage.get_community_events_for_user(user_id)
+    ]
+    all_events = list(all_events) + community_events
+
     for ev in all_events:
         ev._watched = False
         ev._watch = None
         watch = watches.get(ev.event_id)
         if watch:
             _decorate_auto_registration(ev, watch, user_id, now)
-
-    community_events = [
-        _community_event_for_events_page(event, user_id, storage.is_admin(session_uid))
-        for event in storage.get_community_events_for_user(user_id)
-    ]
-    all_events = list(all_events) + community_events
 
     # Compute overlaps: which events overlap with user's registered/watched events
     _user_event_names = {ev.event_id: ev.event_name for ev in all_events}
@@ -2286,6 +2290,38 @@ async def api_watch(request: Request):
     if _is_past_event_start(event_start):
         return JSONResponse({"ok": False, "error": "Событие уже прошло"}, status_code=400)
 
+    if str(event_id).startswith("community_"):
+        try:
+            community_id = int(str(event_id).split("_", 1)[1])
+        except (ValueError, IndexError):
+            return JSONResponse({"ok": False, "error": "Некорректное событие сообщества"}, status_code=400)
+        community_event = storage.get_community_event(community_id)
+        if not community_event:
+            return JSONResponse({"ok": False, "error": "Событие сообщества не найдено"}, status_code=404)
+        target = _community_datetime(community_event["registration_open_at"])
+        event_starts_at = _community_datetime(
+            f"{community_event['date_iso']}T{community_event['start_time']}" if community_event["start_time"] else ""
+        )
+        now = _now()
+        if not target or target <= now:
+            return JSONResponse({"ok": False, "error": "Регистрация для этого события уже не ожидается"}, status_code=400)
+        if event_starts_at and event_starts_at <= now:
+            return JSONResponse({"ok": False, "error": "Событие уже прошло"}, status_code=400)
+        closes_at = _community_datetime(community_event["registration_close_at"])
+        if closes_at and closes_at <= target:
+            return JSONResponse({"ok": False, "error": "Регистрация закончится до открытия"}, status_code=400)
+
+        uid = _session_uid(user_id) or ""
+        if uid and not storage.reserve_coins(uid, coin_cost):
+            return JSONResponse({"ok": False, "error": f"Недостаточно Сириус Коинов. Нужно: {coin_cost}."}, status_code=402)
+        event_name = community_event["event_name"]
+        event_start = f"{community_event['date_iso']}T{community_event['start_time']}:00+03:00" if community_event["start_time"] else ""
+        storage.add_watch(user_id, event_id, event_name, event_start=event_start, snipe_priority=snipe_priority)
+        poller.schedule_community_snipe(
+            user_id, event_id, event_name, target, uid, web_notify, coin_cost
+        )
+        return JSONResponse({"ok": True, "community": True})
+
     token = storage.get_token(user_id)
     ev = None
     if _sirius_client and token:
@@ -2338,6 +2374,7 @@ async def api_watch_priority(request: Request):
     old_cost = watch["coin_cost"] if "coin_cost" in watch.keys() else storage.snipe_priority_cost(watch["snipe_priority"])
     new_cost = storage.snipe_priority_cost(snipe_priority)
     uid = _session_uid(user_id) or ""
+    token = storage.get_token(user_id)
 
     if uid and new_cost > old_cost:
         if not storage.reserve_coins(uid, new_cost - old_cost):
@@ -2346,6 +2383,19 @@ async def api_watch_priority(request: Request):
         storage.release_coins(uid, old_cost - new_cost)
 
     storage.update_watch_priority(user_id, event_id, snipe_priority, new_cost)
+
+    if str(event_id).startswith("community_"):
+        try:
+            community_event = storage.get_community_event(int(str(event_id).split("_", 1)[1]))
+            target = _community_datetime(community_event["registration_open_at"]) if community_event else None
+            if community_event and target:
+                poller.cancel_snipe(user_id, event_id)
+                poller.schedule_community_snipe(
+                    user_id, event_id, community_event["event_name"], target, uid, web_notify, new_cost
+                )
+        except (ValueError, IndexError):
+            pass
+        return JSONResponse({"ok": True, "coin_cost": new_cost})
 
     if token and _sirius_client:
         poller.cancel_snipe(user_id, event_id)
