@@ -2320,20 +2320,17 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
 
 @media (max-width: 768px) {
     .header__container--signed-in {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) 36px auto;
-        grid-template-rows: 54px 44px;
-        height: 105px;
-        min-height: 0;
-        padding: 0 10px 7px;
-        column-gap: 5px;
-        row-gap: 0;
+        display: flex;
+        height: 54px;
+        min-height: 54px;
+        padding: 0 10px;
+        gap: 5px;
+        flex-wrap: nowrap;
     }
     .header__container--signed-in .header__logo {
-        grid-column: 1;
-        grid-row: 1;
         width: auto;
         min-width: 0;
+        flex: 1 1 0;
         height: 54px;
         gap: 5px;
         overflow: hidden;
@@ -2348,14 +2345,7 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
         overflow-wrap: normal;
     }
     .header__container--signed-in .header__nav {
-        grid-column: 1 / -1;
-        grid-row: 2;
-        position: static;
-        width: 100%;
-        transform: none;
-        display: flex;
-        gap: 3px;
-        padding: 3px;
+        display: none;
     }
     .header__nav-link {
         min-width: 0;
@@ -2365,13 +2355,11 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
         font-size: 14px;
     }
     .header__container--signed-in .header__menu-btn {
-        grid-column: 2;
-        grid-row: 1;
+        flex: 0 0 36px;
         margin-left: 0;
     }
     .header__container--signed-in .header__right {
-        grid-column: 3;
-        grid-row: 1;
+        flex: 0 0 80px;
         height: 54px;
         min-width: 76px;
         margin-left: 0;
@@ -2379,7 +2367,7 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
     .header__coins, .header__theme, .header__admin { display: none; }
     .header__auth-btn, .header__menu-btn { width: 36px; height: 36px; }
     .header__mobile-nav {
-        top: 105px;
+        top: 54px;
         padding: 10px;
         gap: 10px;
         border-radius: 0 0 8px 8px;

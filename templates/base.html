@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Пирожковый Диспетчер{% endblock %}</title>
     <link rel="icon" href="/static/sirius.png">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260715-8">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260715-9">
 </head>
 <body>
     <div class="app">
@@ -50,6 +50,11 @@
             </div>
             {% if user_id %}
             <nav class="header__mobile-nav" id="mobile-nav">
+                <div class="header__mobile-nav-group">
+                    <span class="header__mobile-nav-title">Навигация</span>
+                    <a href="/schedule" class="header__mobile-nav-link"><span class="material-symbols-outlined">calendar_month</span>Расписание</a>
+                    <a href="/events?tab=register" class="header__mobile-nav-link"><span class="material-symbols-outlined">event_available</span>События</a>
+                </div>
                 <div class="header__mobile-nav-group">
                     <span class="header__mobile-nav-title">Сервис</span>
                     <a href="/coins-info" class="header__mobile-nav-link"><span class="material-symbols-outlined">toll</span>Сириус Коины · {{ coins_balance }}</a>
