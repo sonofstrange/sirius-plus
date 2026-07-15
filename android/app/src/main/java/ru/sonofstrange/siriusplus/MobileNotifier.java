@@ -1,14 +1,17 @@
 package ru.sonofstrange.siriusplus;
 
+import android.Manifest;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
 import android.media.RingtoneManager;
 import android.os.Build;
 
+import androidx.core.content.ContextCompat;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 
@@ -21,7 +24,6 @@ final class MobileNotifier {
     private MobileNotifier() {}
 
     static void createChannels(Context context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         NotificationChannel events = new NotificationChannel(
             EVENTS_CHANNEL, "События Sirius", NotificationManager.IMPORTANCE_HIGH
@@ -44,6 +46,11 @@ final class MobileNotifier {
     }
 
     static synchronized void show(Context context, String title, String body, boolean isAlarm) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+            && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
         String fingerprint = title + "\n" + body + "\n" + isAlarm;
         long now = System.currentTimeMillis();
         if (fingerprint.equals(lastFingerprint) && now - lastShownAt < 4000) return;
@@ -66,9 +73,6 @@ final class MobileNotifier {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(isAlarm ? NotificationCompat.CATEGORY_ALARM : NotificationCompat.CATEGORY_EVENT)
             .setAutoCancel(true);
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            builder.setDefaults(NotificationCompat.DEFAULT_SOUND | NotificationCompat.DEFAULT_VIBRATE);
-        }
         NotificationManagerCompat.from(context).notify((int) now, builder.build());
     }
 }
