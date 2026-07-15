@@ -2705,6 +2705,27 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
     flex-wrap: wrap;
     gap: 8px;
 }
+.dronebet-exchange {
+    margin-top: 20px;
+    padding: 18px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--bg-card);
+    box-shadow: var(--shadow);
+}
+.dronebet-exchange__balances {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+}
+.dronebet-exchange__balances > div { min-width: 0; }
+.dronebet-exchange__balances span { display: block; color: var(--text-muted); font-size: 13px; }
+.dronebet-exchange__balances strong { display: block; margin-top: 4px; font-size: 22px; overflow-wrap: anywhere; }
+.dronebet-exchange__balances > .material-symbols-outlined { color: var(--primary); font-size: 24px; }
+.dronebet-exchange__rate { margin: 16px 0 12px; color: var(--text-muted); font-size: 14px; }
+.dronebet-exchange__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.dronebet-exchange__hint { margin: 12px 0 0; font-size: 12px; line-height: 1.4; }
 .referral-card { display: grid; justify-items: center; gap: 14px; }
 .referral-card > .text-muted { width: 100%; line-height: 1.45; }
 .referral-card__code { display: grid; justify-items: center; gap: 3px; }
@@ -2768,6 +2789,9 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
     .partner-integration__copy { flex-basis: calc(100% - 42px); }
     .partner-integration__actions { width: 100%; margin-left: 38px; }
     .partner-integration .btn { margin-left: 0; }
+    .dronebet-exchange { padding: 14px; }
+    .dronebet-exchange__balances strong { font-size: 18px; }
+    .dronebet-exchange__actions .btn { flex: 1 1 180px; }
     .feedback-message { max-width: 94%; }
     .feedback-reply-form { flex-direction: column; }
     .feedback-reply-form .btn { align-self: flex-end; }

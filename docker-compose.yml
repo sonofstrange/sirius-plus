@@ -11,4 +11,5 @@ services:
       - SIRIUS_PORT=8000
       - DB_PATH=/app/data/sirius_web.sqlite3
       - DRONEBET_PARTNER_TOKEN=${DRONEBET_PARTNER_TOKEN:-}
+      - DRONEBET_API_BASE=${DRONEBET_API_BASE:-https://dronebet.cloudpub.ru/api/partner/sirius}
     restart: unless-stopped

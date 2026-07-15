@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import config
 import main
@@ -115,6 +116,61 @@ class PartnerApiTests(unittest.IsolatedAsyncioTestCase):
         }))
         self.assertEqual(credit.status_code, 200)
         self.assertEqual(storage.get_coins("sirius-user"), 5)
+
+
+class DroneBetExchangeTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old_db_path = config.DB_PATH
+        config.DB_PATH = str(Path(self.tmp.name) / "test.sqlite3")
+        storage.init_db()
+        storage.ensure_coins("sirius-user")
+        storage.add_coins("sirius-user", 7)
+        ok, reason = storage.link_partner_account("dronebet", "sirius-user", "42")
+        self.assertTrue(ok, reason)
+
+    def tearDown(self):
+        config.DB_PATH = self.old_db_path
+        self.tmp.cleanup()
+
+    async def test_pending_exchange_is_resumed_without_second_debit(self):
+        exchange, state = storage.begin_partner_exchange(
+            "dronebet", "sirius-user", "42", "coins_to_cookies", 2, 4000, "exchange-test-key-001",
+        )
+        self.assertEqual(state, "created")
+        with patch("main._dronebet_request", return_value=(0, {"ok": False}, True)):
+            ok, result, status = await main._complete_dronebet_exchange(exchange)
+        self.assertFalse(ok)
+        self.assertTrue(result["pending"])
+        self.assertEqual(status, 503)
+        self.assertEqual(storage.get_coins("sirius-user"), 8)
+
+        retry, state = storage.begin_partner_exchange(
+            "dronebet", "sirius-user", "42", "coins_to_cookies", 2, 4000, "another-exchange-key-001",
+        )
+        self.assertEqual(state, "pending")
+        self.assertEqual(retry["idempotency_key"], "exchange-test-key-001")
+        with patch("main._dronebet_request", return_value=(200, {"ok": True, "balance": 4000}, False)):
+            ok, result, status = await main._complete_dronebet_exchange(retry)
+        self.assertTrue(ok)
+        self.assertEqual(status, 200)
+        self.assertEqual(result["coins"], 8)
+        self.assertEqual(storage.get_coins("sirius-user"), 8)
+
+    async def test_cookie_debit_credits_coins_once(self):
+        exchange, _ = storage.begin_partner_exchange(
+            "dronebet", "sirius-user", "42", "cookies_to_coins", 3, 6000, "cookies-exchange-key-001",
+        )
+        with patch("main._dronebet_request", return_value=(200, {"ok": True, "balance": 2000}, False)):
+            ok, result, status = await main._complete_dronebet_exchange(exchange)
+            repeat_ok, repeat_result, repeat_status = await main._complete_dronebet_exchange(exchange)
+        self.assertTrue(ok)
+        self.assertTrue(repeat_ok)
+        self.assertEqual(status, 200)
+        self.assertEqual(repeat_status, 200)
+        self.assertEqual(result["coins"], 13)
+        self.assertEqual(repeat_result["coins"], 13)
+        self.assertEqual(storage.get_coins("sirius-user"), 13)
 
 
 if __name__ == "__main__":

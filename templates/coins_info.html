@@ -24,14 +24,27 @@
         <div class="partner-integration__copy">
             <div class="partner-integration__heading">
                 <h2 id="dronebet-exchange-title">Интеграция DroneBet</h2>
-                <span class="badge">Скоро</span>
+                <span class="badge" id="dronebet-status">Проверяем</span>
             </div>
-            <p id="dronebet-link-text">Свяжи аккаунт, чтобы после запуска обменивать Сириус Коины и печеньки DroneBet.</p>
+            <p id="dronebet-link-text">Свяжи аккаунт, чтобы обменивать Сириус Коины и печеньки DroneBet.</p>
         </div>
         <div class="partner-integration__actions">
-            <button class="btn btn-primary btn-sm" id="dronebet-link-button" type="button" onclick="createDroneBetLinkCode()">Связать аккаунт</button>
+            <button class="btn btn-primary btn-sm" id="dronebet-link-button" type="button" onclick="claimDroneBetLink()">Ввести код DroneBet</button>
             <a class="btn btn-outline btn-sm" href="https://dronebet.cloudpub.ru/" target="_blank" rel="noopener noreferrer">Открыть DroneBet</a>
         </div>
+    </section>
+    <section class="dronebet-exchange" id="dronebet-exchange" hidden aria-live="polite">
+        <div class="dronebet-exchange__balances">
+            <div><span>Сириус Коины</span><strong id="dronebet-coins">—</strong></div>
+            <span class="material-symbols-outlined" aria-hidden="true">sync_alt</span>
+            <div><span>Печеньки DroneBet</span><strong id="dronebet-cookies">—</strong></div>
+        </div>
+        <p class="dronebet-exchange__rate">Курс: 1 Сириус Коин = 2 000 печенек DroneBet.</p>
+        <div class="dronebet-exchange__actions">
+            <button class="btn btn-primary" type="button" onclick="exchangeDroneBet('coins_to_cookies')">Коины → печеньки</button>
+            <button class="btn btn-outline" type="button" onclick="exchangeDroneBet('cookies_to_coins')">Печеньки → коины</button>
+        </div>
+        <p class="text-muted dronebet-exchange__hint">Обмениваются только целые Сириус Коины. При сбое обмен можно безопасно повторить.</p>
     </section>
     {% else %}
     <div class="auth-card__help" style="background:var(--bg-card);padding:24px;border-radius:var(--radius);box-shadow:var(--shadow);line-height:1.8">
@@ -125,32 +138,85 @@ async function doTransfer() {
     } catch (e) { dlgAlert('Ошибка', 'Ошибка соединения: ' + e); }
 }
 
+let droneBetPending = null;
+
 async function loadDroneBetLink() {
     const text = document.getElementById('dronebet-link-text');
     const button = document.getElementById('dronebet-link-button');
-    if (!text || !button) return;
+    const status = document.getElementById('dronebet-status');
+    const exchange = document.getElementById('dronebet-exchange');
+    if (!text || !button || !status || !exchange) return;
     try {
-        const response = await fetch('/api/dronebet/link');
-        const data = await response.json();
+        const response = await fetch('/api/dronebet/summary');
+        const data = await response.json().catch(() => ({}));
+        if (!data.ok) throw new Error('summary unavailable');
         if (data.ok && data.linked) {
-            text.textContent = 'Аккаунт DroneBet уже связан. Обмен появится после запуска интеграции.';
+            text.textContent = data.remote_error || 'Аккаунт DroneBet связан. Можно обменивать валюту.';
+            status.textContent = data.remote_error ? 'Нет связи' : 'Связан';
             button.hidden = true;
+            exchange.hidden = false;
+            document.getElementById('dronebet-coins').textContent = data.coins + ' 🪙';
+            document.getElementById('dronebet-cookies').textContent = data.cookies === null ? '—' : data.cookies.toLocaleString('ru-RU');
+        } else {
+            status.textContent = data.configured ? 'Не связан' : 'Настройка';
+            text.textContent = data.configured
+                ? 'Создай одноразовый код на DroneBet и введи его здесь. После привязки доступен обмен валюты.'
+                : 'Интеграция DroneBet временно настраивается на сервере.';
         }
-    } catch (e) { /* Link availability should not block the page. */ }
+    } catch (e) {
+        status.textContent = 'Нет связи';
+        text.textContent = 'Не удалось проверить связь с DroneBet. Обнови страницу позже.';
+    }
 }
 
-async function createDroneBetLinkCode() {
+async function claimDroneBetLink() {
+    const code = await dlgPrompt('Связать с DroneBet', 'Создай одноразовый код в DroneBet и введи его сюда:', 'Код DroneBet');
+    if (!code) return;
     try {
-        const response = await fetch('/api/dronebet/link-code', {method: 'POST'});
-        const data = await response.json();
+        const response = await fetch('/api/dronebet/claim-link', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({code: code.trim()}),
+        });
+        const data = await response.json().catch(() => ({}));
         if (!data.ok) {
-            dlgAlert('Не получилось', data.code === 'already_linked' ? 'Этот аккаунт уже связан с DroneBet.' : 'Не удалось создать код. Попробуй ещё раз.');
+            dlgAlert('Не получилось', data.error || 'Не удалось связать аккаунт. Попробуй ещё раз.');
             return;
         }
-        const until = new Date(data.expires_at * 1000).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});
-        dlgAlert('Код привязки', 'Введи этот код на DroneBet: <strong style="font-size:24px;letter-spacing:2px">' + escapeHtml(data.code) + '</strong><br><br>Он одноразовый и действует до ' + until + '.');
+        dlgAlert('Аккаунт связан', 'Теперь доступны обмены между Сириус Коинами и печеньками DroneBet.');
+        loadDroneBetLink();
     } catch (e) {
         dlgAlert('Не получилось', 'Не удалось соединиться с сервером.');
+    }
+}
+
+async function exchangeDroneBet(direction) {
+    const title = direction === 'coins_to_cookies' ? 'Коины в печеньки' : 'Печеньки в коины';
+    const amount = await dlgPrompt(title, 'Сколько целых Сириус Коинов обменять? Курс: 1 = 2 000.', '1', {type: 'number', value: '1'});
+    const coins = Number(amount);
+    if (!Number.isInteger(coins) || coins < 1 || coins > 500) {
+        if (amount !== null) dlgAlert('Проверь число', 'Можно обменять от 1 до 500 целых Сириус Коинов.');
+        return;
+    }
+    const key = droneBetPending && droneBetPending.direction === direction && droneBetPending.coins === coins
+        ? droneBetPending.key : (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + '-dronebet-exchange');
+    try {
+        const response = await fetch('/api/dronebet/exchange', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({direction, coins, idempotency_key: key}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!data.ok) {
+            if (data.pending) droneBetPending = {direction, coins, key};
+            dlgAlert('Обмен не завершён', data.error || 'Попробуй ещё раз.');
+            return;
+        }
+        droneBetPending = null;
+        dlgAlert('Готово', 'Обмен завершён. Сириус Коинов: ' + data.coins + '. Печенек DroneBet: ' + (data.cookies === null ? 'обновляются' : data.cookies) + '.');
+        loadCoins();
+        loadDroneBetLink();
+    } catch (e) {
+        droneBetPending = {direction, coins, key};
+        dlgAlert('Обмен ожидает подтверждения', 'Соединение прервано. Повтори тот же обмен через несколько секунд.');
     }
 }
 

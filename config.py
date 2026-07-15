@@ -24,6 +24,10 @@ PORT = int(os.environ.get("SIRIUS_PORT", "8000"))
 # Server-to-server credential for DroneBet. It must only be configured on the
 # production server; never expose it to a browser or commit its value.
 DRONEBET_PARTNER_TOKEN = os.environ.get("DRONEBET_PARTNER_TOKEN", "")
+DRONEBET_API_BASE = os.environ.get(
+    "DRONEBET_API_BASE", "https://dronebet.cloudpub.ru/api/partner/sirius"
+).rstrip("/")
+DRONEBET_COOKIE_RATE = 2_000
 DRONEBET_LINK_CODE_TTL_SECONDS = int(os.environ.get("DRONEBET_LINK_CODE_TTL_SECONDS", "600"))
 
 

@@ -408,6 +408,25 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_partner_coin_transactions_uid
                 ON partner_coin_transactions(uid, created_at DESC);
 
+            CREATE TABLE IF NOT EXISTS partner_exchanges (
+                partner          TEXT NOT NULL,
+                idempotency_key  TEXT NOT NULL,
+                uid              TEXT NOT NULL,
+                external_user_id TEXT NOT NULL,
+                direction        TEXT NOT NULL,
+                coins            INTEGER NOT NULL,
+                cookies          INTEGER NOT NULL,
+                status           TEXT NOT NULL,
+                local_balance    INTEGER,
+                remote_balance   INTEGER,
+                created_at       INTEGER NOT NULL,
+                updated_at       INTEGER NOT NULL,
+                PRIMARY KEY (partner, idempotency_key)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_partner_exchanges_pending
+                ON partner_exchanges(partner, uid, status, updated_at DESC);
+
         """)
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(watchlist)").fetchall()]
         if "event_start" not in cols:
@@ -1784,6 +1803,104 @@ def get_partner_link_for_uid(partner: str, uid: str) -> sqlite3.Row | None:
             "SELECT * FROM partner_account_links WHERE partner=? AND uid=?",
             (partner, uid),
         ).fetchone()
+
+
+def link_partner_account(partner: str, uid: str, external_user_id: str) -> tuple[bool, str]:
+    """Persist a link accepted by the remote partner, preserving one-to-one ownership."""
+    uid = str(uid or "").strip()
+    external_user_id = str(external_user_id or "").strip()
+    if not uid or not external_user_id or len(external_user_id) > 128:
+        return False, "invalid_account"
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        by_external = conn.execute(
+            "SELECT uid FROM partner_account_links WHERE partner=? AND external_user_id=?",
+            (partner, external_user_id),
+        ).fetchone()
+        if by_external and by_external["uid"] != uid:
+            return False, "drone_account_already_linked"
+        by_uid = conn.execute(
+            "SELECT external_user_id FROM partner_account_links WHERE partner=? AND uid=?",
+            (partner, uid),
+        ).fetchone()
+        if by_uid and by_uid["external_user_id"] != external_user_id:
+            return False, "sirius_account_already_linked"
+        if not by_external:
+            conn.execute(
+                "INSERT INTO partner_account_links (partner, external_user_id, uid, linked_at) VALUES (?, ?, ?, ?)",
+                (partner, external_user_id, uid, int(time.time())),
+            )
+        return True, "linked"
+
+
+def begin_partner_exchange(
+    partner: str,
+    uid: str,
+    external_user_id: str,
+    direction: str,
+    coins: int,
+    cookies: int,
+    idempotency_key: str,
+) -> tuple[dict | None, str]:
+    """Create or resume one exchange. A pending exchange is always resumed first."""
+    if direction not in {"coins_to_cookies", "cookies_to_coins"}:
+        return None, "invalid_direction"
+    if not isinstance(coins, int) or coins < 1 or cookies != coins * 2_000:
+        return None, "invalid_amount"
+    if not isinstance(idempotency_key, str) or not 12 <= len(idempotency_key) <= 128:
+        return None, "invalid_idempotency_key"
+    now = int(time.time())
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        existing = conn.execute(
+            "SELECT * FROM partner_exchanges WHERE partner=? AND idempotency_key=?",
+            (partner, idempotency_key),
+        ).fetchone()
+        if existing:
+            same = all((
+                existing["uid"] == uid,
+                existing["external_user_id"] == external_user_id,
+                existing["direction"] == direction,
+                existing["coins"] == coins,
+                existing["cookies"] == cookies,
+            ))
+            return (dict(existing), "existing") if same else (None, "idempotency_key_conflict")
+        pending = conn.execute(
+            """SELECT * FROM partner_exchanges
+               WHERE partner=? AND uid=? AND direction=? AND coins=? AND cookies=? AND status='pending'
+               ORDER BY created_at DESC LIMIT 1""",
+            (partner, uid, direction, coins, cookies),
+        ).fetchone()
+        if pending:
+            return dict(pending), "pending"
+        conn.execute(
+            """INSERT INTO partner_exchanges
+               (partner, idempotency_key, uid, external_user_id, direction, coins, cookies, status, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
+            (partner, idempotency_key, uid, external_user_id, direction, coins, cookies, now, now),
+        )
+        return {
+            "partner": partner, "idempotency_key": idempotency_key, "uid": uid,
+            "external_user_id": external_user_id, "direction": direction, "coins": coins,
+            "cookies": cookies, "status": "pending", "local_balance": None, "remote_balance": None,
+        }, "created"
+
+
+def complete_partner_exchange(partner: str, idempotency_key: str, local_balance: int, remote_balance: int | None) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE partner_exchanges SET status='completed', local_balance=?, remote_balance=?, updated_at=?
+               WHERE partner=? AND idempotency_key=?""",
+            (local_balance, remote_balance, int(time.time()), partner, idempotency_key),
+        )
+
+
+def fail_partner_exchange(partner: str, idempotency_key: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE partner_exchanges SET status='failed', updated_at=? WHERE partner=? AND idempotency_key=?",
+            (int(time.time()), partner, idempotency_key),
+        )
 
 
 def claim_partner_link_code(partner: str, code: str, external_user_id: str) -> tuple[bool, str, str | None]:

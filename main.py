@@ -9,7 +9,10 @@ import math
 import os
 import secrets
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
+import uuid
 from collections import deque
 from urllib.parse import quote
 from contextlib import asynccontextmanager
@@ -51,6 +54,7 @@ _schedule_cache: dict[str, tuple[float, list]] = {}
 
 PAGE_SIZE = 20
 DRONEBET_PARTNER = "dronebet"
+DRONEBET_MAX_EXCHANGE_COINS = 500
 
 _MSK = dt.timezone(dt.timedelta(hours=3))
 REFERRAL_COOKIE = "sirius_referral_code"
@@ -1625,6 +1629,110 @@ def _partner_json_error(code: str, status_code: int = 400, **extra) -> JSONRespo
     return JSONResponse({"ok": False, "code": code, **extra}, status_code=status_code)
 
 
+async def _dronebet_request(method: str, path: str, payload: dict | None = None) -> tuple[int, dict, bool]:
+    """Call DroneBet from the server. The boolean means that retry is needed."""
+    token = app_config.DRONEBET_PARTNER_TOKEN
+    if not token:
+        return 503, {"ok": False, "code": "integration_not_configured"}, False
+    url = f"{app_config.DRONEBET_API_BASE}{path}"
+
+    def send() -> tuple[int, dict, bool]:
+        body = json.dumps(payload).encode() if payload is not None else None
+        req = urllib.request.Request(
+            url, data=body, method=method,
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/json",
+                     **({"Content-Type": "application/json"} if body is not None else {})},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=12) as response:
+                raw = response.read().decode("utf-8", errors="replace")
+                data = json.loads(raw) if raw else {}
+                return response.status, data if isinstance(data, dict) else {}, False
+        except urllib.error.HTTPError as exc:
+            raw = exc.read().decode("utf-8", errors="replace")
+            try:
+                data = json.loads(raw) if raw else {}
+            except json.JSONDecodeError:
+                data = {}
+            return exc.code, data if isinstance(data, dict) else {}, False
+        except (urllib.error.URLError, TimeoutError, OSError):
+            return 0, {"ok": False, "code": "partner_unreachable"}, True
+
+    return await asyncio.to_thread(send)
+
+
+def _dronebet_error_message(status: int, data: dict) -> str:
+    code = str(data.get("code") or data.get("error") or "")
+    messages = {
+        "invalid_link_code": "Код DroneBet неверный, истёк или уже использован.",
+        "sirius_account_already_linked": "Этот аккаунт уже связан с другим DroneBet-аккаунтом.",
+        "drone_account_already_linked": "Этот DroneBet-аккаунт уже связан с другим пользователем.",
+        "account_not_linked": "Сначала свяжи аккаунт с DroneBet.",
+        "insufficient_coins": "На DroneBet недостаточно печенек для обмена.",
+        "integration_not_configured": "Интеграция DroneBet ещё не настроена на сервере.",
+        "partner_unreachable": "DroneBet временно не отвечает. Попробуй ещё раз.",
+    }
+    if code in messages:
+        return messages[code]
+    if status == 401:
+        return "Не удалось авторизоваться в DroneBet. Сообщи администратору."
+    if status == 429:
+        return "DroneBet временно ограничил запросы. Попробуй чуть позже."
+    if status >= 500 or status == 0:
+        return "DroneBet временно не отвечает. Попробуй ещё раз."
+    return "DroneBet отклонил операцию. Попробуй ещё раз."
+
+
+async def _complete_dronebet_exchange(exchange: dict) -> tuple[bool, dict, int]:
+    """Perform one exchange without applying either local side twice after a retry."""
+    key = exchange["idempotency_key"]
+    local_key = f"{key}:sirius"
+    if exchange["direction"] == "coins_to_cookies":
+        local = storage.partner_coin_transaction(
+            DRONEBET_PARTNER, exchange["external_user_id"], "debit", exchange["coins"], local_key,
+            f"Обмен {exchange['coins']} Сириус Коин(ов) на печеньки DroneBet",
+        )
+        if not local["ok"]:
+            storage.fail_partner_exchange(DRONEBET_PARTNER, key)
+            return False, {"error": "Недостаточно доступных Сириус Коинов." if local["code"] == "insufficient_coins" else "Не удалось списать Сириус Коины."}, 409
+        status, remote, retryable = await _dronebet_request("POST", "/coins/credit", {
+            "sirius_uid": exchange["uid"], "amount": exchange["cookies"], "idempotency_key": key,
+            "reason": f"Обмен {exchange['coins']} Сириус Коин(ов) в Sirius Plus",
+        })
+        if 200 <= status < 300 and remote.get("ok"):
+            remote_balance = remote.get("balance") if isinstance(remote.get("balance"), int) else None
+            storage.complete_partner_exchange(DRONEBET_PARTNER, key, local["balance"], remote_balance)
+            return True, {"coins": local["balance"], "cookies": remote_balance}, 200
+        if not retryable and status < 500:
+            storage.partner_coin_transaction(
+                DRONEBET_PARTNER, exchange["external_user_id"], "credit", exchange["coins"], f"{key}:rollback",
+                "Возврат после отклонённого обмена DroneBet",
+            )
+            storage.fail_partner_exchange(DRONEBET_PARTNER, key)
+            return False, {"error": _dronebet_error_message(status, remote)}, status or 400
+        return False, {"pending": True, "error": "Обмен ожидает подтверждения DroneBet. Нажми «Повторить» через несколько секунд."}, 503
+
+    status, remote, retryable = await _dronebet_request("POST", "/coins/debit", {
+        "sirius_uid": exchange["uid"], "amount": exchange["cookies"], "idempotency_key": key,
+        "reason": f"Обмен печенек DroneBet на {exchange['coins']} Сириус Коин(ов)",
+    })
+    if not (200 <= status < 300 and remote.get("ok")):
+        if not retryable and status < 500:
+            storage.fail_partner_exchange(DRONEBET_PARTNER, key)
+        if retryable or status >= 500:
+            return False, {"pending": True, "error": "Обмен ожидает подтверждения DroneBet. Нажми «Повторить» через несколько секунд."}, 503
+        return False, {"error": _dronebet_error_message(status, remote)}, status or 400
+    local = storage.partner_coin_transaction(
+        DRONEBET_PARTNER, exchange["external_user_id"], "credit", exchange["coins"], local_key,
+        f"Обмен печенек DroneBet на {exchange['coins']} Сириус Коин(ов)",
+    )
+    if not local["ok"]:
+        return False, {"pending": True, "error": "Печеньки уже списаны. Обмен ожидает подтверждения, повтори попытку."}, 503
+    remote_balance = remote.get("balance") if isinstance(remote.get("balance"), int) else None
+    storage.complete_partner_exchange(DRONEBET_PARTNER, key, local["balance"], remote_balance)
+    return True, {"coins": local["balance"], "cookies": remote_balance}, 200
+
+
 @app.get("/api/dronebet/link")
 async def api_dronebet_link(request: Request):
     user_id = get_user_id(request)
@@ -1637,6 +1745,78 @@ async def api_dronebet_link(request: Request):
         "linked": bool(link),
         "dronebet_user_id": link["external_user_id"] if link else None,
     })
+
+
+@app.get("/api/dronebet/summary")
+async def api_dronebet_summary(request: Request):
+    user_id = get_user_id(request)
+    uid = _session_uid(user_id) if user_id else None
+    if not uid:
+        return _partner_json_error("unauthorized", 401)
+    link = storage.get_partner_link_for_uid(DRONEBET_PARTNER, uid)
+    response = {
+        "ok": True, "configured": bool(app_config.DRONEBET_PARTNER_TOKEN), "linked": bool(link),
+        "coins": storage.get_coins(uid), "cookies": None, "rate": app_config.DRONEBET_COOKIE_RATE,
+    }
+    if not link:
+        return JSONResponse(response)
+    status, remote, _ = await _dronebet_request("GET", f"/accounts/{urllib.parse.quote(uid, safe='')}/balance")
+    response["dronebet_user_id"] = link["external_user_id"]
+    if 200 <= status < 300 and remote.get("ok"):
+        response["cookies"] = remote.get("balance")
+    else:
+        response["remote_error"] = _dronebet_error_message(status, remote)
+    return JSONResponse(response)
+
+
+@app.post("/api/dronebet/claim-link")
+async def api_dronebet_claim_link(request: Request):
+    user_id = get_user_id(request)
+    uid = _session_uid(user_id) if user_id else None
+    if not uid:
+        return _partner_json_error("unauthorized", 401)
+    try:
+        code = str((await request.json()).get("code") or "").strip()
+    except ValueError:
+        return JSONResponse({"ok": False, "error": "Неверный формат запроса."}, status_code=400)
+    if len(code) < 8:
+        return JSONResponse({"ok": False, "error": "Введи одноразовый код из DroneBet."}, status_code=400)
+    status, remote, _ = await _dronebet_request("POST", "/links/claim", {"code": code, "sirius_uid": uid})
+    if not (200 <= status < 300 and remote.get("ok")):
+        return JSONResponse({"ok": False, "error": _dronebet_error_message(status, remote)}, status_code=status or 503)
+    linked, reason = storage.link_partner_account(DRONEBET_PARTNER, uid, str(remote.get("user_id") or ""))
+    if not linked:
+        return JSONResponse({"ok": False, "error": _dronebet_error_message(409, {"code": reason})}, status_code=409)
+    return JSONResponse({"ok": True, "linked": True})
+
+
+@app.post("/api/dronebet/exchange")
+async def api_dronebet_exchange(request: Request):
+    user_id = get_user_id(request)
+    uid = _session_uid(user_id) if user_id else None
+    if not uid:
+        return _partner_json_error("unauthorized", 401)
+    link = storage.get_partner_link_for_uid(DRONEBET_PARTNER, uid)
+    if not link:
+        return JSONResponse({"ok": False, "error": "Сначала свяжи аккаунт с DroneBet."}, status_code=409)
+    try:
+        data = await request.json()
+        coins = int(data.get("coins"))
+    except (ValueError, TypeError):
+        return JSONResponse({"ok": False, "error": "Укажи целое количество коинов."}, status_code=400)
+    direction = str(data.get("direction") or "")
+    if direction not in {"coins_to_cookies", "cookies_to_coins"} or not 1 <= coins <= DRONEBET_MAX_EXCHANGE_COINS:
+        return JSONResponse({"ok": False, "error": "Можно обменять от 1 до 500 целых Сириус Коинов."}, status_code=400)
+    exchange, state = storage.begin_partner_exchange(
+        DRONEBET_PARTNER, uid, link["external_user_id"], direction, coins,
+        coins * app_config.DRONEBET_COOKIE_RATE, str(data.get("idempotency_key") or uuid.uuid4()),
+    )
+    if not exchange:
+        return JSONResponse({"ok": False, "error": "Не удалось подготовить обмен. Попробуй ещё раз."}, status_code=409)
+    if exchange["status"] == "completed":
+        return JSONResponse({"ok": True, "replayed": True, "coins": exchange["local_balance"], "cookies": exchange["remote_balance"]})
+    ok, result, status = await _complete_dronebet_exchange(exchange)
+    return JSONResponse({"ok": ok, "replayed": state != "created", **result}, status_code=status)
 
 
 @app.post("/api/dronebet/link-code")
