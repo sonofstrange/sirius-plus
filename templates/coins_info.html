@@ -26,9 +26,12 @@
                 <h2 id="dronebet-exchange-title">Интеграция DroneBet</h2>
                 <span class="badge">Скоро</span>
             </div>
-            <p>Обмен Сириус Коинов и печенек появится после подключения API партнёра.</p>
+            <p id="dronebet-link-text">Свяжи аккаунт, чтобы после запуска обменивать Сириус Коины и печеньки DroneBet.</p>
         </div>
-        <a class="btn btn-outline btn-sm" href="https://dronebet.cloudpub.ru/" target="_blank" rel="noopener noreferrer">Открыть DroneBet</a>
+        <div class="partner-integration__actions">
+            <button class="btn btn-primary btn-sm" id="dronebet-link-button" type="button" onclick="createDroneBetLinkCode()">Связать аккаунт</button>
+            <a class="btn btn-outline btn-sm" href="https://dronebet.cloudpub.ru/" target="_blank" rel="noopener noreferrer">Открыть DroneBet</a>
+        </div>
     </section>
     {% else %}
     <div class="auth-card__help" style="background:var(--bg-card);padding:24px;border-radius:var(--radius);box-shadow:var(--shadow);line-height:1.8">
@@ -121,5 +124,36 @@ async function doTransfer() {
         }
     } catch (e) { dlgAlert('Ошибка', 'Ошибка соединения: ' + e); }
 }
+
+async function loadDroneBetLink() {
+    const text = document.getElementById('dronebet-link-text');
+    const button = document.getElementById('dronebet-link-button');
+    if (!text || !button) return;
+    try {
+        const response = await fetch('/api/dronebet/link');
+        const data = await response.json();
+        if (data.ok && data.linked) {
+            text.textContent = 'Аккаунт DroneBet уже связан. Обмен появится после запуска интеграции.';
+            button.hidden = true;
+        }
+    } catch (e) { /* Link availability should not block the page. */ }
+}
+
+async function createDroneBetLinkCode() {
+    try {
+        const response = await fetch('/api/dronebet/link-code', {method: 'POST'});
+        const data = await response.json();
+        if (!data.ok) {
+            dlgAlert('Не получилось', data.code === 'already_linked' ? 'Этот аккаунт уже связан с DroneBet.' : 'Не удалось создать код. Попробуй ещё раз.');
+            return;
+        }
+        const until = new Date(data.expires_at * 1000).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});
+        dlgAlert('Код привязки', 'Введи этот код на DroneBet: <strong style="font-size:24px;letter-spacing:2px">' + escapeHtml(data.code) + '</strong><br><br>Он одноразовый и действует до ' + until + '.');
+    } catch (e) {
+        dlgAlert('Не получилось', 'Не удалось соединиться с сервером.');
+    }
+}
+
+loadDroneBetLink();
 </script>
 {% endblock %}

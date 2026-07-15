@@ -21,6 +21,11 @@ TOKEN_ENCRYPTION_KEY = os.environ.get("TOKEN_ENCRYPTION_KEY") or (
 HOST = os.environ.get("SIRIUS_HOST", "127.0.0.1")
 PORT = int(os.environ.get("SIRIUS_PORT", "8000"))
 
+# Server-to-server credential for DroneBet. It must only be configured on the
+# production server; never expose it to a browser or commit its value.
+DRONEBET_PARTNER_TOKEN = os.environ.get("DRONEBET_PARTNER_TOKEN", "")
+DRONEBET_LINK_CODE_TTL_SECONDS = int(os.environ.get("DRONEBET_LINK_CODE_TTL_SECONDS", "600"))
+
 
 def _instance_seal_signature(payload: dict) -> str:
     if not TOKEN_ENCRYPTION_KEY:

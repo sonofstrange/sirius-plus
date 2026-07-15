@@ -2648,6 +2648,12 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
     color: var(--text-muted);
     font-size: 14px;
 }
+.partner-integration__actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
 .referral-card { display: grid; justify-items: center; gap: 14px; }
 .referral-card > .text-muted { width: 100%; line-height: 1.45; }
 .referral-card__code { display: grid; justify-items: center; gap: 3px; }
@@ -2707,7 +2713,8 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
     .polymarket-heat__legend { font-size: 11px; }
     .partner-integration { align-items: flex-start; flex-wrap: wrap; }
     .partner-integration__copy { flex-basis: calc(100% - 42px); }
-    .partner-integration .btn { margin-left: 38px; }
+    .partner-integration__actions { width: 100%; margin-left: 38px; }
+    .partner-integration .btn { margin-left: 0; }
     .feedback-message { max-width: 94%; }
     .feedback-reply-form { flex-direction: column; }
     .feedback-reply-form .btn { align-self: flex-end; }

@@ -10,4 +10,5 @@ services:
       - SIRIUS_HOST=0.0.0.0
       - SIRIUS_PORT=8000
       - DB_PATH=/app/data/sirius_web.sqlite3
+      - DRONEBET_PARTNER_TOKEN=${DRONEBET_PARTNER_TOKEN:-}
     restart: unless-stopped

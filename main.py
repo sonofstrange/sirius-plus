@@ -7,8 +7,10 @@ import json
 import logging
 import math
 import os
+import secrets
 import time
 import urllib.parse
+from collections import deque
 from urllib.parse import quote
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -42,11 +44,13 @@ BASE_DIR = Path(__file__).parent
 _sirius_client: SiriusClient | None = None
 _notification_queue: dict[str, list[str]] = {}
 _firebase_app = None
+_partner_request_windows: dict[str, deque[float]] = {}
 
 CACHE_TTL = 600
 _schedule_cache: dict[str, tuple[float, list]] = {}
 
 PAGE_SIZE = 20
+DRONEBET_PARTNER = "dronebet"
 
 _MSK = dt.timezone(dt.timedelta(hours=3))
 REFERRAL_COOKIE = "sirius_referral_code"
@@ -1580,6 +1584,155 @@ async def api_coins_balance(request: Request):
     if not uid:
         return JSONResponse({"ok": False, "error": "Токен не задан"}, status_code=400)
     return JSONResponse({"ok": True, "coins": storage.get_coins(uid), "total": storage.get_coins_total(uid), "reserved": storage.get_coins_reserved(uid), "uid": uid})
+
+
+def _partner_client_ip(request: Request) -> str:
+    return request.headers.get("x-real-ip") or (request.client.host if request.client else "unknown")
+
+
+def _partner_request_allowed(request: Request) -> bool:
+    """Small application-level backstop; Nginx does the primary rate limiting."""
+    now = time.monotonic()
+    ip = _partner_client_ip(request)
+    window = _partner_request_windows.setdefault(ip, deque())
+    while window and now - window[0] > 60:
+        window.popleft()
+    if len(window) >= 60:
+        return False
+    window.append(now)
+    return True
+
+
+def _require_dronebet_partner(request: Request) -> JSONResponse | None:
+    expected = app_config.DRONEBET_PARTNER_TOKEN
+    if not expected:
+        log.error("DroneBet partner API is requested but DRONEBET_PARTNER_TOKEN is not configured")
+        return JSONResponse({"ok": False, "code": "partner_api_disabled"}, status_code=503)
+    authorization = request.headers.get("authorization", "")
+    supplied = authorization.removeprefix("Bearer ").strip() if authorization.startswith("Bearer ") else ""
+    if not supplied or not secrets.compare_digest(supplied, expected):
+        return JSONResponse({"ok": False, "code": "unauthorized"}, status_code=401)
+    if not _partner_request_allowed(request):
+        return JSONResponse({"ok": False, "code": "rate_limited"}, status_code=429)
+    return None
+
+
+def _partner_json_error(code: str, status_code: int = 400, **extra) -> JSONResponse:
+    return JSONResponse({"ok": False, "code": code, **extra}, status_code=status_code)
+
+
+@app.get("/api/dronebet/link")
+async def api_dronebet_link(request: Request):
+    user_id = get_user_id(request)
+    uid = _session_uid(user_id) if user_id else None
+    if not uid:
+        return _partner_json_error("unauthorized", 401)
+    link = storage.get_partner_link_for_uid(DRONEBET_PARTNER, uid)
+    return JSONResponse({
+        "ok": True,
+        "linked": bool(link),
+        "dronebet_user_id": link["external_user_id"] if link else None,
+    })
+
+
+@app.post("/api/dronebet/link-code")
+async def api_dronebet_link_code(request: Request):
+    user_id = get_user_id(request)
+    uid = _session_uid(user_id) if user_id else None
+    if not uid:
+        return _partner_json_error("unauthorized", 401)
+    if storage.get_partner_link_for_uid(DRONEBET_PARTNER, uid):
+        return _partner_json_error("already_linked", 409)
+    code, expires_at = storage.create_partner_link_code(
+        DRONEBET_PARTNER, uid, app_config.DRONEBET_LINK_CODE_TTL_SECONDS
+    )
+    return JSONResponse({"ok": True, "code": code, "expires_at": expires_at})
+
+
+@app.get("/api/partner/dronebet/accounts/{external_user_id}/balance")
+async def partner_dronebet_balance(external_user_id: str, request: Request):
+    denied = _require_dronebet_partner(request)
+    if denied:
+        return denied
+    link = storage.get_partner_link(DRONEBET_PARTNER, external_user_id)
+    if not link:
+        return _partner_json_error("account_not_linked", 404)
+    return JSONResponse({"ok": True, "external_user_id": external_user_id, "coins": storage.get_coins(link["uid"])})
+
+
+@app.post("/api/partner/dronebet/links/claim")
+async def partner_dronebet_claim_link(request: Request):
+    denied = _require_dronebet_partner(request)
+    if denied:
+        return denied
+    try:
+        data = await request.json()
+    except ValueError:
+        return _partner_json_error("invalid_json")
+    ok, code, uid = storage.claim_partner_link_code(
+        DRONEBET_PARTNER, str(data.get("code") or ""), str(data.get("external_user_id") or "")
+    )
+    if not ok:
+        statuses = {
+            "invalid_link_code": 400,
+            "external_account_already_linked": 409,
+            "sirius_account_already_linked": 409,
+        }
+        return _partner_json_error(code, statuses.get(code, 400))
+    return JSONResponse({"ok": True, "status": "linked", "sirius_uid": uid})
+
+
+async def _partner_dronebet_coin_operation(request: Request, direction: str):
+    denied = _require_dronebet_partner(request)
+    if denied:
+        return denied
+    try:
+        data = await request.json()
+        amount = int(data.get("amount"))
+    except (ValueError, TypeError):
+        return _partner_json_error("invalid_amount")
+    result = storage.partner_coin_transaction(
+        DRONEBET_PARTNER,
+        str(data.get("external_user_id") or ""),
+        direction,
+        amount,
+        str(data.get("idempotency_key") or ""),
+        str(data.get("reason") or ""),
+    )
+    if not result["ok"]:
+        statuses = {
+            "account_not_linked": 404,
+            "insufficient_coins": 409,
+            "idempotency_key_conflict": 409,
+            "invalid_direction": 400,
+            "invalid_amount": 400,
+            "invalid_idempotency_key": 400,
+            "invalid_external_user_id": 400,
+        }
+        return _partner_json_error(result["code"], statuses.get(result["code"], 400), balance=result.get("balance"))
+    if not result["replayed"]:
+        recipient = storage.get_user_by_uid(result["uid"])
+        if recipient:
+            verb = "начислил" if direction == "credit" else "списал"
+            await web_notify(recipient, f"DroneBet {verb} {amount} Сириус Коин(ов).")
+    return JSONResponse({
+        "ok": True,
+        "external_user_id": str(data.get("external_user_id") or ""),
+        "direction": direction,
+        "amount": amount,
+        "coins": result["balance"],
+        "replayed": result["replayed"],
+    })
+
+
+@app.post("/api/partner/dronebet/coins/credit")
+async def partner_dronebet_credit(request: Request):
+    return await _partner_dronebet_coin_operation(request, "credit")
+
+
+@app.post("/api/partner/dronebet/coins/debit")
+async def partner_dronebet_debit(request: Request):
+    return await _partner_dronebet_coin_operation(request, "debit")
 
 
 @app.post("/api/app-bonus")

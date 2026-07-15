@@ -375,6 +375,39 @@ def init_db():
                 FOREIGN KEY (code) REFERENCES promo_codes(code)
             );
 
+            CREATE TABLE IF NOT EXISTS partner_account_links (
+                partner          TEXT NOT NULL,
+                external_user_id TEXT NOT NULL,
+                uid              TEXT NOT NULL,
+                linked_at        INTEGER NOT NULL,
+                PRIMARY KEY (partner, external_user_id),
+                UNIQUE (partner, uid)
+            );
+
+            CREATE TABLE IF NOT EXISTS partner_link_codes (
+                code_hash  TEXT PRIMARY KEY,
+                partner    TEXT NOT NULL,
+                uid        TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS partner_coin_transactions (
+                partner          TEXT NOT NULL,
+                idempotency_key  TEXT NOT NULL,
+                external_user_id TEXT NOT NULL,
+                uid              TEXT NOT NULL,
+                direction        TEXT NOT NULL,
+                amount           INTEGER NOT NULL,
+                reason           TEXT NOT NULL DEFAULT '',
+                balance_after    INTEGER NOT NULL,
+                created_at       INTEGER NOT NULL,
+                PRIMARY KEY (partner, idempotency_key)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_partner_coin_transactions_uid
+                ON partner_coin_transactions(uid, created_at DESC);
+
         """)
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(watchlist)").fetchall()]
         if "event_start" not in cols:
@@ -1701,6 +1734,174 @@ def has_claimed_app_usage_bonus(uid: str) -> bool:
         return bool(conn.execute(
             "SELECT 1 FROM app_usage_bonuses WHERE uid=?", (uid,)
         ).fetchone())
+
+
+# ---------- partner wallets ----------
+
+def _normalize_partner_code(code: str) -> str:
+    return "".join(char for char in (code or "").upper() if char.isalnum())
+
+
+def _partner_code_hash(code: str) -> str:
+    return hashlib.sha256(_normalize_partner_code(code).encode()).hexdigest()
+
+
+def create_partner_link_code(partner: str, uid: str, ttl_seconds: int = 600) -> tuple[str, int]:
+    """Create a short-lived, one-use code to link an external partner account."""
+    alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+    now = int(time.time())
+    expires_at = now + max(60, int(ttl_seconds))
+    with get_conn() as conn:
+        conn.execute(
+            "DELETE FROM partner_link_codes WHERE partner=? AND (uid=? OR expires_at<?)",
+            (partner, uid, now),
+        )
+        for _ in range(10):
+            code = "".join(secrets.choice(alphabet) for _ in range(10))
+            try:
+                conn.execute(
+                    """INSERT INTO partner_link_codes (code_hash, partner, uid, created_at, expires_at)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (_partner_code_hash(code), partner, uid, now, expires_at),
+                )
+                return code, expires_at
+            except sqlite3.IntegrityError:
+                continue
+    raise RuntimeError("Не удалось создать код привязки")
+
+
+def get_partner_link(partner: str, external_user_id: str) -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM partner_account_links WHERE partner=? AND external_user_id=?",
+            (partner, external_user_id),
+        ).fetchone()
+
+
+def get_partner_link_for_uid(partner: str, uid: str) -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM partner_account_links WHERE partner=? AND uid=?",
+            (partner, uid),
+        ).fetchone()
+
+
+def claim_partner_link_code(partner: str, code: str, external_user_id: str) -> tuple[bool, str, str | None]:
+    """Consume a code and establish a strict one-to-one partner account link."""
+    external_user_id = str(external_user_id or "").strip()
+    normalized = _normalize_partner_code(code)
+    if len(normalized) < 8 or not external_user_id or len(external_user_id) > 128:
+        return False, "invalid_link_code", None
+    now = int(time.time())
+    with get_conn() as conn:
+        conn.execute("DELETE FROM partner_link_codes WHERE expires_at<?", (now,))
+        row = conn.execute(
+            "SELECT * FROM partner_link_codes WHERE code_hash=? AND partner=? AND expires_at>=?",
+            (_partner_code_hash(normalized), partner, now),
+        ).fetchone()
+        if not row:
+            return False, "invalid_link_code", None
+        existing_external = conn.execute(
+            "SELECT uid FROM partner_account_links WHERE partner=? AND external_user_id=?",
+            (partner, external_user_id),
+        ).fetchone()
+        if existing_external and existing_external["uid"] != row["uid"]:
+            return False, "external_account_already_linked", None
+        existing_uid = conn.execute(
+            "SELECT external_user_id FROM partner_account_links WHERE partner=? AND uid=?",
+            (partner, row["uid"]),
+        ).fetchone()
+        if existing_uid and existing_uid["external_user_id"] != external_user_id:
+            return False, "sirius_account_already_linked", None
+        conn.execute(
+            """INSERT INTO partner_account_links (partner, external_user_id, uid, linked_at)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(partner, external_user_id) DO NOTHING""",
+            (partner, external_user_id, row["uid"], now),
+        )
+        conn.execute("DELETE FROM partner_link_codes WHERE code_hash=?", (row["code_hash"],))
+        return True, "linked", row["uid"]
+
+
+def partner_coin_transaction(
+    partner: str,
+    external_user_id: str,
+    direction: str,
+    amount: int,
+    idempotency_key: str,
+    reason: str = "",
+) -> dict:
+    """Atomically credit or debit a linked Sirius account exactly once."""
+    if direction not in {"credit", "debit"}:
+        return {"ok": False, "code": "invalid_direction"}
+    if not isinstance(amount, int) or amount < 1 or amount > 1_000_000:
+        return {"ok": False, "code": "invalid_amount"}
+    if not isinstance(idempotency_key, str) or not 12 <= len(idempotency_key) <= 128:
+        return {"ok": False, "code": "invalid_idempotency_key"}
+    external_user_id = str(external_user_id or "").strip()
+    if not external_user_id or len(external_user_id) > 128:
+        return {"ok": False, "code": "invalid_external_user_id"}
+
+    now = int(time.time())
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        previous = conn.execute(
+            "SELECT * FROM partner_coin_transactions WHERE partner=? AND idempotency_key=?",
+            (partner, idempotency_key),
+        ).fetchone()
+        if previous:
+            same_operation = (
+                previous["external_user_id"] == external_user_id
+                and previous["direction"] == direction
+                and previous["amount"] == amount
+            )
+            if not same_operation:
+                return {"ok": False, "code": "idempotency_key_conflict"}
+            return {
+                "ok": True, "replayed": True, "uid": previous["uid"],
+                "balance": previous["balance_after"], "direction": previous["direction"],
+                "amount": previous["amount"],
+            }
+
+        link = conn.execute(
+            "SELECT uid FROM partner_account_links WHERE partner=? AND external_user_id=?",
+            (partner, external_user_id),
+        ).fetchone()
+        if not link:
+            return {"ok": False, "code": "account_not_linked"}
+        uid = link["uid"]
+        coins = conn.execute(
+            "SELECT coins, reserved_coins FROM sirius_coins WHERE uid=?", (uid,)
+        ).fetchone()
+        total = coins["coins"] if coins else 0
+        reserved = coins["reserved_coins"] if coins else 0
+        available = total - reserved
+        if direction == "debit" and available < amount:
+            return {"ok": False, "code": "insufficient_coins", "balance": available}
+
+        new_total = total + amount if direction == "credit" else total - amount
+        if coins:
+            conn.execute(
+                "UPDATE sirius_coins SET coins=?, updated_at=? WHERE uid=?",
+                (new_total, now, uid),
+            )
+        else:
+            conn.execute(
+                """INSERT INTO sirius_coins (uid, coins, reserved_coins, created_at, updated_at)
+                   VALUES (?, ?, 0, ?, ?)""",
+                (uid, new_total, now, now),
+            )
+        balance = new_total - reserved
+        conn.execute(
+            """INSERT INTO partner_coin_transactions
+               (partner, idempotency_key, external_user_id, uid, direction, amount, reason, balance_after, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (partner, idempotency_key, external_user_id, uid, direction, amount, reason[:300], balance, now),
+        )
+        return {
+            "ok": True, "replayed": False, "uid": uid, "balance": balance,
+            "direction": direction, "amount": amount,
+        }
 
 
 # ---------- promo codes ----------
