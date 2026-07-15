@@ -1665,6 +1665,7 @@ def _dronebet_error_message(status: int, data: dict) -> str:
     code = str(data.get("code") or data.get("error") or "")
     messages = {
         "invalid_link_code": "Код DroneBet неверный, истёк или уже использован.",
+        "user_not_found": "Код DroneBet не найден, истёк или уже использован.",
         "sirius_account_already_linked": "Этот аккаунт уже связан с другим DroneBet-аккаунтом.",
         "drone_account_already_linked": "Этот DroneBet-аккаунт уже связан с другим пользователем.",
         "account_not_linked": "Сначала свяжи аккаунт с DroneBet.",
@@ -1783,8 +1784,13 @@ async def api_dronebet_claim_link(request: Request):
         return JSONResponse({"ok": False, "error": "Введи одноразовый код из DroneBet."}, status_code=400)
     status, remote, _ = await _dronebet_request("POST", "/links/claim", {"code": code, "sirius_uid": uid})
     if not (200 <= status < 300 and remote.get("ok")):
+        log.warning("DroneBet link claim rejected: status=%s code=%s", status, remote.get("code") or remote.get("error") or "unknown")
         return JSONResponse({"ok": False, "error": _dronebet_error_message(status, remote)}, status_code=status or 503)
-    linked, reason = storage.link_partner_account(DRONEBET_PARTNER, uid, str(remote.get("user_id") or ""))
+    external_user_id = str(remote.get("user_id") or "").strip()
+    if not external_user_id:
+        log.error("DroneBet link claim succeeded without user_id")
+        return JSONResponse({"ok": False, "error": "DroneBet подтвердил код без идентификатора аккаунта. Попробуй ещё раз позже."}, status_code=502)
+    linked, reason = storage.link_partner_account(DRONEBET_PARTNER, uid, external_user_id)
     if not linked:
         return JSONResponse({"ok": False, "error": _dronebet_error_message(409, {"code": reason})}, status_code=409)
     return JSONResponse({"ok": True, "linked": True})

@@ -26,11 +26,23 @@
                 <h2 id="dronebet-exchange-title">Интеграция DroneBet</h2>
                 <span class="badge" id="dronebet-status">Проверяем</span>
             </div>
-            <p id="dronebet-link-text">Свяжи аккаунт, чтобы обменивать Сириус Коины и печеньки DroneBet.</p>
+            <p id="dronebet-link-text">Свяжи аккаунт любым удобным способом, чтобы обменивать Сириус Коины и печеньки DroneBet.</p>
         </div>
         <div class="partner-integration__actions">
             <button class="btn btn-primary btn-sm" id="dronebet-link-button" type="button" onclick="claimDroneBetLink()">Ввести код DroneBet</button>
+            <button class="btn btn-outline btn-sm" id="dronebet-local-code-button" type="button" onclick="createDroneBetLinkCode()">Получить код Sirius Plus</button>
             <a class="btn btn-outline btn-sm" href="https://dronebet.cloudpub.ru/" target="_blank" rel="noopener noreferrer">Открыть DroneBet</a>
+        </div>
+    </section>
+    <section class="dronebet-linking" id="dronebet-linking">
+        <div class="dronebet-linking__way">
+            <span class="material-symbols-outlined" aria-hidden="true">download</span>
+            <div><strong>Код из DroneBet</strong><small>Создай код на DroneBet и введи его здесь.</small></div>
+        </div>
+        <span class="material-symbols-outlined dronebet-linking__divider" aria-hidden="true">compare_arrows</span>
+        <div class="dronebet-linking__way">
+            <span class="material-symbols-outlined" aria-hidden="true">upload</span>
+            <div><strong>Код Sirius Plus</strong><small>Получи код здесь и введи его на DroneBet.</small></div>
         </div>
     </section>
     <section class="dronebet-exchange" id="dronebet-exchange" hidden aria-live="polite">
@@ -143,9 +155,10 @@ let droneBetPending = null;
 async function loadDroneBetLink() {
     const text = document.getElementById('dronebet-link-text');
     const button = document.getElementById('dronebet-link-button');
+    const localCodeButton = document.getElementById('dronebet-local-code-button');
     const status = document.getElementById('dronebet-status');
     const exchange = document.getElementById('dronebet-exchange');
-    if (!text || !button || !status || !exchange) return;
+    if (!text || !button || !localCodeButton || !status || !exchange) return;
     try {
         const response = await fetch('/api/dronebet/summary');
         const data = await response.json().catch(() => ({}));
@@ -154,6 +167,7 @@ async function loadDroneBetLink() {
             text.textContent = data.remote_error || 'Аккаунт DroneBet связан. Можно обменивать валюту.';
             status.textContent = data.remote_error ? 'Нет связи' : 'Связан';
             button.hidden = true;
+            localCodeButton.hidden = true;
             exchange.hidden = false;
             document.getElementById('dronebet-coins').textContent = data.coins + ' 🪙';
             document.getElementById('dronebet-cookies').textContent = data.cookies === null ? '—' : data.cookies.toLocaleString('ru-RU');
@@ -184,6 +198,23 @@ async function claimDroneBetLink() {
         }
         dlgAlert('Аккаунт связан', 'Теперь доступны обмены между Сириус Коинами и печеньками DroneBet.');
         loadDroneBetLink();
+    } catch (e) {
+        dlgAlert('Не получилось', 'Не удалось соединиться с сервером.');
+    }
+}
+
+async function createDroneBetLinkCode() {
+    try {
+        const response = await fetch('/api/dronebet/link-code', {method: 'POST'});
+        const data = await response.json().catch(() => ({}));
+        if (!data.ok) {
+            dlgAlert('Не получилось', data.code === 'already_linked'
+                ? 'Этот аккаунт уже связан с DroneBet.'
+                : 'Не удалось создать код. Попробуй ещё раз.');
+            return;
+        }
+        const until = new Date(data.expires_at * 1000).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});
+        dlgAlert('Код Sirius Plus', 'Введи этот одноразовый код на DroneBet:<br><br><strong style="font-size:24px;letter-spacing:2px">' + escapeHtml(data.code) + '</strong><br><br>Он действует до ' + until + '.');
     } catch (e) {
         dlgAlert('Не получилось', 'Не удалось соединиться с сервером.');
     }

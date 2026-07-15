@@ -2669,8 +2669,12 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
     display: flex;
     align-items: center;
     gap: 14px;
-    padding: 18px 0;
-    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+    padding: 22px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--bg-card);
+    box-shadow: var(--shadow);
 }
 
 .partner-integration__icon {
@@ -2706,7 +2710,7 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
     gap: 8px;
 }
 .dronebet-exchange {
-    margin-top: 20px;
+    margin-top: 12px;
     padding: 18px;
     border: 1px solid var(--border);
     border-radius: 14px;
@@ -2726,6 +2730,22 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
 .dronebet-exchange__rate { margin: 16px 0 12px; color: var(--text-muted); font-size: 14px; }
 .dronebet-exchange__actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .dronebet-exchange__hint { margin: 12px 0 0; font-size: 12px; line-height: 1.4; }
+.dronebet-linking {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 16px;
+    margin-top: 12px;
+    padding: 18px 22px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--primary) 5%, var(--bg-card));
+}
+.dronebet-linking__way { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.dronebet-linking__way > .material-symbols-outlined { color: var(--primary); font-size: 25px; }
+.dronebet-linking__way strong, .dronebet-linking__way small { display: block; }
+.dronebet-linking__way small { margin-top: 3px; color: var(--text-muted); line-height: 1.35; }
+.dronebet-linking__divider { color: var(--text-muted); }
 .referral-card { display: grid; justify-items: center; gap: 14px; }
 .referral-card > .text-muted { width: 100%; line-height: 1.45; }
 .referral-card__code { display: grid; justify-items: center; gap: 3px; }
@@ -2785,13 +2805,15 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
     .polymarket-options { grid-template-columns: 1fr; }
     .polymarket-number-bet { max-width: none; }
     .polymarket-heat__legend { font-size: 11px; }
-    .partner-integration { align-items: flex-start; flex-wrap: wrap; }
+    .partner-integration { align-items: flex-start; flex-wrap: wrap; padding: 16px; }
     .partner-integration__copy { flex-basis: calc(100% - 42px); }
     .partner-integration__actions { width: 100%; margin-left: 38px; }
     .partner-integration .btn { margin-left: 0; }
     .dronebet-exchange { padding: 14px; }
     .dronebet-exchange__balances strong { font-size: 18px; }
     .dronebet-exchange__actions .btn { flex: 1 1 180px; }
+    .dronebet-linking { grid-template-columns: 1fr; gap: 12px; padding: 15px; }
+    .dronebet-linking__divider { display: none; }
     .feedback-message { max-width: 94%; }
     .feedback-reply-form { flex-direction: column; }
     .feedback-reply-form .btn { align-self: flex-end; }
