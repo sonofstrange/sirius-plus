@@ -598,16 +598,49 @@ class SiriusClient:
                 try:
                     if await button.count() and await button.is_visible() and await button.is_enabled():
                         await button.click()
+                        log.info("email-code: нажата кнопка отправки кода: %s", (await button.inner_text()).strip())
                         requested = True
                         break
                 except Exception:
                     continue
             if not requested:
+                # Sirius changes the submit button caption from time to time.  The
+                # active primary button is more stable than its visible label.
+                primary_buttons = page.locator(
+                    'button.ui-button-mode-primary, button[type="submit"], [role="button"].ui-button-mode-primary'
+                )
+                button_snapshot = await page.locator("button, [role=button]").evaluate_all(
+                    """elements => elements.slice(0, 20).map(element => ({
+                        text: (element.innerText || '').trim(),
+                        disabled: Boolean(element.disabled),
+                        className: String(element.className || '')
+                    }))"""
+                )
+                log.info("email-code: кнопки после ввода почты: %s", button_snapshot)
+                for index in range(await primary_buttons.count()):
+                    button = primary_buttons.nth(index)
+                    try:
+                        caption = (await button.inner_text()).strip()
+                        if caption in {"Одноразовый код", "По паролю"}:
+                            continue
+                        if await button.is_visible() and await button.is_enabled():
+                            await button.click()
+                            log.info("email-code: нажата основная кнопка отправки: %s", caption)
+                            requested = True
+                            break
+                    except Exception:
+                        continue
+            if not requested:
+                log.info("email-code: основная кнопка не найдена, отправляю форму клавишей Enter")
                 await email_input.press("Enter")
 
-            await page.locator('input[placeholder="Код из письма"]').wait_for(
-                state="visible", timeout=AUTH_FORM_TIMEOUT_MS
-            )
+            try:
+                await page.locator('input[placeholder="Код из письма"]').wait_for(
+                    state="visible", timeout=AUTH_FORM_TIMEOUT_MS
+                )
+            except Exception as exc:
+                log.warning("email-code: Sirius не показал поле кода после отправки: %s", exc)
+                raise RuntimeError("Sirius не показал поле кода после отправки письма.") from exc
             attempt_id = secrets.token_urlsafe(32)
             self._email_code_logins[attempt_id] = (login_context, page, time.monotonic())
             log.info("login: одноразовый код запрошен для %s", email)
