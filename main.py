@@ -918,7 +918,7 @@ async def events_page(request: Request, tab: str = "register", status: str = "al
     for ev in all_events:
         is_past = (
             bool(getattr(ev, "community_is_finished", False))
-            if ev.event_type == "communityEvent"
+            if getattr(ev, "event_type", "") == "communityEvent"
             else bool(parse_sirius_time(ev.event_start) and parse_sirius_time(ev.event_start) < now)
         )
         if tab == "my":
@@ -968,7 +968,7 @@ async def events_page(request: Request, tab: str = "register", status: str = "al
     for ev in filtered:
         ev._is_past = (
             bool(getattr(ev, "community_is_finished", False))
-            if ev.event_type == "communityEvent"
+            if getattr(ev, "event_type", "") == "communityEvent"
             else _is_past_event(ev)
         )
 

@@ -7,6 +7,7 @@ from unittest.mock import patch
 from starlette.requests import Request
 
 import main
+from sirius_api import EventInfo
 
 
 def _request(path: str) -> Request:
@@ -63,6 +64,30 @@ class NavigationTests(unittest.TestCase):
             main._decorate_auto_registration(event, watch, "user-1", target - dt.timedelta(seconds=20))
 
         self.assertEqual(event._watch["status"], "Ловит открытие сейчас")
+
+
+    def test_events_page_handles_regular_sirius_event_without_event_type(self):
+        event = EventInfo(
+            event_id="event-1", event_name="Regular Sirius event", day_iso="2026-07-20",
+            event_start="2026-07-20T12:00:00Z", record_start=None, record_end=None,
+            is_available=True, reasons=[], will_open_at=None, is_recorded=False,
+            is_reserved=False, people_current=0, people_max=10, description="", raw={},
+        )
+        request = _request("/events")
+        with (
+            patch.object(main, "get_user_id", return_value="user-1"),
+            patch.object(main.storage, "get_token", return_value="token"),
+            patch.object(main.storage, "get_watchlist", return_value=[]),
+            patch.object(main.storage, "get_community_events_for_user", return_value=[]),
+            patch.object(main.storage, "is_admin", return_value=False),
+            patch.object(main, "_session_uid", return_value="uid-1"),
+            patch.object(main, "_get_cached", return_value=[event]),
+            patch.object(main, "_render", return_value="rendered") as render,
+        ):
+            result = asyncio.run(main.events_page(request))
+
+        self.assertEqual(result, "rendered")
+        self.assertEqual(render.call_args.args[0], "events.html")
 
 
 if __name__ == "__main__":
