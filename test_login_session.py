@@ -18,7 +18,7 @@ class _LoginRequest:
     state = SimpleNamespace()
 
     async def json(self):
-        return {"email": "user@example.com", "password": "secret"}
+        return {"email": "user@example.com", "password": "secret", "personal_data_consent": True}
 
 
 class _SiriusClient:
@@ -42,7 +42,7 @@ class _AjaxFormLoginRequest:
     state = SimpleNamespace()
 
     async def form(self):
-        return {"email": "user@example.com", "password": "secret", "referral_code": ""}
+        return {"email": "user@example.com", "password": "secret", "referral_code": "", "personal_data_consent": "yes"}
 
 
 class LoginSessionTests(unittest.IsolatedAsyncioTestCase):
@@ -71,6 +71,9 @@ class LoginSessionTests(unittest.IsolatedAsyncioTestCase):
         session_id = cookie["session_id"].value
         self.assertEqual(storage.get_user_by_session(session_id), uid)
         self.assertIsNotNone(storage.get_token(uid))
+        consent = storage.get_personal_data_consent(uid)
+        self.assertIsNotNone(consent)
+        self.assertEqual(consent["version"], main.PERSONAL_DATA_CONSENT_VERSION)
 
     async def test_ajax_password_login_returns_redirect_and_session(self):
         uid = "sirius-user-43"
@@ -84,6 +87,23 @@ class LoginSessionTests(unittest.IsolatedAsyncioTestCase):
         cookie = SimpleCookie()
         cookie.load(response.headers["set-cookie"])
         self.assertEqual(storage.get_user_by_session(cookie["session_id"].value), uid)
+
+    async def test_password_login_requires_personal_data_consent(self):
+        class _RequestWithoutConsent(_LoginRequest):
+            headers = {"content-type": "application/json", "x-requested-with": "XMLHttpRequest"}
+
+            async def json(self):
+                return {"email": "user@example.com", "password": "secret"}
+
+        class _ClientThatMustNotBeCalled:
+            async def login(self, email, password):
+                raise AssertionError("Sirius login must not run without consent")
+
+        main._sirius_client = _ClientThatMustNotBeCalled()
+        response = await main.api_login(_RequestWithoutConsent())
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(json.loads(response.body)["ok"], False)
 
     async def test_ajax_form_login_returns_session_cookie(self):
         uid = "sirius-user-44"

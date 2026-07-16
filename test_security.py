@@ -50,7 +50,7 @@ class SecurityTests(unittest.IsolatedAsyncioTestCase):
         payload = base64.urlsafe_b64encode(json.dumps({"id": "admin", "exp": 4_000_000_000}).encode()).rstrip(b"=").decode()
         main._sirius_client = _RejectingSiriusClient()
 
-        response = await main.api_set_token(_Request({"token": f"header.{payload}.fake"}))
+        response = await main.api_set_token(_Request({"token": f"header.{payload}.fake", "personal_data_consent": True}))
 
         self.assertEqual(response.status_code, 401)
         self.assertEqual(storage.get_all_users_with_tokens(), [])

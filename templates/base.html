@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Пирожковый Диспетчер{% endblock %}</title>
     <link rel="icon" href="/static/sirius.png">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260716-3">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260716-4">
 </head>
 <body>
     <div class="app">
@@ -91,6 +91,10 @@
                     <a href="/help" class="footer__link">
                         <span class="material-symbols-outlined">help_outline</span>
                         Справка
+                    </a>
+                    <a href="/privacy" class="footer__link">
+                        <span class="material-symbols-outlined">policy</span>
+                        Обработка данных
                     </a>
                     <a href="#" class="footer__link" onclick="showChangelog(true);return false">
                         <span class="material-symbols-outlined">new_releases</span>
@@ -235,6 +239,14 @@
             </div>
             <div class="modal__body">
                 <div class="changelog">
+                    <div class="changelog__release">
+                        <div class="changelog__version">Версия 2.0.9</div>
+                        <div class="changelog__date">Защита данных</div>
+                        <ul class="changelog__list">
+                            <li>Перед каждым входом нужно подтвердить согласие на обработку персональных данных.</li>
+                            <li>Добавлена отдельная страница с условиями обработки и контактами для удаления данных.</li>
+                        </ul>
+                    </div>
                     <div class="changelog__release">
                         <div class="changelog__version">Версия 2.0.8</div>
                         <div class="changelog__date">DroneBet</div>
@@ -515,7 +527,7 @@
 
     <script src="/static/js/app.js?v=20260715-2"></script>
     <script>
-        const CHANGELOG_VERSION = '2.0.8';
+        const CHANGELOG_VERSION = '2.0.9';
         const CHANGELOG_STORAGE_KEY = 'sirius_seen_changelog_version';
 
         {% if user_id %}

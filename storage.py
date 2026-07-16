@@ -234,6 +234,12 @@ def init_db():
                 expires_at   INTEGER NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS personal_data_consents (
+                uid          TEXT PRIMARY KEY,
+                version      TEXT NOT NULL,
+                accepted_at  INTEGER NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS push_subscriptions (
                 endpoint          TEXT PRIMARY KEY,
                 user_id           TEXT NOT NULL,
@@ -2512,3 +2518,26 @@ def set_trust_level(uid: str, trust_level: int):
                  updated_at=excluded.updated_at""",
             (uid, trust_level, int(time.time())),
         )
+
+
+# ---------- personal data consent ----------
+
+def record_personal_data_consent(uid: str, version: str):
+    """Keep the accepted policy version and timestamp for an authenticated user."""
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO personal_data_consents (uid, version, accepted_at)
+               VALUES (?, ?, ?)
+               ON CONFLICT(uid) DO UPDATE SET
+                 version=excluded.version,
+                 accepted_at=excluded.accepted_at""",
+            (uid, version, int(time.time())),
+        )
+
+
+def get_personal_data_consent(uid: str) -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT uid, version, accepted_at FROM personal_data_consents WHERE uid=?",
+            (uid,),
+        ).fetchone()

@@ -58,6 +58,7 @@ DRONEBET_MAX_EXCHANGE_COINS = 500
 
 _MSK = dt.timezone(dt.timedelta(hours=3))
 REFERRAL_COOKIE = "sirius_referral_code"
+PERSONAL_DATA_CONSENT_VERSION = "2026-07-16"
 
 _ERROR_MSGS = {
     "401": "Токен протух — обнови его на странице входа.",
@@ -75,6 +76,17 @@ def _friendly_error(err: str | Exception) -> str:
         if key in s:
             return msg
     return str(err)
+
+
+def _has_personal_data_consent(value) -> bool:
+    return value is True or str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _personal_data_consent_required(wants_json: bool = False):
+    message = "Подтверди согласие на обработку персональных данных."
+    if wants_json:
+        return JSONResponse({"ok": False, "error": message}, status_code=400)
+    return RedirectResponse(url=f"/?error={quote(message)}", status_code=303)
 
 
 def _now():
@@ -1043,6 +1055,11 @@ async def help_page(request: Request):
     return _render("help.html", request)
 
 
+@app.get("/privacy", response_class=HTMLResponse)
+async def privacy_page(request: Request):
+    return _render("privacy.html", request, consent_version=PERSONAL_DATA_CONSENT_VERSION)
+
+
 @app.get("/coins-info", response_class=HTMLResponse)
 async def coins_info_page(request: Request):
     user_id = get_user_id(request)
@@ -1091,6 +1108,8 @@ async def api_set_token(request: Request):
     except json.JSONDecodeError:
         return JSONResponse({"ok": False, "error": "Тело запроса должно быть JSON"}, status_code=400)
     token = data.get("token", "").strip()
+    if not _has_personal_data_consent(data.get("personal_data_consent")):
+        return _personal_data_consent_required(wants_json=True)
     if not token:
         return JSONResponse({"ok": False, "error": "Токен не может быть пустым"}, status_code=400)
 
@@ -1121,6 +1140,7 @@ async def api_set_token(request: Request):
     storage.set_login_type(user_id, "token")
 
     storage.ensure_coins(uid)
+    storage.record_personal_data_consent(uid, PERSONAL_DATA_CONSENT_VERSION)
     full_name = " ".join(filter(None, [payload.get("lastName"), payload.get("firstName"), payload.get("middleName")]))
     storage.save_known_uid(uid, user_id, full_name)
 
@@ -1149,14 +1169,19 @@ async def api_login(request: Request):
         email = data.get("email", "").strip()
         password = data.get("password", "").strip()
         referral_code = data.get("referral_code", "").strip()
+        personal_data_consent = data.get("personal_data_consent")
     else:
         form_data = await request.form()
         email = form_data.get("email", "").strip()
         password = form_data.get("password", "").strip()
         referral_code = form_data.get("referral_code", "").strip()
+        personal_data_consent = form_data.get("personal_data_consent")
 
     if not email or not password:
         return RedirectResponse(url="/?error=Email+и+пароль+обязательны", status_code=303)
+
+    if not _has_personal_data_consent(personal_data_consent):
+        return _personal_data_consent_required(wants_json)
 
     try:
         token = await _sirius_client.login(email, password)
@@ -1188,6 +1213,7 @@ async def api_login(request: Request):
     log.info("login: токен и данные входа сохранены для uid=%s", uid)
 
     storage.ensure_coins(uid)
+    storage.record_personal_data_consent(uid, PERSONAL_DATA_CONSENT_VERSION)
     full_name = " ".join(filter(None, [payload.get("lastName"), payload.get("firstName"), payload.get("middleName")]))
     storage.save_known_uid(uid, user_id, full_name)
 
@@ -1233,11 +1259,16 @@ async def api_login_code(request: Request):
     if "application/json" in content_type:
         data = await request.json()
         code = data.get("code", "").strip()
+        personal_data_consent = data.get("personal_data_consent")
         wants_json = True
     else:
         form_data = await request.form()
         code = form_data.get("code", "").strip()
+        personal_data_consent = form_data.get("personal_data_consent")
         wants_json = False
+
+    if not _has_personal_data_consent(personal_data_consent):
+        return _personal_data_consent_required(wants_json)
 
     user_id = storage.consume_login_code(code)
     if not user_id:
@@ -1246,6 +1277,9 @@ async def api_login_code(request: Request):
         return RedirectResponse(url=f"/?error={quote('Код неверный или уже истёк')}", status_code=303)
 
     session_id = storage.create_session_for_user(user_id)
+    uid = _session_uid(user_id)
+    if uid:
+        storage.record_personal_data_consent(uid, PERSONAL_DATA_CONSENT_VERSION)
     if wants_json:
         response = JSONResponse({"ok": True})
     else:

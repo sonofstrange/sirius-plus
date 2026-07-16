@@ -25,6 +25,10 @@
                         <input type="text" name="code" id="login-code-input" class="form-input" style="width:100%;text-transform:uppercase"
                                placeholder="ABCD2345" autocomplete="one-time-code" required>
                     </div>
+                    <label class="personal-data-consent">
+                        <input type="checkbox" name="personal_data_consent" value="yes" required>
+                        <span>Даю согласие на <a href="/privacy" target="_blank" rel="noopener noreferrer">обработку персональных данных</a>.</span>
+                    </label>
                     <button type="submit" class="btn btn-primary btn-block">
                         Войти по коду
                     </button>
@@ -54,6 +58,10 @@
                     <input type="text" name="referral_code" id="referral-code-input" class="form-input" style="width:100%;text-transform:uppercase"
                            value="{{ referral_code }}" placeholder="Например, ABCD1234" maxlength="12" autocomplete="off">
                 </div>
+                <label class="personal-data-consent">
+                    <input type="checkbox" name="personal_data_consent" value="yes" required>
+                    <span>Даю согласие на <a href="/privacy" target="_blank" rel="noopener noreferrer">обработку персональных данных</a>.</span>
+                </label>
                 <button type="submit" class="btn btn-primary btn-block" id="login-btn">
                     Войти
                 </button>
@@ -78,6 +86,11 @@
                     <textarea id="token-input" class="form-textarea" rows="3"
                         placeholder="eyJhbGciOiJQUzUxMiJ9..."></textarea>
                 </div>
+
+                <label class="personal-data-consent">
+                    <input type="checkbox" id="token-personal-data-consent">
+                    <span>Даю согласие на <a href="/privacy" target="_blank" rel="noopener noreferrer">обработку персональных данных</a>.</span>
+                </label>
 
                 <button class="btn btn-primary btn-block" onclick="saveToken()">
                     Сохранить токен
@@ -167,11 +180,16 @@ async function saveToken() {
         alert('Введи токен');
         return;
     }
+    const consent = document.getElementById('token-personal-data-consent').checked;
+    if (!consent) {
+        alert('Подтверди согласие на обработку персональных данных.');
+        return;
+    }
     try {
         const resp = await fetch('/api/token', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({token}),
+            body: JSON.stringify({token, personal_data_consent: consent}),
         });
         const data = await resp.json();
         if (data.ok) {
