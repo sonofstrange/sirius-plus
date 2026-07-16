@@ -3,6 +3,7 @@ let _alarmAudioCtx = null;
 let _alarmUnlocked = localStorage.getItem('alarmAudioEnabled') === '1';
 let _alarmRepeatTimer = null;
 let _customAlarmAudio = null;
+let _builtInAlarmAudio = null;
 const ALARM_SOUND_PROFILE_KEY = 'siriusAlarmSoundProfile';
 const ALARM_SOUND_DB = 'sirius-alarm-sound';
 const ALARM_SOUND_STORE = 'sounds';
@@ -13,9 +14,10 @@ function getAlarmSoundProfile() {
 
 function alarmSoundProfileLabel(profile = getAlarmSoundProfile()) {
     return {
-        siren: 'Сирена устройства',
-        ringtone: 'Рингтон устройства',
-        notification: 'Короткий сигнал',
+        siren: 'Сирена',
+        ringtone: 'Пульс',
+        notification: 'Мелодия',
+        signal: 'Сигнал',
         vibration: 'Только вибрация',
         custom: 'Своя музыка',
     }[profile] || 'Сирена устройства';
@@ -27,11 +29,15 @@ function updateAlarmSoundSettingsLabel() {
 }
 
 function setAlarmSoundProfile(profile) {
-    if (!['siren', 'ringtone', 'notification', 'vibration', 'custom'].includes(profile)) return;
+    if (!['siren', 'ringtone', 'notification', 'signal', 'vibration', 'custom'].includes(profile)) return;
     localStorage.setItem(ALARM_SOUND_PROFILE_KEY, profile);
     if (profile !== 'custom' && _customAlarmAudio) {
         _customAlarmAudio.pause();
         _customAlarmAudio = null;
+    }
+    if (_builtInAlarmAudio) {
+        _builtInAlarmAudio.pause();
+        _builtInAlarmAudio = null;
     }
     try {
         if (window.SiriusAndroid) window.SiriusAndroid.setAlarmSoundProfile(profile);
@@ -99,6 +105,27 @@ async function playCustomAlarmSound() {
         _customAlarmAudio = audio;
     } catch (e) {
         // File access is optional and must not block the visual alarm.
+    }
+}
+
+async function playBuiltInAlarmSound(profile) {
+    if (_builtInAlarmAudio) return;
+    const files = {
+        siren: 'alarm_siren.wav',
+        ringtone: 'alarm_pulse.wav',
+        notification: 'alarm_chime.wav',
+        signal: 'alarm_signal.wav',
+    };
+    const file = files[profile];
+    if (!file) return;
+    try {
+        const audio = new Audio('/static/audio/' + file);
+        audio.loop = true;
+        audio.volume = 1;
+        await audio.play();
+        _builtInAlarmAudio = audio;
+    } catch (e) {
+        playAlarmTone(0.25);
     }
 }
 
@@ -418,14 +445,7 @@ function playAlarmPattern() {
         return;
     }
     if (profile === 'vibration') return;
-    const tones = profile === 'ringtone'
-        ? [[0, 740, 0.36], [520, 740, 0.36], [1250, 740, 0.36], [1770, 740, 0.36]]
-        : profile === 'notification'
-            ? [[0, 660, 0.16], [250, 880, 0.16], [500, 1040, 0.20]]
-            : [[0, 780, 0.24], [330, 1040, 0.24], [660, 780, 0.24], [1260, 1040, 0.24], [1590, 780, 0.24], [1920, 1040, 0.24]];
-    tones.forEach(([delay, frequency, duration]) => {
-        setTimeout(() => playAlarmTone(duration, frequency, profile === 'notification' ? 'sine' : 'square'), delay);
-    });
+    void playBuiltInAlarmSound(profile);
 }
 
 function startAlarmRepeat() {
@@ -456,6 +476,10 @@ function stopAlarmRepeat() {
         _customAlarmAudio.pause();
         URL.revokeObjectURL(_customAlarmAudio.src);
         _customAlarmAudio = null;
+    }
+    if (_builtInAlarmAudio) {
+        _builtInAlarmAudio.pause();
+        _builtInAlarmAudio = null;
     }
 }
 

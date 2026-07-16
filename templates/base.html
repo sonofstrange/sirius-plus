@@ -534,7 +534,7 @@
     </div>
     <input id="web-alarm-sound-file" type="file" accept="audio/*" hidden>
 
-    <script src="/static/js/app.js?v=20260717-1"></script>
+    <script src="/static/js/app.js?v=20260717-2"></script>
     <script>
         const CHANGELOG_VERSION = '2.1.0';
         const CHANGELOG_STORAGE_KEY = 'sirius_seen_changelog_version';
@@ -764,17 +764,17 @@
             const selected = localStorage.getItem('siriusAlarmSoundProfile') || 'siren';
             showDialog('Звук тревоги БПЛА', 'Выбери вариант сигнала. Своя музыка в приложении будет работать и при закрытом приложении.', {
                 buttons: [
-                    {text: 'Сирена устройства', description: selected === 'siren' ? 'Выбрано' : 'Системный alarm-сигнал'},
-                    {text: 'Рингтон устройства', description: selected === 'ringtone' ? 'Выбрано' : 'Обычный звонок'},
-                    {text: 'Короткий сигнал', description: selected === 'notification' ? 'Выбрано' : 'Звук уведомления'},
-                    {text: 'Только вибрация', description: selected === 'vibration' ? 'Выбрано' : 'Без звука'},
-                    {text: 'Своя музыка', description: selected === 'custom' ? 'Выбрано' : 'Выбрать аудиофайл'},
+                    {text: 'Сирена', description: selected === 'siren' ? 'Выбрано' : 'Нарастающий сигнал'},
+                    {text: 'Пульс', description: selected === 'ringtone' ? 'Выбрано' : 'Ритмичные короткие импульсы'},
+                    {text: 'Мелодия', description: selected === 'notification' ? 'Выбрано' : 'Четыре восходящие ноты'},
+                    {text: 'Сигнал', description: selected === 'signal' ? 'Выбрано' : 'Чередующиеся низкий и высокий тоны'},
+                    {text: 'Только вибрация', description: selected === 'vibration' ? 'Выбрано' : 'Без мелодии'},
+                    {text: 'Своя музыка', description: selected === 'custom' ? 'Выбрано' : 'Выбрать аудиофайл', action: chooseCustomAlarmSound},
                     {text: 'Отмена'}
                 ]
             }).then(choice => {
-                const profiles = ['siren', 'ringtone', 'notification', 'vibration'];
-                if (choice === 4) chooseCustomAlarmSound();
-                else if (choice >= 0 && choice < profiles.length) setAlarmSoundProfile(profiles[choice]);
+                const profiles = ['siren', 'ringtone', 'notification', 'signal', 'vibration'];
+                if (choice >= 0 && choice < profiles.length) setAlarmSoundProfile(profiles[choice]);
             });
         }
 
@@ -1193,6 +1193,7 @@
                     btn.textContent = b.text;
                 }
                 btn.onclick = () => {
+                    if (typeof b.action === 'function') b.action();
                     const val = options.input ? (options.textarea ? textarea.value.trim() : input.value.trim()) : i;
                     if (_dialogResolve) { _dialogResolve(val); _dialogResolve = null; }
                     closeDialog();

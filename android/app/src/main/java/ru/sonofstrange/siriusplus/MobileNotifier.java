@@ -10,7 +10,6 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.media.AudioAttributes;
-import android.media.RingtoneManager;
 import android.os.Build;
 import android.provider.Settings;
 
@@ -27,6 +26,7 @@ final class MobileNotifier {
     static final String PROFILE_SIREN = "siren";
     static final String PROFILE_RINGTONE = "ringtone";
     static final String PROFILE_NOTIFICATION = "notification";
+    static final String PROFILE_SIGNAL = "signal";
     static final String PROFILE_VIBRATION = "vibration";
     static final String PROFILE_CUSTOM = "custom";
     private static String lastFingerprint = "";
@@ -70,7 +70,7 @@ final class MobileNotifier {
     }
 
     static void setCustomAlarmSound(Context context, Uri sound) {
-        String channelId = "sirius_alarm_custom_" + System.currentTimeMillis();
+        String channelId = "sirius_alarm_custom_v2_" + System.currentTimeMillis();
         context.getSharedPreferences(ALARM_PREFS, Context.MODE_PRIVATE).edit()
             .putString(ALARM_PROFILE_KEY, PROFILE_CUSTOM)
             .putString(CUSTOM_SOUND_KEY, sound.toString())
@@ -85,7 +85,8 @@ final class MobileNotifier {
         return switch (profile) {
             case PROFILE_RINGTONE -> 1;
             case PROFILE_NOTIFICATION -> 2;
-            case PROFILE_VIBRATION -> 3;
+            case PROFILE_SIGNAL -> 3;
+            case PROFILE_VIBRATION -> 4;
             default -> 0;
         };
     }
@@ -94,6 +95,7 @@ final class MobileNotifier {
         return PROFILE_SIREN.equals(profile)
             || PROFILE_RINGTONE.equals(profile)
             || PROFILE_NOTIFICATION.equals(profile)
+            || PROFILE_SIGNAL.equals(profile)
             || PROFILE_VIBRATION.equals(profile)
             || PROFILE_CUSTOM.equals(profile);
     }
@@ -102,23 +104,28 @@ final class MobileNotifier {
         SharedPreferences prefs = context.getSharedPreferences(ALARM_PREFS, Context.MODE_PRIVATE);
         String profile = prefs.getString(ALARM_PROFILE_KEY, PROFILE_SIREN);
         if (PROFILE_CUSTOM.equals(profile)) {
-            return prefs.getString(CUSTOM_CHANNEL_KEY, "sirius_alarm_custom_default");
+            return prefs.getString(CUSTOM_CHANNEL_KEY, "sirius_alarm_custom_v2_default");
         }
-        return "sirius_alarm_" + profile;
+        return "sirius_alarm_v2_" + profile;
     }
 
     private static Uri getAlarmSound(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(ALARM_PREFS, Context.MODE_PRIVATE);
         return switch (prefs.getString(ALARM_PROFILE_KEY, PROFILE_SIREN)) {
-            case PROFILE_RINGTONE -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
-            case PROFILE_NOTIFICATION -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            case PROFILE_RINGTONE -> bundledSound(context, R.raw.alarm_pulse);
+            case PROFILE_NOTIFICATION -> bundledSound(context, R.raw.alarm_chime);
+            case PROFILE_SIGNAL -> bundledSound(context, R.raw.alarm_signal);
             case PROFILE_VIBRATION -> null;
             case PROFILE_CUSTOM -> {
                 String value = prefs.getString(CUSTOM_SOUND_KEY, "");
                 yield value.isEmpty() ? Settings.System.DEFAULT_ALARM_ALERT_URI : Uri.parse(value);
             }
-            default -> Settings.System.DEFAULT_ALARM_ALERT_URI;
+            default -> bundledSound(context, R.raw.alarm_siren);
         };
+    }
+
+    private static Uri bundledSound(Context context, int resourceId) {
+        return Uri.parse("android.resource://" + context.getPackageName() + "/" + resourceId);
     }
 
     static synchronized void show(Context context, String title, String body, boolean isAlarm) {

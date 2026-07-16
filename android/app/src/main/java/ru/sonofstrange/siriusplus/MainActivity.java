@@ -748,15 +748,17 @@ public class MainActivity extends android.app.Activity {
 
     private void showAlarmSoundSettings() {
         String[] options = {
-            "Сирена устройства",
-            "Рингтон устройства",
-            "Короткий сигнал уведомления",
+            "Сирена",
+            "Пульс",
+            "Мелодия",
+            "Сигнал",
             "Только вибрация"
         };
         String[] profiles = {
             MobileNotifier.PROFILE_SIREN,
             MobileNotifier.PROFILE_RINGTONE,
             MobileNotifier.PROFILE_NOTIFICATION,
+            MobileNotifier.PROFILE_SIGNAL,
             MobileNotifier.PROFILE_VIBRATION
         };
         int selected = MobileNotifier.getAlarmProfileIndex(this);
