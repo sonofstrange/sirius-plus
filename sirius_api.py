@@ -585,9 +585,11 @@ class SiriusClient:
             await email_input.fill(email)
 
             request_selectors = (
+                'button:has-text("Запросить код")',
                 'button:has-text("Получить код")',
                 'button:has-text("Отправить код")',
                 'button:has-text("Продолжить")',
+                '.ui-button:has-text("Запросить код")',
                 '.ui-button:has-text("Получить код")',
                 '.ui-button:has-text("Отправить код")',
                 '.ui-button:has-text("Продолжить")',
