@@ -532,8 +532,9 @@
             </div>
         </div>
     </div>
+    <input id="web-alarm-sound-file" type="file" accept="audio/*" hidden>
 
-    <script src="/static/js/app.js?v=20260715-2"></script>
+    <script src="/static/js/app.js?v=20260717-1"></script>
     <script>
         const CHANGELOG_VERSION = '2.1.0';
         const CHANGELOG_STORAGE_KEY = 'sirius_seen_changelog_version';
@@ -621,7 +622,7 @@
                                 <div class="profile-status-grid" id="notification-settings-status"><div class="loading">Проверяю...</div></div>
                                 <div class="profile-actions"><button class="btn btn-outline btn-sm" onclick="enableStrongNotifications()">Включить</button><button class="btn btn-outline btn-sm" onclick="testStrongNotification()">Тест</button><button class="btn btn-danger-text btn-sm" onclick="disableStrongNotifications()">Отключить</button></div>
                                 <div id="strong-notify-result" class="alert" style="display:none;margin-top:8px"></div>
-                                <div class="profile-actions" id="android-alarm-sound-row" style="display:none"><button class="btn btn-outline btn-sm" onclick="openAndroidAlarmSoundSettings()"><span class="material-symbols-outlined">volume_up</span>Звук тревоги БПЛА</button></div>
+                                <div class="profile-actions" id="alarm-sound-row"><button class="btn btn-outline btn-sm" onclick="openAlarmSoundSettings()"><span class="material-symbols-outlined">volume_up</span><span id="alarm-sound-button-label">Звук тревоги БПЛА</span></button></div>
                                 <div class="profile-section"><div class="profile-section__header"><span>Активные будильники</span><span class="profile-section__hint" id="reminders-count">—</span></div><div id="profile-reminders-list" class="profile-list"><div class="loading">Загрузка...</div></div></div>
                             </div>
                         </details>
@@ -643,10 +644,7 @@
                         <div id="ping-result" class="alert" style="display:none;margin-top:8px"></div>
                         </div>
                     `;
-                    const androidAlarmSettings = document.getElementById('android-alarm-sound-row');
-                    if (androidAlarmSettings && window.SiriusAndroid && typeof window.SiriusAndroid.openAlarmSoundSettings === 'function') {
-                        androidAlarmSettings.style.display = 'flex';
-                    }
+                    if (typeof updateAlarmSoundSettingsLabel === 'function') updateAlarmSoundSettingsLabel();
                     updateNotificationSettingsStatus();
                     loadProfileReminders();
                 })
@@ -762,12 +760,22 @@
             return '<span class="badge badge-' + kind + '">' + escapeHtml(text) + '</span>';
         }
 
-        function openAndroidAlarmSoundSettings() {
-            if (window.SiriusAndroid && typeof window.SiriusAndroid.openAlarmSoundSettings === 'function') {
-                window.SiriusAndroid.openAlarmSoundSettings();
-                return;
-            }
-            dlgAlert('Звук тревоги БПЛА', 'Выбор мелодии доступен в Android-приложении Пирожкового Диспетчера 1.0.18 или новее.');
+        function openAlarmSoundSettings() {
+            const selected = localStorage.getItem('siriusAlarmSoundProfile') || 'siren';
+            showDialog('Звук тревоги БПЛА', 'Выбери вариант сигнала. Своя музыка в приложении будет работать и при закрытом приложении.', {
+                buttons: [
+                    {text: 'Сирена устройства', description: selected === 'siren' ? 'Выбрано' : 'Системный alarm-сигнал'},
+                    {text: 'Рингтон устройства', description: selected === 'ringtone' ? 'Выбрано' : 'Обычный звонок'},
+                    {text: 'Короткий сигнал', description: selected === 'notification' ? 'Выбрано' : 'Звук уведомления'},
+                    {text: 'Только вибрация', description: selected === 'vibration' ? 'Выбрано' : 'Без звука'},
+                    {text: 'Своя музыка', description: selected === 'custom' ? 'Выбрано' : 'Выбрать аудиофайл'},
+                    {text: 'Отмена'}
+                ]
+            }).then(choice => {
+                const profiles = ['siren', 'ringtone', 'notification', 'vibration'];
+                if (choice === 4) chooseCustomAlarmSound();
+                else if (choice >= 0 && choice < profiles.length) setAlarmSoundProfile(profiles[choice]);
+            });
         }
 
         async function updateNotificationSettingsStatus() {

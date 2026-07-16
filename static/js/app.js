@@ -2,6 +2,105 @@ let _pollingInterval = null;
 let _alarmAudioCtx = null;
 let _alarmUnlocked = localStorage.getItem('alarmAudioEnabled') === '1';
 let _alarmRepeatTimer = null;
+let _customAlarmAudio = null;
+const ALARM_SOUND_PROFILE_KEY = 'siriusAlarmSoundProfile';
+const ALARM_SOUND_DB = 'sirius-alarm-sound';
+const ALARM_SOUND_STORE = 'sounds';
+
+function getAlarmSoundProfile() {
+    return localStorage.getItem(ALARM_SOUND_PROFILE_KEY) || 'siren';
+}
+
+function alarmSoundProfileLabel(profile = getAlarmSoundProfile()) {
+    return {
+        siren: 'Сирена устройства',
+        ringtone: 'Рингтон устройства',
+        notification: 'Короткий сигнал',
+        vibration: 'Только вибрация',
+        custom: 'Своя музыка',
+    }[profile] || 'Сирена устройства';
+}
+
+function updateAlarmSoundSettingsLabel() {
+    const label = document.getElementById('alarm-sound-button-label');
+    if (label) label.textContent = 'Звук тревоги: ' + alarmSoundProfileLabel();
+}
+
+function setAlarmSoundProfile(profile) {
+    if (!['siren', 'ringtone', 'notification', 'vibration', 'custom'].includes(profile)) return;
+    localStorage.setItem(ALARM_SOUND_PROFILE_KEY, profile);
+    if (profile !== 'custom' && _customAlarmAudio) {
+        _customAlarmAudio.pause();
+        _customAlarmAudio = null;
+    }
+    try {
+        if (window.SiriusAndroid) window.SiriusAndroid.setAlarmSoundProfile(profile);
+    } catch (e) {
+        // Browser settings are still useful for alarms while the tab is open.
+    }
+    updateAlarmSoundSettingsLabel();
+    unlockAlarmAudio();
+}
+
+function chooseCustomAlarmSound() {
+    try {
+        if (window.SiriusAndroid) {
+            window.SiriusAndroid.chooseCustomAlarmSound();
+            localStorage.setItem(ALARM_SOUND_PROFILE_KEY, 'custom');
+            updateAlarmSoundSettingsLabel();
+            return;
+        }
+    } catch (e) {
+        // Fall back to the browser file selector.
+    }
+    document.getElementById('web-alarm-sound-file')?.click();
+}
+
+function alarmSoundDatabase() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(ALARM_SOUND_DB, 1);
+        request.onupgradeneeded = () => request.result.createObjectStore(ALARM_SOUND_STORE);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+}
+
+async function saveWebAlarmSound(file) {
+    const db = await alarmSoundDatabase();
+    await new Promise((resolve, reject) => {
+        const tx = db.transaction(ALARM_SOUND_STORE, 'readwrite');
+        tx.objectStore(ALARM_SOUND_STORE).put(file, 'custom');
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+}
+
+async function loadWebAlarmSound() {
+    const db = await alarmSoundDatabase();
+    const file = await new Promise((resolve, reject) => {
+        const request = db.transaction(ALARM_SOUND_STORE).objectStore(ALARM_SOUND_STORE).get('custom');
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => reject(request.error);
+    });
+    db.close();
+    return file;
+}
+
+async function playCustomAlarmSound() {
+    if (_customAlarmAudio) return;
+    try {
+        const file = await loadWebAlarmSound();
+        if (!file) return;
+        const audio = new Audio(URL.createObjectURL(file));
+        audio.loop = true;
+        audio.volume = 1;
+        await audio.play();
+        _customAlarmAudio = audio;
+    } catch (e) {
+        // File access is optional and must not block the visual alarm.
+    }
+}
 
 function startNotificationPolling(userId) {
     if (_pollingInterval) return;
@@ -287,7 +386,7 @@ function handleNotificationMessage(msg) {
     }
 }
 
-function playAlarmTone(duration) {
+function playAlarmTone(duration, frequency = 880, type = 'square') {
     if (!_alarmUnlocked) return;
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextClass) return;
@@ -300,8 +399,8 @@ function playAlarmTone(duration) {
     }
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.type = 'square';
-    osc.frequency.value = 880;
+    osc.type = type;
+    osc.frequency.value = frequency;
     gain.gain.setValueAtTime(0.001, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.22, ctx.currentTime + 0.02);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
@@ -313,8 +412,19 @@ function playAlarmTone(duration) {
 
 function playAlarmPattern() {
     if (!_alarmUnlocked) return;
-    [0, 350, 700, 1300, 1650, 2000].forEach(delay => {
-        setTimeout(() => playAlarmTone(0.22), delay);
+    const profile = getAlarmSoundProfile();
+    if (profile === 'custom') {
+        void playCustomAlarmSound();
+        return;
+    }
+    if (profile === 'vibration') return;
+    const tones = profile === 'ringtone'
+        ? [[0, 740, 0.36], [520, 740, 0.36], [1250, 740, 0.36], [1770, 740, 0.36]]
+        : profile === 'notification'
+            ? [[0, 660, 0.16], [250, 880, 0.16], [500, 1040, 0.20]]
+            : [[0, 780, 0.24], [330, 1040, 0.24], [660, 780, 0.24], [1260, 1040, 0.24], [1590, 780, 0.24], [1920, 1040, 0.24]];
+    tones.forEach(([delay, frequency, duration]) => {
+        setTimeout(() => playAlarmTone(duration, frequency, profile === 'notification' ? 'sine' : 'square'), delay);
     });
 }
 
@@ -324,12 +434,14 @@ function startAlarmRepeat() {
     if (navigator.vibrate) {
         navigator.vibrate([700, 200, 700, 200, 1000]);
     }
-    _alarmRepeatTimer = setInterval(() => {
-        playAlarmPattern();
-        if (navigator.vibrate) {
-            navigator.vibrate([700, 200, 700, 200, 1000]);
-        }
-    }, 5500);
+    if (getAlarmSoundProfile() !== 'custom') {
+        _alarmRepeatTimer = setInterval(() => {
+            playAlarmPattern();
+            if (navigator.vibrate) {
+                navigator.vibrate([700, 200, 700, 200, 1000]);
+            }
+        }, 5500);
+    }
 }
 
 function stopAlarmRepeat() {
@@ -339,6 +451,11 @@ function stopAlarmRepeat() {
     }
     if (navigator.vibrate) {
         navigator.vibrate(0);
+    }
+    if (_customAlarmAudio) {
+        _customAlarmAudio.pause();
+        URL.revokeObjectURL(_customAlarmAudio.src);
+        _customAlarmAudio = null;
     }
 }
 
@@ -370,6 +487,19 @@ function dismissAlarm() {
 
 // Auto-dismiss notifications after 8 seconds
 document.addEventListener('DOMContentLoaded', () => {
+    const customSoundInput = document.getElementById('web-alarm-sound-file');
+    customSoundInput?.addEventListener('change', async () => {
+        const file = customSoundInput.files?.[0];
+        if (!file) return;
+        try {
+            await saveWebAlarmSound(file);
+            setAlarmSoundProfile('custom');
+        } catch (e) {
+            if (typeof dlgAlert === 'function') dlgAlert('Своя музыка', 'Не удалось сохранить файл на этом устройстве.');
+        } finally {
+            customSoundInput.value = '';
+        }
+    });
     document.querySelectorAll('.notification').forEach(el => {
         setTimeout(() => {
             if (el.parentElement) el.remove();

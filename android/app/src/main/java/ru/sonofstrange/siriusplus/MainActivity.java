@@ -266,6 +266,13 @@ public class MainActivity extends android.app.Activity {
             // selected file still works until Android clears its temporary grant.
         }
         MobileNotifier.setCustomAlarmSound(this, sound);
+        if (webView != null) {
+            webView.evaluateJavascript(
+                "localStorage.setItem('siriusAlarmSoundProfile','custom');"
+                    + "if(window.updateAlarmSoundSettingsLabel)window.updateAlarmSoundSettingsLabel();",
+                null
+            );
+        }
         Toast.makeText(this, "Своя мелодия для тревоги сохранена", Toast.LENGTH_SHORT).show();
     }
 
@@ -835,6 +842,17 @@ public class MainActivity extends android.app.Activity {
     }
 
     private final class NativeNotificationBridge {
+        @JavascriptInterface
+        public void setAlarmSoundProfile(String profile) {
+            if (!MobileNotifier.isAlarmProfile(profile)) return;
+            runOnUiThread(() -> MobileNotifier.setAlarmProfile(MainActivity.this, profile));
+        }
+
+        @JavascriptInterface
+        public void chooseCustomAlarmSound() {
+            runOnUiThread(MainActivity.this::chooseCustomAlarmSound);
+        }
+
         @JavascriptInterface
         public void openAlarmSoundSettings() {
             runOnUiThread(MainActivity.this::showAlarmSoundSettings);

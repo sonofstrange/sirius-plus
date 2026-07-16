@@ -90,6 +90,14 @@ final class MobileNotifier {
         };
     }
 
+    static boolean isAlarmProfile(String profile) {
+        return PROFILE_SIREN.equals(profile)
+            || PROFILE_RINGTONE.equals(profile)
+            || PROFILE_NOTIFICATION.equals(profile)
+            || PROFILE_VIBRATION.equals(profile)
+            || PROFILE_CUSTOM.equals(profile);
+    }
+
     private static String getAlarmChannelId(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(ALARM_PREFS, Context.MODE_PRIVATE);
         String profile = prefs.getString(ALARM_PROFILE_KEY, PROFILE_SIREN);
