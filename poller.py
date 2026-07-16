@@ -597,6 +597,18 @@ async def poll_user_once(
                 storage.release_coins(uid, coin_cost)
             await notify(user_id, f"🗑 Событие «{watch['event_name']}» удалено из расписания. Автозапись отменена.")
             continue
+        # The user might have registered directly in Sirius. Stop a stale
+        # auto-registration and return its reserved coins without touching a
+        # watch that the sniper has already completed itself.
+        if ev.is_recorded or ev.is_reserved:
+            active_watch = storage.take_active_watch(user_id, event_id)
+            if active_watch:
+                cancel_snipe(user_id, event_id)
+                coin_cost = int(active_watch["coin_cost"] or 0)
+                if uid and coin_cost:
+                    storage.release_coins(uid, coin_cost)
+                await notify(user_id, f"✅ Ты уже записан на «{watch['event_name']}». Автозапись отключена, резерв возвращён.")
+            continue
         if is_sniping(user_id, event_id) and _snipe_tasks[(user_id, event_id)]["target"] is None:
             continue
         target = event_target_time(ev)

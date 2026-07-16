@@ -854,6 +854,22 @@ def remove_watch(user_id: str, event_id: str):
         conn.execute("DELETE FROM watchlist WHERE user_id=? AND event_id=?", (user_id, event_id))
 
 
+def take_active_watch(user_id: str, event_id: str) -> sqlite3.Row | None:
+    """Remove and return a pending auto-registration exactly once.
+
+    A successful manual registration must release its reserved coins rather than
+    leave a completed auto-registration row behind.
+    """
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM watchlist WHERE user_id=? AND event_id=? AND status='watching'",
+            (user_id, event_id),
+        ).fetchone()
+        if row:
+            conn.execute("DELETE FROM watchlist WHERE user_id=? AND event_id=?", (user_id, event_id))
+        return row
+
+
 def remove_watches_for_event(event_id: str) -> list[sqlite3.Row]:
     """Удаляет все автозаписи, связанные с удалённым пользовательским событием."""
     with get_conn() as conn:

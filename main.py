@@ -2649,9 +2649,16 @@ async def api_subscribe(request: Request):
                         final_reserved = False
             except Exception as e:
                 log.warning("Failed to verify subscribe status for %s: %s", event_id, e)
-            storage.set_watch_status(user_id, event_id, "registered")
+            # A direct registration replaces a pending auto-registration. Its
+            # reserved coins were not used by the sniper and must be returned.
+            watch = storage.take_active_watch(user_id, event_id)
+            if watch:
+                poller.cancel_snipe(user_id, event_id)
+                uid = _session_uid(user_id) or ""
+                if uid and watch["coin_cost"]:
+                    storage.release_coins(uid, int(watch["coin_cost"]))
             _invalidate_events_cache(user_id)
-            return JSONResponse({"ok": True, "reserved": final_reserved, "text": text})
+            return JSONResponse({"ok": True, "reserved": final_reserved, "text": text, "auto_registration_cancelled": bool(watch)})
         else:
             return JSONResponse({"ok": False, "outcome": outcome, "text": text})
     except Exception as e:
@@ -3579,8 +3586,14 @@ async def api_register_community_event(event_id: int, request: Request):
     ok, reason = storage.add_community_registration(event_id, user_id)
     if not ok:
         return JSONResponse({"ok": False, "error": "Места закончились" if reason == "full" else "Событие не найдено"}, status_code=400)
+    watch = storage.take_active_watch(user_id, f"community_{event_id}")
+    if watch:
+        poller.cancel_snipe(user_id, watch["event_id"])
+        uid = _session_uid(user_id) or ""
+        if uid and watch["coin_cost"]:
+            storage.release_coins(uid, int(watch["coin_cost"]))
     await web_notify(user_id, f"✅ Ты теперь записан на «{event['event_name']}».")
-    return JSONResponse({"ok": True, "alreadyRegistered": reason == "already_registered"})
+    return JSONResponse({"ok": True, "alreadyRegistered": reason == "already_registered", "auto_registration_cancelled": bool(watch)})
 
 
 @app.delete("/api/community-events/{event_id}/register")

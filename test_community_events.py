@@ -57,6 +57,15 @@ class CommunityEventStorageTests(unittest.TestCase):
         self.assertEqual(len(removed), 1)
         self.assertIsNone(storage.get_watch("member", f"community_{event_id}"))
 
+    def test_taking_pending_auto_registration_is_idempotent(self):
+        storage.add_watch("member", "event-1", "Event", snipe_priority="medium")
+
+        removed = storage.take_active_watch("member", "event-1")
+
+        self.assertIsNotNone(removed)
+        self.assertEqual(removed["coin_cost"], 1)
+        self.assertIsNone(storage.take_active_watch("member", "event-1"))
+
     def test_community_contact_is_saved_and_visible_in_event(self):
         event_id = storage.add_community_event(
             "owner", "100", "Community event", "2026-08-01", "12:00", "13:00",

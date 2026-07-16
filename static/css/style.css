@@ -523,6 +523,11 @@ body.dark-theme .form-select {
     color: white;
 }
 .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+.btn-autoreg {
+    background: #129a9a;
+    color: #fff;
+}
+.btn-autoreg:hover:not(:disabled) { background: #087b7d; }
 .btn-outline {
     background: transparent;
     color: var(--text);
