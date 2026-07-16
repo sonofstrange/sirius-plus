@@ -5,6 +5,8 @@ import base64
 import datetime as dt
 import json
 import logging
+import secrets
+import time
 import urllib.parse
 from dataclasses import dataclass, field
 from email.utils import parsedate_to_datetime
@@ -317,6 +319,7 @@ class SiriusClient:
         self._ready = asyncio.Event()
         self._restart_lock = asyncio.Lock()
         self._login_cleanup_tasks: set[asyncio.Task] = set()
+        self._email_code_logins: dict[str, tuple[object, object, float]] = {}
         self.clock_skew = dt.timedelta(0)
 
     def now(self) -> dt.datetime:
@@ -545,6 +548,152 @@ class SiriusClient:
             cleanup = asyncio.create_task(self._close_login_context(login_context))
             self._login_cleanup_tasks.add(cleanup)
             cleanup.add_done_callback(self._login_cleanup_tasks.discard)
+
+    async def begin_email_code_login(self, email: str) -> str:
+        """Ask Sirius to send an email code and retain only its isolated browser context."""
+        await self.wait_ready()
+        await self._cleanup_expired_email_code_logins()
+        login_context = await self._browser.new_context(
+            viewport={"width": 1280, "height": 800},
+            user_agent=BASE_HEADERS["user-agent"],
+        )
+        page = await login_context.new_page()
+        try:
+            await page.goto("https://auth.sirius.online/password", wait_until="domcontentloaded",
+                            timeout=AUTH_NAVIGATION_TIMEOUT_MS)
+
+            one_time_selector = 'span.ui-button__content:has-text("Одноразовый код")'
+            for attempt in range(AUTH_CHALLENGE_POLL_ATTEMPTS):
+                try:
+                    button = page.locator(one_time_selector).first
+                    if await button.count() and await button.is_visible():
+                        await button.click()
+                        break
+                except Exception:
+                    pass
+                if attempt == AUTH_CHALLENGE_POLL_ATTEMPTS // 2:
+                    try:
+                        await page.reload(wait_until="domcontentloaded", timeout=AUTH_NAVIGATION_TIMEOUT_MS)
+                    except Exception:
+                        pass
+                await asyncio.sleep(0.25)
+            else:
+                raise RuntimeError("Sirius не открыл форму входа по одноразовому коду")
+
+            email_input = page.locator('input[name="email"]')
+            await email_input.wait_for(state="visible", timeout=AUTH_FORM_TIMEOUT_MS)
+            await email_input.fill(email)
+
+            request_selectors = (
+                'button:has-text("Получить код")',
+                'button:has-text("Отправить код")',
+                'button:has-text("Продолжить")',
+                '.ui-button:has-text("Получить код")',
+                '.ui-button:has-text("Отправить код")',
+                '.ui-button:has-text("Продолжить")',
+            )
+            requested = False
+            for selector in request_selectors:
+                button = page.locator(selector).first
+                try:
+                    if await button.count() and await button.is_visible() and await button.is_enabled():
+                        await button.click()
+                        requested = True
+                        break
+                except Exception:
+                    continue
+            if not requested:
+                await email_input.press("Enter")
+
+            await page.locator('input[placeholder="Код из письма"]').wait_for(
+                state="visible", timeout=AUTH_FORM_TIMEOUT_MS
+            )
+            attempt_id = secrets.token_urlsafe(32)
+            self._email_code_logins[attempt_id] = (login_context, page, time.monotonic())
+            log.info("login: одноразовый код запрошен для %s", email)
+            return attempt_id
+        except Exception:
+            await self._close_login_context(login_context)
+            raise
+
+    async def complete_email_code_login(self, attempt_id: str, code: str) -> str | None:
+        entry = self._email_code_logins.get(attempt_id)
+        if not entry:
+            raise RuntimeError("Срок действия запроса кода истёк. Запроси новый код.")
+        login_context, page, created_at = entry
+        if time.monotonic() - created_at > 10 * 60:
+            await self.cancel_email_code_login(attempt_id)
+            raise RuntimeError("Срок действия запроса кода истёк. Запроси новый код.")
+
+        code_input = page.locator('input[placeholder="Код из письма"]')
+        await code_input.fill(code.strip())
+        confirm_button = page.locator('button:has-text("Подтвердить")').first
+        await confirm_button.wait_for(state="visible", timeout=AUTH_FORM_TIMEOUT_MS)
+        for _ in range(40):
+            if await confirm_button.is_enabled():
+                break
+            await asyncio.sleep(0.15)
+        if not await confirm_button.is_enabled():
+            raise RuntimeError("Sirius не принял код. Проверь его и попробуй ещё раз.")
+        await confirm_button.click()
+
+        token = await self._extract_auth_token(page)
+        if token:
+            self._email_code_logins.pop(attempt_id, None)
+            cleanup = asyncio.create_task(self._close_login_context(login_context))
+            self._login_cleanup_tasks.add(cleanup)
+            cleanup.add_done_callback(self._login_cleanup_tasks.discard)
+            return token
+        raise RuntimeError("Sirius не подтвердил код. Проверь код или запроси новый.")
+
+    async def cancel_email_code_login(self, attempt_id: str) -> None:
+        entry = self._email_code_logins.pop(attempt_id, None)
+        if entry:
+            await self._close_login_context(entry[0])
+
+    async def _cleanup_expired_email_code_logins(self) -> None:
+        expired = [attempt_id for attempt_id, (_, _, created_at) in self._email_code_logins.items()
+                   if time.monotonic() - created_at > 10 * 60]
+        for attempt_id in expired:
+            await self.cancel_email_code_login(attempt_id)
+
+    async def _extract_auth_token(self, page) -> str | None:
+        for _ in range(30):
+            try:
+                token = await page.evaluate(
+                    "() => localStorage.getItem('AuthToken') || sessionStorage.getItem('AuthToken')"
+                )
+                if token:
+                    self.token = token
+                    return token
+            except Exception:
+                pass
+            try:
+                for cookie in await page.context.cookies():
+                    if cookie["name"] == "AuthToken" and cookie["value"]:
+                        self.token = cookie["value"]
+                        return cookie["value"]
+            except Exception:
+                pass
+            await asyncio.sleep(0.5)
+
+        try:
+            await page.goto("https://my.sirius.online/", wait_until="domcontentloaded",
+                            timeout=AUTH_NAVIGATION_TIMEOUT_MS)
+        except Exception:
+            return None
+        for _ in range(20):
+            try:
+                token = await page.evaluate(
+                    "() => localStorage.getItem('AuthToken') || sessionStorage.getItem('AuthToken')"
+                )
+                if token:
+                    self.token = token
+                    return token
+            except Exception:
+                pass
+            await asyncio.sleep(0.5)
+        return None
 
     async def _close_login_context(self, context) -> None:
         try:
@@ -845,6 +994,8 @@ class SiriusClient:
         return None
 
     async def stop(self):
+        for attempt_id in list(self._email_code_logins):
+            await self.cancel_email_code_login(attempt_id)
         for task in self._login_cleanup_tasks:
             task.cancel()
         if self._browser:

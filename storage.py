@@ -648,6 +648,16 @@ def save_login_credentials(user_id: str, email: str, password: str):
         )
 
 
+def save_email_code_login(user_id: str, email: str):
+    """Remember only the email needed to send a new Sirius one-time code."""
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE users SET login_email=?, login_password='', login_type='email_code'
+               WHERE user_id=?""",
+            (_encrypt(email), user_id),
+        )
+
+
 def set_login_type(user_id: str, login_type: str):
     with get_conn() as conn:
         conn.execute("UPDATE users SET login_type=? WHERE user_id=?", (login_type, user_id))
@@ -772,6 +782,17 @@ def get_login_credentials(user_id: str) -> tuple[str, str] | None:
             except Exception:
                 return None
     return None
+
+
+def get_login_email(user_id: str) -> str | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT login_email FROM users WHERE user_id=?", (user_id,)).fetchone()
+        if not row or not row["login_email"]:
+            return None
+        try:
+            return _decrypt(row["login_email"])
+        except Exception:
+            return None
 
 
 def get_token(user_id: str) -> str | None:

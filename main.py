@@ -48,6 +48,7 @@ _sirius_client: SiriusClient | None = None
 _notification_queue: dict[str, list[str]] = {}
 _firebase_app = None
 _partner_request_windows: dict[str, deque[float]] = {}
+_email_code_attempt_users: dict[str, tuple[str | None, str, float]] = {}
 
 CACHE_TTL = 600
 _schedule_cache: dict[str, tuple[float, list]] = {}
@@ -87,6 +88,59 @@ def _personal_data_consent_required(wants_json: bool = False):
     if wants_json:
         return JSONResponse({"ok": False, "error": message}, status_code=400)
     return RedirectResponse(url=f"/?error={quote(message)}", status_code=303)
+
+
+def _remember_email_code_attempt(attempt_id: str, user_id: str | None, email: str) -> None:
+    now = time.monotonic()
+    for old_id, (_, _, created_at) in list(_email_code_attempt_users.items()):
+        if now - created_at > 10 * 60:
+            _email_code_attempt_users.pop(old_id, None)
+    _email_code_attempt_users[attempt_id] = (user_id, email, now)
+
+
+def _finish_email_code_login(request: Request, token: str, email: str, referral_code: str = ""):
+    """Persist a token obtained from a Sirius email one-time code and create a session."""
+    exp = token_expiry(token)
+    if not exp:
+        return JSONResponse({"ok": False, "error": "Sirius вернул некорректный токен."}, status_code=400)
+    payload = _decode_jwt(token)
+    if not payload or not payload.get("id"):
+        return JSONResponse({"ok": False, "error": "Не удалось определить аккаунт Sirius."}, status_code=400)
+
+    previous_user_id = get_user_id(request)
+    is_new_session = previous_user_id is None
+    session_id = request.cookies.get("session_id") if previous_user_id else None
+    uid = payload["id"]
+    is_first_sirius_login = storage.get_user_by_uid(uid) is None
+    if is_new_session:
+        user_id = storage.get_user_by_uid(uid) or uid
+    else:
+        user_id = _resolve_uid_session(request, uid, previous_user_id, session_id)
+
+    storage.save_token(user_id, token)
+    storage.set_user_uid(user_id, uid)
+    storage.mark_token_verified(user_id, token)
+    storage.save_email_code_login(user_id, email)
+    storage.ensure_coins(uid)
+    storage.record_personal_data_consent(uid, PERSONAL_DATA_CONSENT_VERSION)
+    full_name = " ".join(filter(None, [payload.get("lastName"), payload.get("firstName"), payload.get("middleName")]))
+    storage.save_known_uid(uid, user_id, full_name)
+
+    referral_code = storage.normalize_referral_code(referral_code or request.cookies.get(REFERRAL_COOKIE, ""))
+    if is_first_sirius_login and storage.apply_referral(referral_code, uid):
+        storage.add_notification(uid, "🎁 Реферальный код применён: тебе начислено 5 Сириус Коинов.", "success")
+        referrer_uid = storage.get_referrer_uid(uid)
+        if referrer_uid:
+            storage.add_notification(referrer_uid, "🎁 Друг зарегистрировался по твоей ссылке: начислено 5 Сириус Коинов.", "success")
+
+    response = JSONResponse({"ok": True, "redirect": "/schedule"})
+    if is_new_session:
+        session_id = storage.create_session_for_user(user_id)
+        response.set_cookie(key="session_id", value=session_id, max_age=86400 * 365, httponly=True, samesite="lax")
+    if referral_code:
+        response.delete_cookie(REFERRAL_COOKIE)
+    log.info("email-code login: session ready for uid=%s", uid)
+    return response
 
 
 def _now():
@@ -1238,6 +1292,55 @@ async def api_login(request: Request):
     return response
 
 
+@app.post("/api/login-email-code/request")
+async def api_request_email_login_code(request: Request):
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return JSONResponse({"ok": False, "error": "Тело запроса должно быть JSON."}, status_code=400)
+    if not _has_personal_data_consent(data.get("personal_data_consent")):
+        return _personal_data_consent_required(wants_json=True)
+    email = str(data.get("email", "")).strip()
+    if not email or len(email) > 254 or "@" not in email:
+        return JSONResponse({"ok": False, "error": "Введи корректный email."}, status_code=400)
+    if not _sirius_client:
+        return JSONResponse({"ok": False, "error": "Sirius клиент не запущен."}, status_code=503)
+    try:
+        attempt_id = await _sirius_client.begin_email_code_login(email)
+    except Exception as exc:
+        log.warning("email-code login request failed: %s", exc)
+        return JSONResponse({"ok": False, "error": _friendly_error(exc)}, status_code=503)
+    _remember_email_code_attempt(attempt_id, None, email)
+    return JSONResponse({"ok": True, "attempt_id": attempt_id})
+
+
+@app.post("/api/login-email-code/confirm")
+async def api_confirm_email_login_code(request: Request):
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return JSONResponse({"ok": False, "error": "Тело запроса должно быть JSON."}, status_code=400)
+    if not _has_personal_data_consent(data.get("personal_data_consent")):
+        return _personal_data_consent_required(wants_json=True)
+    attempt_id = str(data.get("attempt_id", "")).strip()
+    code = str(data.get("code", "")).strip()
+    attempt = _email_code_attempt_users.get(attempt_id)
+    if not attempt or attempt[0] is not None:
+        return JSONResponse({"ok": False, "error": "Запрос кода не найден. Запроси новый код."}, status_code=400)
+    if not code or len(code) > 32:
+        return JSONResponse({"ok": False, "error": "Введи код из письма."}, status_code=400)
+    if not _sirius_client:
+        return JSONResponse({"ok": False, "error": "Sirius клиент не запущен."}, status_code=503)
+    try:
+        token = await _sirius_client.complete_email_code_login(attempt_id, code)
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": _friendly_error(exc)}, status_code=400)
+    if not token:
+        return JSONResponse({"ok": False, "error": "Sirius не подтвердил код. Запроси новый."}, status_code=400)
+    _email_code_attempt_users.pop(attempt_id, None)
+    return _finish_email_code_login(request, token, attempt[1], str(data.get("referral_code", "")))
+
+
 @app.post("/api/login-code/create")
 async def api_create_login_code(request: Request):
     user_id = get_user_id(request)
@@ -1286,6 +1389,58 @@ async def api_login_code(request: Request):
         response = RedirectResponse(url="/schedule", status_code=303)
     response.set_cookie(key="session_id", value=session_id, max_age=86400 * 365, httponly=True, samesite="lax")
     return response
+
+
+@app.post("/api/refresh-token/request-code")
+async def api_request_refresh_email_code(request: Request):
+    user_id = get_user_id(request)
+    if not user_id:
+        return JSONResponse({"ok": False, "error": "Не авторизован."}, status_code=401)
+    if storage.get_login_type(user_id) != "email_code":
+        return JSONResponse({"ok": False, "error": "Этот способ входа не использует код из письма."}, status_code=400)
+    email = storage.get_login_email(user_id)
+    if not email:
+        return JSONResponse({"ok": False, "error": "Email для обновления токена не сохранён. Войди заново."}, status_code=400)
+    if not _sirius_client:
+        return JSONResponse({"ok": False, "error": "Sirius клиент не запущен."}, status_code=503)
+    try:
+        attempt_id = await _sirius_client.begin_email_code_login(email)
+    except Exception as exc:
+        log.warning("email-code token refresh request failed for %s: %s", user_id, exc)
+        return JSONResponse({"ok": False, "error": _friendly_error(exc)}, status_code=503)
+    _remember_email_code_attempt(attempt_id, user_id, email)
+    return JSONResponse({"ok": True, "attempt_id": attempt_id})
+
+
+@app.post("/api/refresh-token/confirm-code")
+async def api_confirm_refresh_email_code(request: Request):
+    user_id = get_user_id(request)
+    if not user_id:
+        return JSONResponse({"ok": False, "error": "Не авторизован."}, status_code=401)
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return JSONResponse({"ok": False, "error": "Тело запроса должно быть JSON."}, status_code=400)
+    attempt_id = str(data.get("attempt_id", "")).strip()
+    code = str(data.get("code", "")).strip()
+    attempt = _email_code_attempt_users.get(attempt_id)
+    if not attempt or attempt[0] != user_id:
+        return JSONResponse({"ok": False, "error": "Запрос кода не найден. Запроси новый код."}, status_code=400)
+    if not code or len(code) > 32:
+        return JSONResponse({"ok": False, "error": "Введи код из письма."}, status_code=400)
+    if not _sirius_client:
+        return JSONResponse({"ok": False, "error": "Sirius клиент не запущен."}, status_code=503)
+    try:
+        token = await _sirius_client.complete_email_code_login(attempt_id, code)
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": _friendly_error(exc)}, status_code=400)
+    if not token or not token_expiry(token):
+        return JSONResponse({"ok": False, "error": "Sirius не подтвердил код. Запроси новый."}, status_code=400)
+    _email_code_attempt_users.pop(attempt_id, None)
+    storage.save_token(user_id, token)
+    storage.mark_token_verified(user_id, token)
+    storage.set_last_token_refresh(user_id)
+    return JSONResponse({"ok": True})
 
 
 @app.post("/api/refresh-token")

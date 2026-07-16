@@ -29,6 +29,21 @@ class _SiriusClient:
         return self.token
 
 
+class _EmailCodeSiriusClient:
+    def __init__(self, token):
+        self.token = token
+        self.requested_emails = []
+
+    async def begin_email_code_login(self, email):
+        self.requested_emails.append(email)
+        return "email-code-attempt"
+
+    async def complete_email_code_login(self, attempt_id, code):
+        if attempt_id != "email-code-attempt" or code != "123456":
+            raise RuntimeError("invalid code")
+        return self.token
+
+
 class _AjaxLoginRequest(_LoginRequest):
     headers = {"content-type": "application/json", "x-requested-with": "XMLHttpRequest"}
 
@@ -52,9 +67,11 @@ class LoginSessionTests(unittest.IsolatedAsyncioTestCase):
         self.old_client = main._sirius_client
         config.DB_PATH = str(Path(self.tmp.name) / "test.sqlite3")
         storage.init_db()
+        main._email_code_attempt_users.clear()
 
     def tearDown(self):
         main._sirius_client = self.old_client
+        main._email_code_attempt_users.clear()
         config.DB_PATH = self.old_db_path
         self.tmp.cleanup()
 
@@ -117,6 +134,37 @@ class LoginSessionTests(unittest.IsolatedAsyncioTestCase):
         cookie = SimpleCookie()
         cookie.load(response.headers["set-cookie"])
         self.assertEqual(storage.get_user_by_session(cookie["session_id"].value), uid)
+
+    async def test_email_code_login_saves_email_without_password(self):
+        uid = "sirius-user-email-code"
+        payload = {"id": uid, "exp": int(time.time()) + 3600}
+        payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=").decode()
+        main._sirius_client = _EmailCodeSiriusClient(f"header.{payload_b64}.signature")
+
+        class _Request:
+            headers = {"content-type": "application/json"}
+            cookies = {}
+            state = SimpleNamespace()
+
+            def __init__(self, data):
+                self.data = data
+
+            async def json(self):
+                return self.data
+
+        email = "user@example.com"
+        requested = await main.api_request_email_login_code(_Request({
+            "email": email, "personal_data_consent": True,
+        }))
+        self.assertEqual(json.loads(requested.body)["ok"], True)
+        response = await main.api_confirm_email_login_code(_Request({
+            "attempt_id": "email-code-attempt", "code": "123456",
+            "personal_data_consent": True,
+        }))
+
+        self.assertEqual(json.loads(response.body), {"ok": True, "redirect": "/schedule"})
+        self.assertEqual(storage.get_login_type(uid), "email_code")
+        self.assertEqual(storage.get_login_email(uid), email)
 
 
 if __name__ == "__main__":

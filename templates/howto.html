@@ -1,38 +1,24 @@
 {% extends "base.html" %}
-{% block title %}Как получить токен — Пирожковый Диспетчер{% endblock %}
+{% block title %}Вход по коду Sirius - Пирожковый Диспетчер{% endblock %}
 {% block content %}
 <div class="page">
     <div class="page__header">
-        <h1 class="page__title">Как получить Bearer-токен my.sirius.online</h1>
+        <h1 class="page__title">Вход по одноразовому коду Sirius</h1>
     </div>
 
     <div class="auth-card__help" style="background:var(--bg-card);padding:24px;border-radius:var(--radius);box-shadow:var(--shadow);line-height:1.8">
         <p style="margin-bottom:16px;color:var(--text-muted)">
-            Токен нужен, чтобы сайт мог автоматически записывать тебя на события. Он живёт примерно неделю, потом протухает — тогда нужно повторить процедуру.
+            Это способ входа без ручного поиска Bearer-токена. Диспетчер открывает защищённую страницу Sirius, запрашивает код на твою почту и после подтверждения получает токен автоматически.
         </p>
-
-        <ol style="padding-left:20px">
-            <li>Открой <a href="https://my.sirius.online" target="_blank">my.sirius.online</a> и войди в свой аккаунт, если ещё не вошёл.</li>
-            <li>Перейди в раздел записи на события: <strong>my.sirius.online/record-schedule</strong>.</li>
-            <li>Открой инструменты разработчика: клавиша <kbd>F12</kbd>, либо правая кнопка мыши на странице → «Просмотреть код» (Inspect).</li>
-            <li>В открывшейся панели найди вкладку <strong>Network</strong> (Сеть).</li>
-            <li>Сверху панели Network есть фильтры типов запросов — выбери <strong>Fetch/XHR</strong>, чтобы убрать лишний мусор (картинки, стили).</li>
-            <li>Обнови страницу клавишей <kbd>F5</kbd> — в списке Network начнут появляться запросы.</li>
-            <li>Найди среди них любой запрос со словом <strong>schedule</strong> или <strong>record</strong> в названии — кликни на него один раз.</li>
-            <li>Справа (или снизу) откроется панель с деталями запроса — там есть вкладка <strong>Headers</strong> (Заголовки).</li>
-            <li>В Headers пролистай до <strong>Request Headers</strong> и найди строку вида:
-                <br>
-                <code>authorization: Bearer eyJhbGciOiJQUzUxMiJ9...</code>
-            </li>
-            <li>Скопируй всё, что идёт <strong>после</strong> слова «Bearer » — без самого слова и без пробела перед ним.</li>
-            <li>Вставь скопированную строку в поле «Bearer-токен» на странице входа и нажми «Сохранить токен».</li>
+        <ol style="padding-left:20px;color:var(--text-muted)">
+            <li>На странице входа открой «Войти по одноразовому коду Sirius».</li>
+            <li>Введи email от аккаунта Sirius и нажми «Получить код на почту».</li>
+            <li>Открой письмо от Sirius, введи код в Диспетчере и подтверди вход.</li>
         </ol>
-
         <div class="alert alert-warning" style="margin-top:20px">
-            <span class="material-symbols-outlined">warning</span>
-            Токен — это доступ к твоему аккаунту Sirius. Никому его не показывай и не отправляй в общие чаты.
+            <span class="material-symbols-outlined">info</span>
+            Код одноразовый. Токен Sirius обычно действует до 7 дней; после его истечения запроси новый код кнопкой «Обновить токен» в профиле.
         </div>
-
         <div style="margin-top:24px">
             <a href="/" class="btn btn-primary">Перейти ко входу</a>
         </div>

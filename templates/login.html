@@ -75,7 +75,40 @@
                 {% endif %}
             </details>
 
-            <details class="auth-card__help" style="margin-top:24px">
+            <details class="auth-card__help" style="margin-top:24px" open>
+                <summary>Войти по одноразовому коду Sirius</summary>
+                <p class="auth-card__desc" style="margin-top:8px">
+                    Код придёт на почту из аккаунта Sirius. После входа Диспетчер сохранит только токен Sirius, который обычно действует до 7 дней.
+                </p>
+                <form id="email-code-login-form" onsubmit="requestSiriusEmailCode(this); return false;">
+                    <div class="form-group">
+                        <label class="form-label" for="email-code-email">Email</label>
+                        <input type="email" name="email" id="email-code-email" class="form-input" style="width:100%"
+                               placeholder="email@example.com" autocomplete="email" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="email-code-referral">Реферальный код <span class="text-muted">(необязательно)</span></label>
+                        <input type="text" name="referral_code" id="email-code-referral" class="form-input" style="width:100%;text-transform:uppercase"
+                               value="{{ referral_code }}" maxlength="12" autocomplete="off">
+                    </div>
+                    <label class="personal-data-consent">
+                        <input type="checkbox" name="personal_data_consent" value="yes" required>
+                        <span>Даю согласие на <a href="/privacy" target="_blank" rel="noopener noreferrer">обработку персональных данных</a>.</span>
+                    </label>
+                    <button type="submit" class="btn btn-primary btn-block" id="email-code-request-btn">Получить код на почту</button>
+                </form>
+                <div id="email-code-confirm" hidden style="margin-top:16px">
+                    <div class="form-group">
+                        <label class="form-label" for="email-code-input">Код из письма Sirius</label>
+                        <input type="text" id="email-code-input" class="form-input" style="width:100%;letter-spacing:2px"
+                               placeholder="Код из письма" autocomplete="one-time-code" inputmode="numeric">
+                    </div>
+                    <button type="button" class="btn btn-primary btn-block" onclick="confirmSiriusEmailCode()">Подтвердить вход</button>
+                </div>
+                <div id="email-code-login-result" class="alert" style="display:none;margin-top:12px"></div>
+            </details>
+
+            <details class="auth-card__help" style="margin-top:24px" hidden>
                 <summary>Или введи токен вручную</summary>
                 <p class="auth-card__desc" style="margin-top:8px">
                     Введи свой Bearer-токен от my.sirius.online, чтобы я мог записывать тебя на события.
@@ -171,6 +204,73 @@ async function submitPasswordLogin(form) {
         progress.style.display = 'block';
         document.getElementById('login-step').textContent = 'Не удалось войти';
         document.getElementById('login-substep').textContent = error.message || 'Проверь соединение и попробуй ещё раз.';
+    }
+}
+
+let siriusEmailCodeAttemptId = '';
+
+function showEmailCodeLoginResult(message, success) {
+    const result = document.getElementById('email-code-login-result');
+    result.style.display = 'flex';
+    result.className = 'alert ' + (success ? 'alert-success' : 'alert-error');
+    result.textContent = message;
+}
+
+async function requestSiriusEmailCode(form) {
+    if (!form.reportValidity()) return;
+    const button = document.getElementById('email-code-request-btn');
+    const data = new FormData(form);
+    button.disabled = true;
+    button.textContent = 'Отправляю код...';
+    try {
+        const response = await fetch('/api/login-email-code/request', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                email: data.get('email'),
+                personal_data_consent: data.get('personal_data_consent') === 'yes',
+            }),
+        });
+        const result = await response.json();
+        if (!result.ok) throw new Error(result.error || 'Не удалось запросить код.');
+        siriusEmailCodeAttemptId = result.attempt_id;
+        document.getElementById('email-code-confirm').hidden = false;
+        document.getElementById('email-code-input').focus();
+        showEmailCodeLoginResult('Код отправлен на почту. Введи его ниже.', true);
+    } catch (error) {
+        showEmailCodeLoginResult(error.message || 'Не удалось запросить код.', false);
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Получить код на почту';
+    }
+}
+
+async function confirmSiriusEmailCode() {
+    const code = document.getElementById('email-code-input').value.trim();
+    const form = document.getElementById('email-code-login-form');
+    const data = new FormData(form);
+    if (!siriusEmailCodeAttemptId || !code) {
+        showEmailCodeLoginResult('Сначала запроси код и введи его из письма.', false);
+        return;
+    }
+    try {
+        const response = await fetch('/api/login-email-code/confirm', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                attempt_id: siriusEmailCodeAttemptId,
+                code,
+                referral_code: data.get('referral_code'),
+                personal_data_consent: data.get('personal_data_consent') === 'yes',
+            }),
+        });
+        const result = await response.json();
+        if (!result.ok) throw new Error(result.error || 'Не удалось подтвердить код.');
+        window.location.replace(result.redirect || '/schedule');
+    } catch (error) {
+        showEmailCodeLoginResult(error.message || 'Не удалось подтвердить код.', false);
     }
 }
 

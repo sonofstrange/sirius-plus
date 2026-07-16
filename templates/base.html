@@ -240,6 +240,14 @@
             <div class="modal__body">
                 <div class="changelog">
                     <div class="changelog__release">
+                        <div class="changelog__version">Версия 2.1.0</div>
+                        <div class="changelog__date">Вход по коду Sirius</div>
+                        <ul class="changelog__list">
+                            <li>Добавлен вход по одноразовому коду из письма Sirius вместо ручного ввода Bearer-токена.</li>
+                            <li>Для обновления такого токена теперь достаточно запросить новый код из профиля.</li>
+                        </ul>
+                    </div>
+                    <div class="changelog__release">
                         <div class="changelog__version">Версия 2.0.9</div>
                         <div class="changelog__date">Защита данных</div>
                         <ul class="changelog__list">
@@ -527,7 +535,7 @@
 
     <script src="/static/js/app.js?v=20260715-2"></script>
     <script>
-        const CHANGELOG_VERSION = '2.0.9';
+        const CHANGELOG_VERSION = '2.1.0';
         const CHANGELOG_STORAGE_KEY = 'sirius_seen_changelog_version';
 
         {% if user_id %}
@@ -949,6 +957,30 @@
                 const resp = await fetch('/api/user-info');
                 const data = await resp.json();
                 if (!data.ok) { dlgAlert('Ошибка', 'Сначала авторизуйся'); return; }
+
+                if (data.loginType === 'email_code') {
+                    const requested = await fetch('/api/refresh-token/request-code', {method: 'POST'});
+                    const requestData = await requested.json();
+                    if (!requestData.ok) {
+                        dlgAlert('Ошибка', requestData.error || 'Не удалось запросить код.');
+                        return;
+                    }
+                    const code = await dlgPrompt('Код Sirius', 'Код отправлен на почту. Введи его для обновления токена:', '', {type: 'text'});
+                    if (!code) return;
+                    const confirmed = await fetch('/api/refresh-token/confirm-code', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({attempt_id: requestData.attempt_id, code: code.trim()}),
+                    });
+                    const confirmData = await confirmed.json();
+                    if (confirmData.ok) {
+                        dlgAlert('Готово', 'Токен обновлён. Страница перезагрузится.');
+                        setTimeout(() => location.reload(), 800);
+                    } else {
+                        dlgAlert('Ошибка', confirmData.error || 'Не удалось подтвердить код.');
+                    }
+                    return;
+                }
 
                 if (data.loginType === 'password') {
                     const ok = await dlgConfirm('Обновить токен', 'Попробовать обновить токен автоматически через сохранённый пароль?');
