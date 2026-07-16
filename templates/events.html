@@ -152,12 +152,12 @@
                 {% elif ev.community_registration_open %}
                 <button class="btn btn-primary btn-sm" onclick="toggleCommunityRegistration({{ ev.community_id }}, false)">Записаться</button>
                 {% elif ev.will_open_at %}
-                <button class="btn btn-autoreg btn-sm watch-btn"
+                <button class="btn btn-primary btn-sm watch-btn"
                     data-event-id="{{ ev.event_id }}"
                     data-event-name="{{ ev.event_name|e }}"
                     data-event-start="{{ ev.event_start }}"
                     onclick="toggleWatch(this)">
-                    <span class="material-symbols-outlined">bolt</span> Автозаписан
+                    <span class="material-symbols-outlined">bolt</span> Автозапись
                 </button>
                 {% else %}
                 <span class="badge" style="background:var(--danger);color:white">🔒 Регистрация закрыта</span>
@@ -197,12 +197,12 @@
                     Записаться
                 </button>
                 {% elif ev.will_open_at %}
-                <button class="btn btn-autoreg btn-sm watch-btn"
+                <button class="btn btn-primary btn-sm watch-btn"
                     data-event-id="{{ ev.event_id }}"
                     data-event-name="{{ ev.event_name|e }}"
                     data-event-start="{{ ev.event_start }}"
                     onclick="toggleWatch(this)">
-                    <span class="material-symbols-outlined">bolt</span> Автозаписан
+                    <span class="material-symbols-outlined">bolt</span> Автозапись
                 </button>
                 <button class="btn btn-outline btn-sm" onclick="setReminder('{{ ev.event_id }}', '{{ ev.event_name|e }}', '{{ ev.event_start }}')" title="Напомнить">
                     <span class="material-symbols-outlined">alarm</span>
