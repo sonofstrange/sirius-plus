@@ -111,6 +111,9 @@ def _finish_email_code_login(request: Request, token: str, email: str, referral_
     is_new_session = previous_user_id is None
     session_id = request.cookies.get("session_id") if previous_user_id else None
     uid = payload["id"]
+    ban = storage.get_account_ban(uid)
+    if ban:
+        return _banned_account_response(request, ban, wants_json=True)
     is_first_sirius_login = storage.get_user_by_uid(uid) is None
     if is_new_session:
         user_id = storage.get_user_by_uid(uid) or uid
@@ -535,6 +538,32 @@ def get_user_id(request: Request) -> str | None:
     return uid
 
 
+def _account_ban_for_user(user_id: str | None):
+    uid = storage.get_user_uid(user_id) if user_id else None
+    return storage.get_account_ban(uid or "")
+
+
+def _banned_account_response(request: Request, ban, wants_json: bool = False):
+    if wants_json:
+        return JSONResponse({"ok": False, "error": "Аккаунт заблокирован", "reason": ban["reason"]}, status_code=403)
+    return templates.TemplateResponse(request, "banned.html", {"reason": ban["reason"]}, status_code=403)
+
+
+def _cancel_banned_user_auto_registrations(uid: str):
+    """Stop background Sirius activity and release unused reservations on a ban."""
+    user_id = storage.get_user_by_uid(uid)
+    if not user_id:
+        return
+    for watch in storage.get_watchlist(user_id):
+        removed = storage.take_active_watch(user_id, watch["event_id"])
+        if not removed:
+            continue
+        poller.cancel_snipe(user_id, removed["event_id"])
+        cost = int(removed["coin_cost"] or 0)
+        if cost:
+            storage.release_coins(uid, cost)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _sirius_client
@@ -633,6 +662,12 @@ async def origin_guard(request: Request, call_next):
             "<p>Откройте официальный сервис через его домен.</p>",
             status_code=403,
         )
+    # Keep the session so an unblocked account can continue without a new login,
+    # but deny every dynamic route while the UID is blocked.
+    if not request.url.path.startswith("/static/") and request.url.path != "/healthz":
+        ban = _account_ban_for_user(get_user_id(request))
+        if ban:
+            return _banned_account_response(request, ban, request.url.path.startswith("/api/"))
     return await call_next(request)
 
 def fmt_ts(ts: int) -> str:
@@ -1214,6 +1249,9 @@ async def api_set_token(request: Request):
         return JSONResponse({"ok": False, "error": "Не удалось определить аккаунт Sirius"}, status_code=400)
 
     uid = payload["id"]
+    ban = storage.get_account_ban(uid)
+    if ban:
+        return _banned_account_response(request, ban, wants_json=True)
     if is_new_session:
         user_id = storage.get_user_by_uid(uid) or uid
     else:
@@ -1285,6 +1323,11 @@ async def api_login(request: Request):
         return RedirectResponse(url="/?error=Не удалось определить аккаунт Sirius", status_code=303)
 
     uid = payload["id"]
+    ban = storage.get_account_ban(uid)
+    if ban:
+        if wants_json:
+            return _banned_account_response(request, ban, wants_json=True)
+        return _banned_account_response(request, ban)
     is_first_sirius_login = storage.get_user_by_uid(uid) is None
     if is_new_session:
         user_id = storage.get_user_by_uid(uid) or uid
@@ -1409,6 +1452,10 @@ async def api_login_code(request: Request):
         if wants_json:
             return JSONResponse({"ok": False, "error": "Код неверный или уже истёк"}, status_code=400)
         return RedirectResponse(url=f"/?error={quote('Код неверный или уже истёк')}", status_code=303)
+
+    ban = _account_ban_for_user(user_id)
+    if ban:
+        return _banned_account_response(request, ban, wants_json=wants_json)
 
     session_id = storage.create_session_for_user(user_id)
     uid = _session_uid(user_id)
@@ -2307,6 +2354,8 @@ async def api_admin_users(request: Request):
                 "reserved_coins": u["reserved_coins"],
                 "trust_level": 0 if u["is_admin"] else u["trust_level"],
                 "is_admin": bool(u["is_admin"]),
+                "is_banned": bool(u["is_banned"]),
+                "ban_reason": u["ban_reason"],
             }
             for u in users
         ]
@@ -2335,6 +2384,8 @@ async def api_admin_user_profile(target_uid: str, request: Request):
             "reservedCoins": profile["reserved_coins"],
             "trustLevel": 0 if profile["is_admin"] else profile["trust_level"],
             "isAdmin": bool(profile["is_admin"]),
+            "isBanned": bool(profile["is_banned"]),
+            "banReason": profile["ban_reason"],
             "createdAt": profile["created_at"],
             "lastActive": profile["last_active"],
             "loginType": profile["login_type"],
@@ -2461,6 +2512,33 @@ async def api_admin_set_admin(request: Request):
     else:
         storage.remove_admin(target_uid)
     return JSONResponse({"ok": True, "is_admin": make_admin})
+
+
+@app.post("/api/admin/set-ban")
+async def api_admin_set_ban(request: Request):
+    admin_uid, denied = _require_admin(request)
+    if denied:
+        return denied
+    data = await request.json()
+    target_uid = str(data.get("uid", "")).strip()
+    blocked = bool(data.get("blocked"))
+    reason = str(data.get("reason", "")).strip()
+    if not target_uid.isdigit() or not 6 <= len(target_uid) <= 32:
+        return JSONResponse({"ok": False, "error": "Укажи корректный Sirius UID"}, status_code=400)
+    if target_uid == admin_uid:
+        return JSONResponse({"ok": False, "error": "Нельзя заблокировать самого себя"}, status_code=400)
+    if storage.is_admin(target_uid):
+        return JSONResponse({"ok": False, "error": "Администраторов блокировать нельзя"}, status_code=400)
+    if blocked:
+        if not reason:
+            return JSONResponse({"ok": False, "error": "Укажи причину блокировки"}, status_code=400)
+        if len(reason) > 1000:
+            return JSONResponse({"ok": False, "error": "Причина слишком длинная"}, status_code=400)
+        storage.ban_account(target_uid, reason, admin_uid)
+        _cancel_banned_user_auto_registrations(target_uid)
+    else:
+        storage.unban_account(target_uid)
+    return JSONResponse({"ok": True, "is_banned": blocked})
 
 
 def _feedback_replies_view(message) -> list[dict]:

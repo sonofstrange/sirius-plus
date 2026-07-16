@@ -21,6 +21,18 @@
         <button class="btn btn-primary" onclick="grantCoins()">Выдать коины</button>
         <div id="grant-result" class="alert" style="display:none;margin-top:16px"></div>
 
+        <h2 style="font-size:18px;margin:32px 0 16px">Блокировка аккаунта</h2>
+        <div class="form-group">
+            <label class="form-label" for="ban-uid">Sirius UID</label>
+            <input type="text" class="form-input" id="ban-uid" inputmode="numeric" placeholder="Например, 100119810111293745" style="width:100%">
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="ban-reason">Причина блокировки</label>
+            <textarea class="form-textarea" id="ban-reason" rows="3" maxlength="1000" placeholder="Пользователь увидит эту причину"></textarea>
+        </div>
+        <button class="btn btn-danger" onclick="blockAccountFromForm()"><span class="material-symbols-outlined">block</span> Заблокировать</button>
+        <div id="ban-result" class="alert" style="display:none;margin-top:16px"></div>
+
         <h2 style="font-size:18px;margin:32px 0 16px">Промокоды</h2>
         <div class="form-group">
             <label class="form-label" for="promocode-code">Код</label>
@@ -247,6 +259,7 @@ function renderTable() {
             <td class="admin-users-table__person">
                 <strong class="admin-user-name">${escapeHtml(u.name || '(без имени)')}</strong>
                 <span class="admin-user-uid">${escapeHtml(u.uid)}</span>
+                ${u.is_banned ? '<span class="badge badge-danger">Заблокирован</span>' : ''}
             </td>
             <td class="admin-users-table__coins"><strong>${u.coins}</strong></td>
             <td class="admin-users-table__coins">${u.reserved_coins || 0}</td>
@@ -262,6 +275,9 @@ function renderTable() {
                     <button class="btn btn-sm ${u.is_admin ? 'btn-primary' : 'btn-outline'} admin-users-table__admin-btn" onclick="setAdmin('${safeUid}', ${u.is_admin ? 'false' : 'true'})" title="${u.is_admin ? 'Снять права администратора' : 'Назначить администратором'}">
                         <span class="material-symbols-outlined">admin_panel_settings</span>
                     </button>
+                    ${u.is_admin ? '' : `<button class="btn btn-sm ${u.is_banned ? 'btn-danger' : 'btn-outline'} admin-users-table__action-btn" onclick="toggleAccountBan('${safeUid}', ${u.is_banned ? 'true' : 'false'})" title="${u.is_banned ? 'Разблокировать аккаунт' : 'Заблокировать аккаунт'}" aria-label="${u.is_banned ? 'Разблокировать аккаунт' : 'Заблокировать аккаунт'}">
+                        <span class="material-symbols-outlined">${u.is_banned ? 'lock_open' : 'block'}</span>
+                    </button>`}
                 </div>
             </td>
         </tr>`;
@@ -303,6 +319,8 @@ async function showAdminUser(uid) {
             <tr><td>Команда Sirius</td><td>${escapeHtml(u.team || 'Не указана в Sirius')}</td></tr>
             <tr><td>UID</td><td class="mono">${escapeHtml(u.uid)}</td></tr>
             <tr><td>Уровень</td><td>${escapeHtml(trustNames[u.trustLevel] || 'Обычный')}</td></tr>
+            <tr><td>Статус</td><td>${u.isBanned ? '<span class="badge badge-danger">Заблокирован</span>' : '<span class="badge badge-success">Активен</span>'}</td></tr>
+            ${u.isBanned ? `<tr><td>Причина блокировки</td><td>${escapeHtml(u.banReason || 'Не указана')}</td></tr>` : ''}
             <tr><td>Коины</td><td><strong>${u.coins}</strong></td></tr>
             <tr><td>В резерве</td><td>${u.reservedCoins || 0}</td></tr>
             <tr><td>Создан</td><td>${escapeHtml(fmt(u.createdAt))}</td></tr>
@@ -324,6 +342,11 @@ async function showAdminUser(uid) {
                     <button class="btn btn-primary btn-sm" onclick="sendAdminMessage('${safeUid}')">Отправить</button>
                 </div>
             </section>
+            ${u.isAdmin ? '' : `<section class="profile-section">
+                <div class="profile-section__header"><span>Блокировка</span></div>
+                <p class="profile-section__hint">${u.isBanned ? 'Аккаунт не имеет доступа к сервису.' : 'Блокировка остановит автозаписи и закроет доступ к сервису.'}</p>
+                <button class="btn ${u.isBanned ? 'btn-outline' : 'btn-danger'} btn-sm" onclick="toggleAccountBan('${safeUid}', ${u.isBanned ? 'true' : 'false'})">${u.isBanned ? 'Разблокировать' : 'Заблокировать'}</button>
+            </section>`}
         </div>`;
     } catch (error) {
         body.innerHTML = '<div class="alert alert-error">' + escapeHtml(error.message) + '</div>';
@@ -425,6 +448,67 @@ async function setAdmin(uid, isAdmin) {
         loadUsers();
     } catch (e) {
         alert('Ошибка соединения: ' + e.message);
+    }
+}
+
+async function toggleAccountBan(uid, isBanned) {
+    let reason = '';
+    if (isBanned) {
+        if (!await dlgConfirm('Разблокировать аккаунт', 'Пользователь снова получит доступ к Пирожковому Диспетчеру.')) return;
+    } else {
+        reason = await dlgPrompt('Блокировка аккаунта', 'Укажи причину. Пользователь увидит её на странице блокировки.', 'Причина блокировки...', {textarea: true});
+        if (reason === null) return;
+        reason = reason.trim();
+        if (!reason) {
+            dlgAlert('Блокировка аккаунта', 'Причина обязательна.');
+            return;
+        }
+        if (!await dlgConfirm('Заблокировать аккаунт', 'Доступ будет закрыт, а активные автозаписи отменятся с возвратом резервов.')) return;
+    }
+    try {
+        const resp = await fetch('/api/admin/set-ban', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({uid, blocked: !isBanned, reason}),
+        });
+        const data = await resp.json();
+        if (!data.ok) throw new Error(data.error || 'Не удалось изменить блокировку');
+        closeModal('admin-user-modal');
+        loadUsers();
+    } catch (e) {
+        dlgAlert('Ошибка', e.message || String(e));
+    }
+}
+
+async function blockAccountFromForm() {
+    const uid = (document.getElementById('ban-uid').value || '').trim();
+    const reason = (document.getElementById('ban-reason').value || '').trim();
+    const result = document.getElementById('ban-result');
+    if (!uid || !reason) {
+        result.className = 'alert alert-error';
+        result.textContent = 'Укажи Sirius UID и причину блокировки.';
+        result.style.display = 'block';
+        return;
+    }
+    if (!await dlgConfirm('Заблокировать аккаунт', 'Доступ будет закрыт, а активные автозаписи отменятся с возвратом резервов.')) return;
+    try {
+        const resp = await fetch('/api/admin/set-ban', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({uid, blocked: true, reason}),
+        });
+        const data = await resp.json();
+        if (!data.ok) throw new Error(data.error || 'Не удалось заблокировать аккаунт');
+        result.className = 'alert alert-success';
+        result.textContent = 'Аккаунт заблокирован.';
+        result.style.display = 'block';
+        document.getElementById('ban-uid').value = '';
+        document.getElementById('ban-reason').value = '';
+        loadUsers();
+    } catch (e) {
+        result.className = 'alert alert-error';
+        result.textContent = e.message || String(e);
+        result.style.display = 'block';
     }
 }
 

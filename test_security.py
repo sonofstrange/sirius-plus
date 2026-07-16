@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import config
 import main
@@ -121,6 +122,28 @@ class SecurityTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNotNone(storage.get_user_by_session(session_id))
         self.assertEqual(storage.consume_login_code(login_code), "legacy-user")
+
+    async def test_admin_can_ban_by_sirius_uid_with_reason(self):
+        request = _Request({"uid": "100119810111293745", "blocked": True, "reason": "Нарушение правил"})
+        with patch.object(main, "_require_admin", return_value=("admin-uid", None)):
+            response = await main.api_admin_set_ban(request)
+
+        self.assertEqual(response.status_code, 200)
+        ban = storage.get_account_ban("100119810111293745")
+        self.assertIsNotNone(ban)
+        self.assertEqual(ban["reason"], "Нарушение правил")
+        self.assertEqual(ban["banned_by"], "admin-uid")
+
+    async def test_login_code_is_rejected_for_banned_account(self):
+        storage.save_token("blocked-user", "token")
+        storage.set_user_uid("blocked-user", "100119810111293745")
+        storage.ban_account("100119810111293745", "Нарушение правил", "admin-uid")
+        code, _ = storage.create_login_code("100119810111293745")
+
+        response = await main.api_login_code(_Request({"code": code, "personal_data_consent": True}))
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("Нарушение", response.body.decode())
 
 
 if __name__ == "__main__":

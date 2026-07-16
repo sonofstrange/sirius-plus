@@ -627,6 +627,8 @@ async def run_poller(notify: NotifyFn, client: SiriusClient):
     all_watches = storage.get_all_active_watches()
     by_user: dict[str, list[tuple[str, str]]] = {}
     for w in all_watches:
+        if storage.is_account_banned(storage.get_user_uid(w["user_id"]) or ""):
+            continue
         if w["event_id"].startswith("community_"):
             try:
                 community_id = int(w["event_id"].split("_", 1)[1])
@@ -685,6 +687,10 @@ async def run_poller(notify: NotifyFn, client: SiriusClient):
             await asyncio.sleep(POLLER_TICK)
             continue
         active_user_ids = storage.get_all_users_with_tokens()
+        active_user_ids = [
+            user_id for user_id in active_user_ids
+            if not storage.is_account_banned(storage.get_user_uid(user_id) or "")
+        ]
         due = []
         for user_id in active_user_ids:
             if user_id not in next_poll_at:

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Аккаунт заблокирован</title>
+    <link rel="stylesheet" href="/static/css/style.css?v=20260717-1">
+</head>
+<body>
+    <main class="auth-page">
+        <section class="auth-card" style="max-width:560px">
+            <span class="material-symbols-outlined auth-card__icon" style="color:var(--danger)">block</span>
+            <h1>Аккаунт заблокирован</h1>
+            <p class="auth-card__subtitle">Доступ к Пирожковому Диспетчеру временно ограничен.</p>
+            <div class="alert alert-error"><strong>Причина:</strong> {{ reason }}</div>
+            <p class="auth-card__help">Разблокировка обсуждается лично с администрацией или в <a href="https://t.me/sonofstrange" target="_blank" rel="noopener noreferrer">Telegram @sonofstrange</a>.</p>
+        </section>
+    </main>
+</body>
+</html>

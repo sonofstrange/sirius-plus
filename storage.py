@@ -220,6 +220,13 @@ def init_db():
                 updated_at   INTEGER NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS account_bans (
+                uid          TEXT PRIMARY KEY,
+                reason       TEXT NOT NULL,
+                banned_by    TEXT NOT NULL DEFAULT '',
+                banned_at    INTEGER NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS known_uids (
                 uid          TEXT PRIMARY KEY,
                 user_id      TEXT NOT NULL,
@@ -715,7 +722,7 @@ def set_user_uid(user_id: str, uid: str):
         tables_with_user_id = [
             "watchlist", "custom_events", "notifications", "feedback_messages",
             "schedule_cache", "schedule_reminders", "event_snapshots",
-            "sessions",
+            "sessions", "login_codes",
         ]
         for table in tables_with_user_id:
             try:
@@ -2502,10 +2509,13 @@ def get_all_known_uids() -> list[sqlite3.Row]:
             "SELECT k.uid, k.full_name, k.team, COALESCE(c.coins, 0) as coins, "
             "COALESCE(c.reserved_coins, 0) as reserved_coins, "
             "COALESCE(t.trust_level, 2) as trust_level, "
-            "CASE WHEN a.uid IS NULL THEN 0 ELSE 1 END as is_admin, k.updated_at "
+            "CASE WHEN a.uid IS NULL THEN 0 ELSE 1 END as is_admin, "
+            "CASE WHEN b.uid IS NULL THEN 0 ELSE 1 END as is_banned, "
+            "COALESCE(b.reason, '') AS ban_reason, k.updated_at "
             "FROM known_uids k LEFT JOIN sirius_coins c ON k.uid = c.uid "
             "LEFT JOIN account_trust t ON k.uid = t.uid "
             "LEFT JOIN admins a ON k.uid = a.uid "
+            "LEFT JOIN account_bans b ON k.uid = b.uid "
             "ORDER BY k.updated_at DESC"
         ).fetchall()
 
@@ -2519,6 +2529,8 @@ def get_admin_user_profile(uid: str) -> sqlite3.Row | None:
                       COALESCE(c.reserved_coins, 0) AS reserved_coins,
                       COALESCE(t.trust_level, 2) AS trust_level,
                       CASE WHEN a.uid IS NULL THEN 0 ELSE 1 END AS is_admin,
+                      CASE WHEN b.uid IS NULL THEN 0 ELSE 1 END AS is_banned,
+                      COALESCE(b.reason, '') AS ban_reason,
                       COALESCE((SELECT MAX(s.last_active) FROM sessions s WHERE s.user_id=k.user_id), 0) AS last_active,
                       (SELECT COUNT(*) FROM watchlist w WHERE w.user_id=k.user_id AND w.status='watching') AS watching_count,
                       (SELECT COUNT(*) FROM watchlist w WHERE w.user_id=k.user_id AND w.status='registered') AS registered_count,
@@ -2528,9 +2540,42 @@ def get_admin_user_profile(uid: str) -> sqlite3.Row | None:
                LEFT JOIN sirius_coins c ON c.uid=k.uid
                LEFT JOIN account_trust t ON t.uid=k.uid
                LEFT JOIN admins a ON a.uid=k.uid
+               LEFT JOIN account_bans b ON b.uid=k.uid
                WHERE k.uid=?""",
             (uid,),
         ).fetchone()
+
+
+# ---------- account bans ----------
+
+def get_account_ban(uid: str) -> sqlite3.Row | None:
+    if not uid:
+        return None
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT uid, reason, banned_by, banned_at FROM account_bans WHERE uid=?",
+            (uid,),
+        ).fetchone()
+
+
+def is_account_banned(uid: str) -> bool:
+    return get_account_ban(uid) is not None
+
+
+def ban_account(uid: str, reason: str, banned_by: str):
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO account_bans (uid, reason, banned_by, banned_at)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(uid) DO UPDATE SET
+                   reason=excluded.reason, banned_by=excluded.banned_by, banned_at=excluded.banned_at""",
+            (uid, reason, banned_by, int(time.time())),
+        )
+
+
+def unban_account(uid: str):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM account_bans WHERE uid=?", (uid,))
 
 
 def get_trust_level(uid: str) -> int:
