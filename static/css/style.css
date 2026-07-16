@@ -2684,6 +2684,7 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
 .dronebet-workspace h2 { margin: 0; font-size: 19px; }
 .dronebet-workspace__identity p { margin: 4px 0 0; color: var(--text-muted); font-size: 14px; line-height: 1.4; }
 .dronebet-workspace__actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.dronebet-workspace__actions [hidden] { display: none !important; }
 .dronebet-exchange {
     margin-top: 22px;
     padding-top: 20px;

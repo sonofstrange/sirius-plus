@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Пирожковый Диспетчер{% endblock %}</title>
     <link rel="icon" href="/static/sirius.png">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260716-2">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260716-3">
 </head>
 <body>
     <div class="app">
@@ -235,6 +235,13 @@
             </div>
             <div class="modal__body">
                 <div class="changelog">
+                    <div class="changelog__release">
+                        <div class="changelog__version">Версия 2.0.8</div>
+                        <div class="changelog__date">DroneBet</div>
+                        <ul class="changelog__list">
+                            <li>После привязки аккаунта скрываются ненужные кнопки одноразовых кодов.</li>
+                        </ul>
+                    </div>
                     <div class="changelog__release">
                         <div class="changelog__version">Версия 2.0.7</div>
                         <div class="changelog__date">DroneBet</div>
@@ -508,7 +515,7 @@
 
     <script src="/static/js/app.js?v=20260715-2"></script>
     <script>
-        const CHANGELOG_VERSION = '2.0.7';
+        const CHANGELOG_VERSION = '2.0.8';
         const CHANGELOG_STORAGE_KEY = 'sirius_seen_changelog_version';
 
         {% if user_id %}
