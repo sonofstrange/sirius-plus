@@ -176,18 +176,34 @@ def _community_datetime(value: str | None) -> dt.datetime | None:
         return None
 
 
+def _community_event_bounds(event) -> tuple[dt.datetime | None, dt.datetime | None]:
+    start = _community_datetime(
+        f"{event['date_iso']}T{event['start_time']}" if event["start_time"] else ""
+    )
+    end = _community_datetime(
+        f"{event['date_iso']}T{event['end_time']}" if event["end_time"] else ""
+    )
+    # An end time after midnight belongs to the following calendar day.
+    if start and end and end <= start:
+        end += dt.timedelta(days=1)
+    return start, end or start
+
+
+def _community_event_finished(event, now: dt.datetime | None = None) -> bool:
+    _, end = _community_event_bounds(event)
+    return bool(end and (now or _now()) >= end)
+
+
 def _community_registration_open(event) -> bool:
     now = _now()
     starts_at = _community_datetime(event["registration_open_at"])
     closes_at = _community_datetime(event["registration_close_at"])
-    event_starts_at = _community_datetime(
-        f"{event['date_iso']}T{event['start_time']}" if event["start_time"] else ""
-    )
+    _, event_ends_at = _community_event_bounds(event)
     if starts_at and now < starts_at:
         return False
     if closes_at and now >= closes_at:
         return False
-    if event_starts_at and now >= event_starts_at:
+    if event_ends_at and now >= event_ends_at:
         return False
     return not event["people_max"] or event["people_current"] < event["people_max"]
 
@@ -197,6 +213,9 @@ def _community_event_payload(event, user_id: str, is_admin: bool = False) -> dic
     names = [row["full_name"] or row["display_name"] or row["uid"] for row in coorganizers]
     is_registered = bool(event["is_registered"]) if "is_registered" in event.keys() else False
     can_manage = bool(event["can_manage"]) if "can_manage" in event.keys() else storage.can_manage_community_event(event["id"], user_id)
+    start, end = _community_event_bounds(event)
+    now = _now()
+    status = "finished" if end and now >= end else "ongoing" if start and now >= start else ""
     return {
         "event_id": f"community_{event['id']}",
         "community_id": event["id"],
@@ -205,7 +224,7 @@ def _community_event_payload(event, user_id: str, is_admin: bool = False) -> dic
         "start_time": f"{event['date_iso']}T{event['start_time']}:00+03:00" if event["start_time"] else "",
         "end_time": f"{event['date_iso']}T{event['end_time']}:00+03:00" if event["end_time"] else "",
         "date_iso": event["date_iso"],
-        "status": "",
+        "status": status,
         "location": [event["location"]] if event["location"] else [],
         "community_contact": event["contact"],
         "tutors": [],
@@ -223,6 +242,7 @@ def _community_event_payload(event, user_id: str, is_admin: bool = False) -> dic
         "community_is_registered": is_registered,
         "community_can_manage": can_manage or is_admin,
         "community_registration_open": _community_registration_open(event),
+        "community_is_finished": status == "finished",
         "registration_open_at": event["registration_open_at"],
         "registration_close_at": event["registration_close_at"],
     }
@@ -896,8 +916,11 @@ async def events_page(request: Request, tab: str = "register", status: str = "al
 
     filtered = []
     for ev in all_events:
-        ev_start = parse_sirius_time(ev.event_start)
-        is_past = ev_start and ev_start < now
+        is_past = (
+            bool(getattr(ev, "community_is_finished", False))
+            if ev.event_type == "communityEvent"
+            else bool(parse_sirius_time(ev.event_start) and parse_sirius_time(ev.event_start) < now)
+        )
         if tab == "my":
             in_my = ev.event_id in watches or ev.is_recorded or ev.is_reserved
             if not in_my:
@@ -943,7 +966,11 @@ async def events_page(request: Request, tab: str = "register", status: str = "al
         filtered.sort(key=lambda ev: parse_sirius_time(ev.event_start) or dt.datetime.max.replace(tzinfo=_MSK))
 
     for ev in filtered:
-        ev._is_past = _is_past_event(ev)
+        ev._is_past = (
+            bool(getattr(ev, "community_is_finished", False))
+            if ev.event_type == "communityEvent"
+            else _is_past_event(ev)
+        )
 
     dates = sorted(set(e.day_iso for e in all_events if e.day_iso))
 

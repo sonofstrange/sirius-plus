@@ -3,6 +3,7 @@ import asyncio
 import datetime as dt
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import config
 import main
@@ -63,6 +64,22 @@ class CommunityEventStorageTests(unittest.TestCase):
         )
 
         self.assertEqual(storage.get_community_event(event_id)["contact"], "@organizer")
+
+    def test_registration_stays_open_while_community_event_is_running(self):
+        event_id = storage.add_community_event(
+            "owner", "100", "Community event", "2026-08-01", "12:00", "13:00",
+            "", "", 5, "Description", "Hall", [],
+        )
+        event = storage.get_community_event(event_id)
+        during_event = dt.datetime(2026, 8, 1, 9, 30, tzinfo=dt.timezone.utc)
+        after_event = dt.datetime(2026, 8, 1, 10, 0, tzinfo=dt.timezone.utc)
+
+        with patch.object(main, "_now", return_value=during_event):
+            self.assertTrue(main._community_registration_open(event))
+            self.assertEqual(main._community_event_payload(event, "owner")["status"], "ongoing")
+        with patch.object(main, "_now", return_value=after_event):
+            self.assertFalse(main._community_registration_open(event))
+            self.assertEqual(main._community_event_payload(event, "owner")["status"], "finished")
 
     def test_community_change_summary_mentions_time_and_place(self):
         before = {"date_iso": "2026-08-01", "start_time": "12:00", "location": "Hall", "people_max": 5, "contact": "@old", "description": "Old"}

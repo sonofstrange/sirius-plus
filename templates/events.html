@@ -77,7 +77,7 @@
         {% if loop.first or ev.day_iso != loop.previtem.day_iso %}
         <div class="events-day-header">{{ ev.day_iso }}</div>
         {% endif %}
-        <div class="event-card {% if ev.is_recorded or ev.is_reserved %}event-card--registered{% elif ev._watched %}event-card--autoreg{% endif %}" onclick="showEventDetail('{{ ev.event_id }}')" style="cursor:pointer">
+        <div class="event-card {% if ev._is_past %}event-card--past{% endif %} {% if ev.is_recorded or ev.is_reserved %}event-card--registered{% elif ev._watched %}event-card--autoreg{% endif %}" onclick="showEventDetail('{{ ev.event_id }}')" style="cursor:pointer">
             <div class="event-card__time">
                 <span class="event-card__time-start">{{ fmt_time(ev.event_start) }}</span>
                 {% if ev.raw.get('eventEnd') %}

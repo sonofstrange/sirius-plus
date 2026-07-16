@@ -148,8 +148,12 @@ def _community_registration_is_open(event, now: dt.datetime) -> bool:
     if close and now >= close:
         return False
     start_value = f"{event['date_iso']}T{event['start_time']}" if event["start_time"] else ""
+    end_value = f"{event['date_iso']}T{event['end_time']}" if event["end_time"] else ""
     start = _parse_community_time(start_value)
-    return not start or now < start
+    end = _parse_community_time(end_value) or start
+    if start and end and end <= start:
+        end += dt.timedelta(days=1)
+    return not end or now < end
 
 
 def _parse_community_time(value: str) -> dt.datetime | None:
