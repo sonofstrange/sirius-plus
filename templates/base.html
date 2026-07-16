@@ -621,7 +621,7 @@
                                 <div class="profile-status-grid" id="notification-settings-status"><div class="loading">Проверяю...</div></div>
                                 <div class="profile-actions"><button class="btn btn-outline btn-sm" onclick="enableStrongNotifications()">Включить</button><button class="btn btn-outline btn-sm" onclick="testStrongNotification()">Тест</button><button class="btn btn-danger-text btn-sm" onclick="disableStrongNotifications()">Отключить</button></div>
                                 <div id="strong-notify-result" class="alert" style="display:none;margin-top:8px"></div>
-                                <div class="profile-actions" id="android-alarm-sound-row" hidden><button class="btn btn-outline btn-sm" onclick="openAndroidAlarmSoundSettings()"><span class="material-symbols-outlined">volume_up</span>Звук тревоги БПЛА</button></div>
+                                <div class="profile-actions" id="android-alarm-sound-row" style="display:none"><button class="btn btn-outline btn-sm" onclick="openAndroidAlarmSoundSettings()"><span class="material-symbols-outlined">volume_up</span>Звук тревоги БПЛА</button></div>
                                 <div class="profile-section"><div class="profile-section__header"><span>Активные будильники</span><span class="profile-section__hint" id="reminders-count">—</span></div><div id="profile-reminders-list" class="profile-list"><div class="loading">Загрузка...</div></div></div>
                             </div>
                         </details>
@@ -645,7 +645,7 @@
                     `;
                     const androidAlarmSettings = document.getElementById('android-alarm-sound-row');
                     if (androidAlarmSettings && window.SiriusAndroid && typeof window.SiriusAndroid.openAlarmSoundSettings === 'function') {
-                        androidAlarmSettings.hidden = false;
+                        androidAlarmSettings.style.display = 'flex';
                     }
                     updateNotificationSettingsStatus();
                     loadProfileReminders();
@@ -765,7 +765,9 @@
         function openAndroidAlarmSoundSettings() {
             if (window.SiriusAndroid && typeof window.SiriusAndroid.openAlarmSoundSettings === 'function') {
                 window.SiriusAndroid.openAlarmSoundSettings();
+                return;
             }
+            dlgAlert('Звук тревоги БПЛА', 'Выбор мелодии доступен в Android-приложении Пирожкового Диспетчера 1.0.18 или новее.');
         }
 
         async function updateNotificationSettingsStatus() {
