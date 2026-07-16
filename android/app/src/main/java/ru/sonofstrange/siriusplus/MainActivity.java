@@ -2,6 +2,8 @@ package ru.sonofstrange.siriusplus;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.app.AlertDialog;
+import android.content.ContentResolver;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -24,6 +26,7 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -64,6 +67,7 @@ public class MainActivity extends android.app.Activity {
         "/coins-info?tab=polymarket", "/howto", "/help"
     };
     private static final int NOTIFICATION_PERMISSION_REQUEST = 1001;
+    private static final int ALARM_SOUND_PICK_REQUEST = 1002;
     private static final Pattern MATERIAL_ICON_IN_ARCHIVE = Pattern.compile(
         "(<span[^>]*class=3D\"[^\"]*material-symbols-outlined[^\"]*\"[^>]*>)"
             + "((?:[a-z_]|=\\r?\\n)+)(</span>)"
@@ -244,6 +248,25 @@ public class MainActivity extends android.app.Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         loadApp(appUrlFromIntent());
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != ALARM_SOUND_PICK_REQUEST || resultCode != RESULT_OK || data == null
+            || data.getData() == null) {
+            return;
+        }
+        Uri sound = data.getData();
+        try {
+            int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            getContentResolver().takePersistableUriPermission(sound, flags & Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (SecurityException ignored) {
+            // Some document providers do not expose persistable permissions. The
+            // selected file still works until Android clears its temporary grant.
+        }
+        MobileNotifier.setCustomAlarmSound(this, sound);
+        Toast.makeText(this, "Своя мелодия для тревоги сохранена", Toast.LENGTH_SHORT).show();
     }
 
     @Override
@@ -716,6 +739,40 @@ public class MainActivity extends android.app.Activity {
         }
     }
 
+    private void showAlarmSoundSettings() {
+        String[] options = {
+            "Сирена устройства",
+            "Рингтон устройства",
+            "Короткий сигнал уведомления",
+            "Только вибрация"
+        };
+        String[] profiles = {
+            MobileNotifier.PROFILE_SIREN,
+            MobileNotifier.PROFILE_RINGTONE,
+            MobileNotifier.PROFILE_NOTIFICATION,
+            MobileNotifier.PROFILE_VIBRATION
+        };
+        int selected = MobileNotifier.getAlarmProfileIndex(this);
+        new AlertDialog.Builder(this)
+            .setTitle("Сигнал тревоги БПЛА")
+            .setSingleChoiceItems(options, selected, (dialog, which) -> {
+                MobileNotifier.setAlarmProfile(this, profiles[which]);
+                dialog.dismiss();
+                Toast.makeText(this, "Сигнал тревоги изменён", Toast.LENGTH_SHORT).show();
+            })
+            .setNeutralButton("Своя музыка", (dialog, which) -> chooseCustomAlarmSound())
+            .setNegativeButton("Отмена", null)
+            .show();
+    }
+
+    private void chooseCustomAlarmSound() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType("audio/*")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        startActivityForResult(intent, ALARM_SOUND_PICK_REQUEST);
+    }
+
     private void showNativeNotification(String message) {
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
             != PackageManager.PERMISSION_GRANTED) return;
@@ -778,6 +835,11 @@ public class MainActivity extends android.app.Activity {
     }
 
     private final class NativeNotificationBridge {
+        @JavascriptInterface
+        public void openAlarmSoundSettings() {
+            runOnUiThread(MainActivity.this::showAlarmSoundSettings);
+        }
+
         @JavascriptInterface
         public void notify(String message) {
             if (isAppForeground() && isAppUrl(webView.getUrl())) {

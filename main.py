@@ -525,6 +525,10 @@ async def lifespan(app: FastAPI):
         _ensure_vapid_private_key()
     except Exception as e:
         log.warning("Не удалось подготовить Web Push VAPID ключ: %s", e)
+    if _fcm_is_configured():
+        log.info("Android FCM push включён")
+    else:
+        log.warning("Android FCM push выключен: не найден %s", app_config.FCM_SERVICE_ACCOUNT_FILE)
 
     _sirius_client = SiriusClient(headless=True)
     try:
