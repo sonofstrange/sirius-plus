@@ -1702,6 +1702,8 @@ async def _complete_dronebet_exchange(exchange: dict) -> tuple[bool, dict, int]:
         })
         if 200 <= status < 300 and remote.get("ok"):
             remote_balance = remote.get("balance") if isinstance(remote.get("balance"), int) else None
+            if remote_balance is not None:
+                storage.cache_partner_balance(DRONEBET_PARTNER, exchange["uid"], remote_balance)
             storage.complete_partner_exchange(DRONEBET_PARTNER, key, local["balance"], remote_balance)
             return True, {"coins": local["balance"], "cookies": remote_balance}, 200
         if not retryable and status < 500:
@@ -1730,6 +1732,8 @@ async def _complete_dronebet_exchange(exchange: dict) -> tuple[bool, dict, int]:
     if not local["ok"]:
         return False, {"pending": True, "error": "Печеньки уже списаны. Обмен ожидает подтверждения, повтори попытку."}, 503
     remote_balance = remote.get("balance") if isinstance(remote.get("balance"), int) else None
+    if remote_balance is not None:
+        storage.cache_partner_balance(DRONEBET_PARTNER, exchange["uid"], remote_balance)
     storage.complete_partner_exchange(DRONEBET_PARTNER, key, local["balance"], remote_balance)
     return True, {"coins": local["balance"], "cookies": remote_balance}, 200
 
@@ -1755,22 +1759,29 @@ async def api_dronebet_summary(request: Request):
     if not uid:
         return _partner_json_error("unauthorized", 401)
     link = storage.get_partner_link_for_uid(DRONEBET_PARTNER, uid)
+    cached_balance = storage.get_partner_balance_cache(DRONEBET_PARTNER, uid)
     response = {
         "ok": True, "configured": bool(app_config.DRONEBET_OUTBOUND_TOKEN), "linked": bool(link),
-        "coins": storage.get_coins(uid), "cookies": None, "rate": app_config.DRONEBET_COOKIE_RATE,
+        "coins": storage.get_coins(uid), "cookies": cached_balance["balance"] if cached_balance else None,
+        "cookies_updated_at": cached_balance["updated_at"] if cached_balance else None,
+        "rate": app_config.DRONEBET_COOKIE_RATE,
     }
-    if not link:
-        return JSONResponse(response)
     status, remote, _ = await _dronebet_request(
         "GET", f"/balance.php?sirius_uid={urllib.parse.quote(uid, safe='')}"
     )
-    response["dronebet_user_id"] = link["external_user_id"]
+    if link:
+        response["dronebet_user_id"] = link["external_user_id"]
     if 200 <= status < 300 and remote.get("ok"):
-        response["cookies"] = remote.get("balance")
+        remote_balance = remote.get("balance")
+        if isinstance(remote_balance, int):
+            storage.cache_partner_balance(DRONEBET_PARTNER, uid, remote_balance)
+            response["cookies"] = remote_balance
+            response["cookies_updated_at"] = int(time.time())
     else:
         response["remote_error"] = _dronebet_error_message(status, remote)
         response["remote_status"] = status
         response["remote_code"] = str(remote.get("code") or remote.get("error") or "")[:64]
+        response["remote_unavailable"] = status == 0 or status >= 500
     return JSONResponse(response)
 
 

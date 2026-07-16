@@ -31,7 +31,7 @@ DRONEBET_INBOUND_TOKEN = os.environ.get("DRONEBET_INBOUND_TOKEN", "")
 DRONEBET_API_BASE = os.environ.get(
     "DRONEBET_API_BASE", "https://dronebet.cloudpub.ru/api/partner/sirius"
 ).rstrip("/")
-DRONEBET_COOKIE_RATE = 2_000
+DRONEBET_COOKIE_RATE = 1_000
 DRONEBET_LINK_CODE_TTL_SECONDS = int(os.environ.get("DRONEBET_LINK_CODE_TTL_SECONDS", "600"))
 
 

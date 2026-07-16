@@ -43,13 +43,17 @@
                 <span class="material-symbols-outlined" aria-hidden="true">sync_alt</span>
                 <div><span>Печеньки DroneBet</span><strong id="dronebet-cookies">—</strong></div>
             </div>
-            <p class="dronebet-exchange__rate">1 Сириус Коин = 2 000 печенек DroneBet</p>
+            <p class="dronebet-exchange__rate">1 Сириус Коин = 1 000 🍪</p>
             <div class="dronebet-exchange__actions">
                 <button class="btn btn-primary" type="button" onclick="exchangeDroneBet('coins_to_cookies')">Обменять коины на печеньки</button>
                 <button class="btn btn-outline" type="button" onclick="exchangeDroneBet('cookies_to_coins')">Обменять печеньки на коины</button>
             </div>
             <p class="text-muted dronebet-exchange__hint">Доступен обмен целых Сириус Коинов.</p>
         </div>
+    </section>
+    <section class="dronebet-about">
+        <span class="material-symbols-outlined" aria-hidden="true">radar</span>
+        <p><strong>Что такое DroneBet?</strong> Ставки на то, как долго длится атака дронов в Сириусе.</p>
     </section>
     {% else %}
     <div class="auth-card__help" style="background:var(--bg-card);padding:24px;border-radius:var(--radius);box-shadow:var(--shadow);line-height:1.8">
@@ -157,18 +161,30 @@ async function loadDroneBetLink() {
         const data = await response.json().catch(() => ({}));
         if (!data.ok) throw new Error('summary unavailable');
         if (data.ok && data.linked) {
-            text.textContent = data.remote_error || 'Аккаунт связан. Можно обменивать валюту.';
-            status.textContent = data.remote_error ? ('Ошибка ' + (data.remote_status || 'DroneBet')) : 'Связан';
+            const unavailable = Boolean(data.remote_unavailable);
+            text.textContent = unavailable
+                ? 'DroneBet выключен. Показан последний сохранённый баланс.'
+                : (data.remote_error || 'Аккаунт связан. Можно обменивать валюту.');
+            status.textContent = unavailable ? 'DroneBet выключен' : (data.remote_error ? ('Ошибка ' + (data.remote_status || 'DroneBet')) : 'Связан');
             button.hidden = true;
             localCodeButton.hidden = true;
             exchange.hidden = false;
             document.getElementById('dronebet-coins').textContent = data.coins + ' 🪙';
-            document.getElementById('dronebet-cookies').textContent = data.cookies === null ? '—' : data.cookies.toLocaleString('ru-RU');
+            document.getElementById('dronebet-cookies').textContent = data.cookies === null ? '—' : data.cookies.toLocaleString('ru-RU') + ' 🍪';
+            exchange.querySelectorAll('button').forEach(item => { item.disabled = unavailable; });
         } else {
-            status.textContent = data.configured ? 'Не связан' : 'Нет токена';
-            text.textContent = data.configured
-                ? 'Создай одноразовый код на DroneBet и введи его здесь. После привязки доступен обмен валюты.'
-                : 'Интеграция DroneBet временно настраивается на сервере.';
+            const unavailable = Boolean(data.remote_unavailable) || !data.configured;
+            status.textContent = unavailable ? 'DroneBet выключен' : 'Не связан';
+            text.textContent = unavailable
+                ? 'DroneBet выключен. Привязка будет доступна, когда сервис снова заработает.'
+                : 'Создай одноразовый код на DroneBet и введи его здесь. После привязки доступен обмен валюты.';
+            button.disabled = unavailable;
+            localCodeButton.disabled = unavailable;
+            /* A balance request returns 404 for an unlinked account, which still means DroneBet is online. */
+            if (!unavailable) {
+                button.disabled = false;
+                localCodeButton.disabled = false;
+            }
         }
     } catch (e) {
         status.textContent = 'Нет связи';
@@ -207,15 +223,23 @@ async function createDroneBetLinkCode() {
             return;
         }
         const until = new Date(data.expires_at * 1000).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});
-        dlgAlert('Код Sirius Plus', 'Введи на DroneBet код ' + data.code + '. Он одноразовый и действует до ' + until + '.');
+        showDroneBetLinkCode(data.code, until);
     } catch (e) {
         dlgAlert('Не получилось', 'Не удалось соединиться с сервером.');
     }
 }
 
+function showDroneBetLinkCode(code, until) {
+    showDialog('Код Sirius Plus', '', {buttons: [{text: 'Готово', primary: true}]});
+    document.getElementById('dialog-message').innerHTML =
+        'Введи этот одноразовый код на DroneBet:<br><br>' +
+        '<strong class="mono dronebet-link-code">' + escapeHtml(code) + '</strong><br><br>' +
+        '<span class="text-muted">Действует до ' + escapeHtml(until) + '.</span>';
+}
+
 async function exchangeDroneBet(direction) {
     const title = direction === 'coins_to_cookies' ? 'Коины в печеньки' : 'Печеньки в коины';
-    const amount = await dlgPrompt(title, 'Сколько целых Сириус Коинов обменять? Курс: 1 = 2 000.', '1', {type: 'number', value: '1'});
+    const amount = await dlgPrompt(title, 'Сколько целых Сириус Коинов обменять? Курс: 1 = 1 000 🍪.', '1', {type: 'number', value: '1'});
     const coins = Number(amount);
     if (!Number.isInteger(coins) || coins < 1 || coins > 500) {
         if (amount !== null) dlgAlert('Проверь число', 'Можно обменять от 1 до 500 целых Сириус Коинов.');
@@ -235,7 +259,7 @@ async function exchangeDroneBet(direction) {
             return;
         }
         droneBetPending = null;
-        dlgAlert('Готово', 'Обмен завершён. Сириус Коинов: ' + data.coins + '. Печенек DroneBet: ' + (data.cookies === null ? 'обновляются' : data.cookies) + '.');
+        dlgAlert('Готово', 'Обмен завершён. Сириус Коинов: ' + data.coins + '. Печенек DroneBet: ' + (data.cookies === null ? 'обновляются' : data.cookies + ' 🍪') + '.');
         loadCoins();
         loadDroneBetLink();
     } catch (e) {

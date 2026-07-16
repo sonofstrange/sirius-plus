@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Пирожковый Диспетчер{% endblock %}</title>
     <link rel="icon" href="/static/sirius.png">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260716-1">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260716-2">
 </head>
 <body>
     <div class="app">
@@ -236,6 +236,14 @@
             <div class="modal__body">
                 <div class="changelog">
                     <div class="changelog__release">
+                        <div class="changelog__version">Версия 2.0.7</div>
+                        <div class="changelog__date">DroneBet</div>
+                        <ul class="changelog__list">
+                            <li>Курс обмена стал 1 Сириус Коин за 1 000 печенек.</li>
+                            <li>Последний баланс печенек остаётся доступен, когда DroneBet выключен.</li>
+                        </ul>
+                    </div>
+                    <div class="changelog__release">
                         <div class="changelog__version">Версия 2.0.6</div>
                         <div class="changelog__date">Подключение DroneBet</div>
                         <ul class="changelog__list">
@@ -275,7 +283,7 @@
                         <div class="changelog__date">Интеграция DroneBet</div>
                         <ul class="changelog__list">
                             <li>Аккаунт DroneBet можно связать одноразовым кодом прямо во вкладке Сириус Коинов.</li>
-                            <li>Добавлен обмен Сириус Коинов и печенек DroneBet по курсу 1 к 2 000.</li>
+                            <li>Добавлен обмен Сириус Коинов и печенек DroneBet.</li>
                         </ul>
                     </div>
                     <div class="changelog__release">
@@ -500,7 +508,7 @@
 
     <script src="/static/js/app.js?v=20260715-2"></script>
     <script>
-        const CHANGELOG_VERSION = '2.0.6';
+        const CHANGELOG_VERSION = '2.0.7';
         const CHANGELOG_STORAGE_KEY = 'sirius_seen_changelog_version';
 
         {% if user_id %}

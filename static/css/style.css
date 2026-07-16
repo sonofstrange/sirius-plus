@@ -2702,6 +2702,11 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
 .dronebet-exchange__rate { margin: 16px 0 12px; color: var(--text-muted); font-size: 14px; }
 .dronebet-exchange__actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .dronebet-exchange__hint { margin: 12px 0 0; font-size: 12px; line-height: 1.4; }
+.dronebet-link-code { display: inline-block; padding: 8px 10px; border: 1px solid var(--primary); border-radius: 8px; background: color-mix(in srgb, var(--primary) 9%, var(--bg-card)); color: var(--primary); font-size: 20px; letter-spacing: 2px; }
+.dronebet-about { display: flex; align-items: flex-start; gap: 10px; margin-top: 14px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb, var(--primary) 5%, var(--bg-card)); color: var(--text-muted); line-height: 1.45; }
+.dronebet-about .material-symbols-outlined { color: var(--primary); font-size: 22px; }
+.dronebet-about p { margin: 0; }
+.dronebet-about strong { color: var(--text); }
 .referral-card { display: grid; justify-items: center; gap: 14px; }
 .referral-card > .text-muted { width: 100%; line-height: 1.45; }
 .referral-card__code { display: grid; justify-items: center; gap: 3px; }
@@ -2767,6 +2772,7 @@ body.dark-theme .event-card--autoreg { background: #373220; border-color: #4d462
     .dronebet-workspace__actions .btn { flex: 1 1 180px; }
     .dronebet-exchange__balances strong { font-size: 18px; }
     .dronebet-exchange__actions .btn { flex: 1 1 180px; }
+    .dronebet-about { padding: 13px; }
     .feedback-message { max-width: 94%; }
     .feedback-reply-form { flex-direction: column; }
     .feedback-reply-form .btn { align-self: flex-end; }

@@ -427,6 +427,14 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_partner_exchanges_pending
                 ON partner_exchanges(partner, uid, status, updated_at DESC);
 
+            CREATE TABLE IF NOT EXISTS partner_balance_cache (
+                partner    TEXT NOT NULL,
+                uid        TEXT NOT NULL,
+                balance    INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (partner, uid)
+            );
+
         """)
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(watchlist)").fetchall()]
         if "event_start" not in cols:
@@ -1845,7 +1853,7 @@ def begin_partner_exchange(
     """Create or resume one exchange. A pending exchange is always resumed first."""
     if direction not in {"coins_to_cookies", "cookies_to_coins"}:
         return None, "invalid_direction"
-    if not isinstance(coins, int) or coins < 1 or cookies != coins * 2_000:
+    if not isinstance(coins, int) or coins < 1 or cookies != coins * config.DRONEBET_COOKIE_RATE:
         return None, "invalid_amount"
     if not isinstance(idempotency_key, str) or not 12 <= len(idempotency_key) <= 128:
         return None, "invalid_idempotency_key"
@@ -1893,6 +1901,26 @@ def complete_partner_exchange(partner: str, idempotency_key: str, local_balance:
                WHERE partner=? AND idempotency_key=?""",
             (local_balance, remote_balance, int(time.time()), partner, idempotency_key),
         )
+
+
+def cache_partner_balance(partner: str, uid: str, balance: int) -> None:
+    if not isinstance(balance, int) or balance < 0:
+        return
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO partner_balance_cache (partner, uid, balance, updated_at)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(partner, uid) DO UPDATE SET balance=excluded.balance, updated_at=excluded.updated_at""",
+            (partner, uid, balance, int(time.time())),
+        )
+
+
+def get_partner_balance_cache(partner: str, uid: str) -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT balance, updated_at FROM partner_balance_cache WHERE partner=? AND uid=?",
+            (partner, uid),
+        ).fetchone()
 
 
 def fail_partner_exchange(partner: str, idempotency_key: str) -> None:
