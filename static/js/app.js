@@ -28,7 +28,7 @@ function updateAlarmSoundSettingsLabel() {
     if (label) label.textContent = 'Звук тревоги: ' + alarmSoundProfileLabel();
 }
 
-function setAlarmSoundProfile(profile) {
+function setAlarmSoundProfile(profile, preview = false) {
     if (!['siren', 'ringtone', 'notification', 'signal', 'vibration', 'custom'].includes(profile)) return;
     localStorage.setItem(ALARM_SOUND_PROFILE_KEY, profile);
     if (profile !== 'custom' && _customAlarmAudio) {
@@ -46,6 +46,7 @@ function setAlarmSoundProfile(profile) {
     }
     updateAlarmSoundSettingsLabel();
     unlockAlarmAudio();
+    if (preview) previewAlarmSound(profile);
 }
 
 function chooseCustomAlarmSound() {
@@ -93,13 +94,13 @@ async function loadWebAlarmSound() {
     return file;
 }
 
-async function playCustomAlarmSound() {
+async function playCustomAlarmSound(loop = true) {
     if (_customAlarmAudio) return;
     try {
         const file = await loadWebAlarmSound();
         if (!file) return;
         const audio = new Audio(URL.createObjectURL(file));
-        audio.loop = true;
+        audio.loop = loop;
         audio.volume = 1;
         await audio.play();
         _customAlarmAudio = audio;
@@ -108,7 +109,7 @@ async function playCustomAlarmSound() {
     }
 }
 
-async function playBuiltInAlarmSound(profile) {
+async function playBuiltInAlarmSound(profile, loop = true) {
     if (_builtInAlarmAudio) return;
     const files = {
         siren: 'alarm_siren.wav',
@@ -120,13 +121,36 @@ async function playBuiltInAlarmSound(profile) {
     if (!file) return;
     try {
         const audio = new Audio('/static/audio/' + file);
-        audio.loop = true;
+        audio.loop = loop;
         audio.volume = 1;
         await audio.play();
         _builtInAlarmAudio = audio;
     } catch (e) {
         playAlarmTone(0.25);
     }
+}
+
+function stopAlarmAudio() {
+    if (_customAlarmAudio) {
+        _customAlarmAudio.pause();
+        URL.revokeObjectURL(_customAlarmAudio.src);
+        _customAlarmAudio = null;
+    }
+    if (_builtInAlarmAudio) {
+        _builtInAlarmAudio.pause();
+        _builtInAlarmAudio = null;
+    }
+}
+
+function previewAlarmSound(profile) {
+    stopAlarmAudio();
+    if (profile === 'vibration') {
+        if (navigator.vibrate) navigator.vibrate([180, 90, 180, 90, 320]);
+        return;
+    }
+    if (profile === 'custom') void playCustomAlarmSound(false);
+    else void playBuiltInAlarmSound(profile, false);
+    setTimeout(stopAlarmAudio, 4200);
 }
 
 function startNotificationPolling(userId) {
@@ -224,7 +248,6 @@ function unlockAlarmAudio() {
     }
     _alarmUnlocked = true;
     localStorage.setItem('alarmAudioEnabled', '1');
-    playAlarmTone(0.08);
 }
 
 async function getStrongNotificationState() {
@@ -472,15 +495,7 @@ function stopAlarmRepeat() {
     if (navigator.vibrate) {
         navigator.vibrate(0);
     }
-    if (_customAlarmAudio) {
-        _customAlarmAudio.pause();
-        URL.revokeObjectURL(_customAlarmAudio.src);
-        _customAlarmAudio = null;
-    }
-    if (_builtInAlarmAudio) {
-        _builtInAlarmAudio.pause();
-        _builtInAlarmAudio = null;
-    }
+    stopAlarmAudio();
 }
 
 function showAlarmOverlay(msg, options = {}) {
@@ -517,7 +532,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!file) return;
         try {
             await saveWebAlarmSound(file);
-            setAlarmSoundProfile('custom');
+            setAlarmSoundProfile('custom', true);
         } catch (e) {
             if (typeof dlgAlert === 'function') dlgAlert('Своя музыка', 'Не удалось сохранить файл на этом устройстве.');
         } finally {
