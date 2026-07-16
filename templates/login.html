@@ -103,7 +103,7 @@
                         <input type="text" id="email-code-input" class="form-input" style="width:100%;letter-spacing:2px"
                                placeholder="Код из письма" autocomplete="one-time-code" inputmode="numeric">
                     </div>
-                    <button type="button" class="btn btn-primary btn-block" onclick="confirmSiriusEmailCode()">Подтвердить вход</button>
+                    <button type="button" class="btn btn-primary btn-block" id="email-code-confirm-btn" onclick="confirmSiriusEmailCode()">Подтвердить вход</button>
                 </div>
                 <div id="email-code-login-result" class="alert" style="display:none;margin-top:12px"></div>
             </details>
@@ -208,6 +208,7 @@ async function submitPasswordLogin(form) {
 }
 
 let siriusEmailCodeAttemptId = '';
+let siriusEmailCodeConfirming = false;
 
 function showEmailCodeLoginResult(message, success) {
     const result = document.getElementById('email-code-login-result');
@@ -247,6 +248,7 @@ async function requestSiriusEmailCode(form) {
 }
 
 async function confirmSiriusEmailCode() {
+    if (siriusEmailCodeConfirming) return;
     const code = document.getElementById('email-code-input').value.trim();
     const form = document.getElementById('email-code-login-form');
     const data = new FormData(form);
@@ -254,6 +256,11 @@ async function confirmSiriusEmailCode() {
         showEmailCodeLoginResult('Сначала запроси код и введи его из письма.', false);
         return;
     }
+    const button = document.getElementById('email-code-confirm-btn');
+    siriusEmailCodeConfirming = true;
+    button.disabled = true;
+    button.textContent = 'Подтверждаю вход...';
+    let completed = false;
     try {
         const response = await fetch('/api/login-email-code/confirm', {
             method: 'POST',
@@ -268,9 +275,17 @@ async function confirmSiriusEmailCode() {
         });
         const result = await response.json();
         if (!result.ok) throw new Error(result.error || 'Не удалось подтвердить код.');
+        completed = true;
+        siriusEmailCodeAttemptId = '';
         window.location.replace(result.redirect || '/schedule');
     } catch (error) {
         showEmailCodeLoginResult(error.message || 'Не удалось подтвердить код.', false);
+    } finally {
+        if (!completed) {
+            siriusEmailCodeConfirming = false;
+            button.disabled = false;
+            button.textContent = 'Подтвердить вход';
+        }
     }
 }
 
