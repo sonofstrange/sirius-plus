@@ -240,6 +240,14 @@
             <div class="modal__body">
                 <div class="changelog">
                     <div class="changelog__release">
+                        <div class="changelog__version">Версия 2.1.1</div>
+                        <div class="changelog__date">Вход и обновления</div>
+                        <ul class="changelog__list">
+                            <li>Страница входа стала понятнее, а ранее сохранённый аккаунт открывается быстрее.</li>
+                            <li>Вместо автоматического окна changelog появляется уведомление об обновлении.</li>
+                        </ul>
+                    </div>
+                    <div class="changelog__release">
                         <div class="changelog__version">Версия 2.1.0</div>
                         <div class="changelog__date">Вход по коду Sirius</div>
                         <ul class="changelog__list">
@@ -536,7 +544,7 @@
 
     <script src="/static/js/app.js?v=20260717-3"></script>
     <script>
-        const CHANGELOG_VERSION = '2.1.0';
+        const CHANGELOG_VERSION = '2.1.1';
         const CHANGELOG_STORAGE_KEY = 'sirius_seen_changelog_version';
 
         {% if user_id %}
@@ -1129,17 +1137,45 @@
             const modal = document.getElementById('changelog-modal');
             if (!modal) return;
             if (!manual) {
-                try {
-                    const seenVersion = localStorage.getItem(CHANGELOG_STORAGE_KEY);
-                    // A first visit is not an update: remember the current version quietly.
-                    if (seenVersion === null) {
-                        localStorage.setItem(CHANGELOG_STORAGE_KEY, CHANGELOG_VERSION);
-                        return;
-                    }
-                    if (seenVersion === CHANGELOG_VERSION) return;
-                } catch (e) {}
+                return;
             }
             modal.style.display = 'flex';
+        }
+
+        function showChangelogUpdateNotice() {
+            try {
+                const seenVersion = localStorage.getItem(CHANGELOG_STORAGE_KEY);
+                // The first visit is not an update. Remember it without any interruption.
+                if (seenVersion === null) {
+                    localStorage.setItem(CHANGELOG_STORAGE_KEY, CHANGELOG_VERSION);
+                    return;
+                }
+                if (seenVersion === CHANGELOG_VERSION) return;
+                localStorage.setItem(CHANGELOG_STORAGE_KEY, CHANGELOG_VERSION);
+            } catch (e) {
+                return;
+            }
+
+            const container = document.getElementById('notifications-live');
+            if (!container) return;
+            const notice = document.createElement('div');
+            notice.className = 'notification notification--update';
+            const text = document.createElement('span');
+            text.className = 'notification__text';
+            text.textContent = 'Сайт обновлён.';
+            const open = document.createElement('button');
+            open.type = 'button';
+            open.className = 'notification__action';
+            open.textContent = 'Открыть changelog';
+            open.onclick = () => { notice.remove(); showChangelog(true); };
+            const close = document.createElement('button');
+            close.type = 'button';
+            close.className = 'notification__close';
+            close.setAttribute('aria-label', 'Закрыть');
+            close.innerHTML = '<span class="material-symbols-outlined">close</span>';
+            close.onclick = () => notice.remove();
+            notice.append(text, open, close);
+            container.appendChild(notice);
         }
 
         function closeChangelog() {
@@ -1279,7 +1315,7 @@
                     link.setAttribute('aria-current', 'page');
                 }
             });
-            setTimeout(() => showChangelog(false), 400);
+            setTimeout(showChangelogUpdateNotice, 400);
         });
 
         function toggleMobileMenu() {
