@@ -751,6 +751,18 @@ class SiriusClient:
         for _ in range(AUTH_CHALLENGE_POLL_ATTEMPTS):
             try:
                 url = page.url
+                email_input = page.locator('input[name="email"]')
+                # The form itself is a stronger readiness signal than an
+                # optional ngenix cookie. Some valid Sirius sessions never set
+                # that cookie, which previously forced a needless 60s wait.
+                if (
+                    "auth.sirius.online" in url
+                    and "challenge=" not in url
+                    and await email_input.is_visible()
+                    and await email_input.is_enabled()
+                ):
+                    log.info("login: форма Sirius готова, продолжаю без ожидания ngenix")
+                    break
                 cookies = await page.context.cookies()
                 has_ngenix = any(c["name"].startswith("ngenix_jscv_") for c in cookies)
                 if has_ngenix and "auth.sirius.online" in url and "password" in url:
