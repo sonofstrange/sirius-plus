@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Пирожковый Диспетчер{% endblock %}</title>
     <link rel="icon" href="/static/sirius.png">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260717-1">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260717-2">
 </head>
 <body>
     <div class="app">
@@ -1166,7 +1166,7 @@
             const open = document.createElement('button');
             open.type = 'button';
             open.className = 'notification__action';
-            open.textContent = 'Открыть changelog';
+            open.innerHTML = 'Что нового <span class="material-symbols-outlined">arrow_forward</span>';
             open.onclick = () => { notice.remove(); showChangelog(true); };
             const close = document.createElement('button');
             close.type = 'button';

@@ -1316,7 +1316,10 @@ body.dark-theme .badge-community { color: #abebbc; background: #1d4a2b; }
 .notification--update { align-items: center; }
 .notification--update .notification__text { flex: 1; }
 .notification__action {
+    display: inline-flex;
     flex: 0 0 auto;
+    align-items: center;
+    gap: 2px;
     padding: 3px 0;
     border: 0;
     color: var(--primary);
@@ -1326,6 +1329,7 @@ body.dark-theme .badge-community { color: #abebbc; background: #1d4a2b; }
     font-weight: 700;
     white-space: nowrap;
 }
+.notification__action .material-symbols-outlined { font-size: 16px; }
 .notification__action:hover { text-decoration: underline; }
 
 /* Loading */
