@@ -14,11 +14,8 @@
         {% endif %}
 
         <div class="auth-card__body auth-login-methods">
-            <details class="auth-method auth-method--profile">
-                <summary class="auth-method__summary">
-                    <span class="material-symbols-outlined">key</span>
-                    <span>Короткий код из профиля</span>
-                </summary>
+            <details class="auth-login-alternative auth-login-alternative--profile">
+                <summary>Войти по короткому коду из профиля Пирожкового Диспетчера</summary>
                 <p class="auth-card__desc" style="margin-top:8px">
                     Подходит только для аккаунта, в который уже входили. На авторизованном устройстве открой профиль и создай одноразовый код входа.
                 </p>
@@ -38,14 +35,8 @@
                 </form>
             </details>
 
-            <details id="login-section" class="auth-method auth-method--password">
-                <summary class="auth-method__summary">
-                    <span class="material-symbols-outlined">password</span>
-                    <span>Войти с паролем Sirius</span>
-                </summary>
-                <p class="auth-card__desc" style="margin-top:8px">
-                    Запасной способ, если не получается получить код на почту. Вход выполняется в отдельном браузерном контексте Sirius; данные для обновления токена хранятся зашифрованными. Это может занять до 2 минут. Исходный код открыт на <a href="https://github.com/sonofstrange/sirius-plus" target="_blank" rel="noopener noreferrer">GitHub</a>.
-                </p>
+            <section id="login-section" class="auth-password-login">
+                <p class="auth-login-lead">Войди с email и паролем от Sirius. Если этот аккаунт уже входил здесь, Диспетчер откроется сразу.</p>
                 <form id="password-login-form" method="POST" action="/api/login" onsubmit="submitPasswordLogin(this); return false;">
                 <div class="form-group">
                     <label class="form-label" for="email-input">Email</label>
@@ -77,16 +68,12 @@
                 {% if error %}
                 <div class="alert alert-error" style="margin-top:12px">{{ error }}</div>
                 {% endif %}
-            </details>
+            </section>
 
-            <details class="auth-method auth-method--primary" open>
-                <summary class="auth-method__summary">
-                    <span class="material-symbols-outlined">mark_email_read</span>
-                    <span>Войти по коду из письма</span>
-                    <span class="auth-method__badge">Рекомендуем</span>
-                </summary>
+            <details class="auth-login-alternative auth-login-alternative--email">
+                <summary>Не получается войти с паролем? Получить код на почту Sirius</summary>
                 <p class="auth-card__desc" style="margin-top:8px">
-                    Код придёт на почту, привязанную к Sirius. Это самый стабильный способ: пароль вводить здесь не нужно.
+                    Код придёт на почту, привязанную к Sirius. Пароль вводить здесь не нужно.
                 </p>
                 <form id="email-code-login-form" onsubmit="requestSiriusEmailCode(this); return false;">
                     <div class="form-group">
@@ -117,8 +104,7 @@
             </details>
 
             <div class="auth-login-note">
-                <span class="material-symbols-outlined">lock</span>
-                <span>Данные обрабатываются только для входа и автозаписи. <a href="/privacy" target="_blank" rel="noopener noreferrer">Подробнее</a></span>
+                <span>Вход выполняется через Sirius. Данные хранятся зашифрованно и используются только для входа и автозаписи. <a href="/privacy" target="_blank" rel="noopener noreferrer">Подробнее</a></span>
             </div>
 
             <details class="auth-card__help" style="margin-top:24px" hidden>

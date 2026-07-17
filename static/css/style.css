@@ -399,70 +399,39 @@ body {
     word-break: break-all;
     transition: background-color 0.3s ease, color 0.3s ease;
 }
-.auth-card {
-    max-width: 520px;
-    border-radius: 14px;
-}
 .auth-login-methods {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 18px;
 }
-.auth-method {
+.auth-password-login { order: 1; }
+.auth-login-alternative {
     order: 2;
     margin: 0;
-    padding: 14px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+}
+.auth-login-alternative--profile { order: 3; }
+.auth-login-alternative summary {
     color: var(--text);
-    background: var(--bg-card);
+    font-size: 14px;
+    font-weight: 600;
 }
-.auth-method--primary {
-    order: 1;
-    border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
-    background: color-mix(in srgb, var(--primary) 5%, var(--bg-card));
-}
-.auth-method--profile { order: 3; }
-.auth-method__summary {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    min-height: 26px;
-    color: var(--text);
-    font-size: 15px;
-    font-weight: 700;
-    list-style: none;
-}
-.auth-method__summary::-webkit-details-marker { display: none; }
-.auth-method__summary .material-symbols-outlined {
-    color: var(--primary);
-    font-size: 21px;
-}
-.auth-method__badge {
-    margin-left: auto;
-    padding: 3px 7px;
-    border-radius: 999px;
-    color: var(--primary);
-    background: color-mix(in srgb, var(--primary) 12%, var(--bg-card));
-    font-size: 11px;
-    font-weight: 700;
-}
-.auth-method .auth-card__desc { margin: 10px 0 16px; }
-.auth-method .form-group:last-of-type { margin-bottom: 14px; }
-.auth-method--password .auth-card__desc::after {
-    content: ' Если этот аккаунт уже входил с теми же данными, Диспетчер откроется сразу.';
+.auth-login-alternative[open] summary { margin-bottom: 12px; }
+.auth-login-lead {
+    margin: 0 0 18px;
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.55;
 }
 .auth-login-note {
     order: 4;
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 2px 4px 0;
+    padding-top: 2px;
     color: var(--text-muted);
     font-size: 12px;
     line-height: 1.45;
 }
-.auth-login-note .material-symbols-outlined { font-size: 17px; }
 .personal-data-consent {
     display: flex;
     align-items: flex-start;
