@@ -792,14 +792,20 @@ def get_login_credentials(user_id: str) -> tuple[str, str] | None:
 
 
 def find_user_by_login_credentials(email: str, password: str) -> str | None:
-    """Find a previously saved password-login account without exposing credentials."""
+    """Find a canonical Sirius account by its previously saved credentials.
+
+    Temporary pre-login rows may have the same saved credentials but do not own
+    the user's coins, permissions, or auto-registrations. They must never be
+    used to restore a session.
+    """
     normalized_email = email.strip().casefold()
     if not normalized_email or not password:
         return None
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT user_id, login_email, login_password, sirius_token FROM users "
-            "WHERE login_email != '' AND login_password != '' AND sirius_token != ''"
+            "WHERE user_id = uid AND uid != '' "
+            "AND login_email != '' AND login_password != '' AND sirius_token != ''"
         ).fetchall()
     for row in rows:
         try:

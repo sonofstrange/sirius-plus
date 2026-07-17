@@ -1319,6 +1319,10 @@ async def api_login(request: Request):
         saved_user_id = storage.find_user_by_login_credentials(email, password)
         if saved_user_id:
             uid = storage.get_user_uid(saved_user_id) or saved_user_id
+            if saved_user_id != uid:
+                log.warning("login: пропущена некорректная сохранённая запись")
+                saved_user_id = None
+        if saved_user_id:
             ban = storage.get_account_ban(uid)
             if ban:
                 return _banned_account_response(request, ban, wants_json=True if wants_json else False)

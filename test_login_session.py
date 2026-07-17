@@ -153,6 +153,10 @@ class LoginSessionTests(unittest.IsolatedAsyncioTestCase):
         storage.save_token(uid, token)
         storage.set_user_uid(uid, uid)
         storage.save_login_credentials(uid, "user@example.com", "secret")
+        # A stale row with the same credentials may remain after a previous
+        # interrupted login, but it must never win over the canonical UID.
+        storage.save_token("temporary-login-row", token)
+        storage.save_login_credentials("temporary-login-row", "user@example.com", "secret")
 
         class _ClientThatMustNotBeCalled:
             async def login(self, email, password):
