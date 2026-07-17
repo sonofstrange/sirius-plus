@@ -15,7 +15,7 @@
 
         <div class="auth-card__body auth-login-methods">
             <details class="auth-login-alternative auth-login-alternative--profile">
-                <summary>Войти по короткому коду из профиля Пирожкового Диспетчера</summary>
+                <summary><span class="material-symbols-outlined">key</span><span>Короткий код из профиля Пирожкового Диспетчера</span></summary>
                 <p class="auth-card__desc" style="margin-top:8px">
                     Подходит только для аккаунта, в который уже входили. На авторизованном устройстве открой профиль и создай одноразовый код входа.
                 </p>
@@ -36,7 +36,12 @@
             </details>
 
             <section id="login-section" class="auth-password-login">
-                <p class="auth-login-lead">Войди с email и паролем от Sirius. Если этот аккаунт уже входил здесь, Диспетчер откроется сразу.</p>
+                <div class="auth-login-title">
+                    <span class="material-symbols-outlined">password</span>
+                    <strong>Войти с паролем Sirius</strong>
+                    <span class="auth-login-badge">Основной способ</span>
+                </div>
+                <p class="auth-login-lead">Введи email и пароль от Sirius. Если этот аккаунт уже входил здесь, Диспетчер откроется сразу.</p>
                 <form id="password-login-form" method="POST" action="/api/login" onsubmit="submitPasswordLogin(this); return false;">
                 <div class="form-group">
                     <label class="form-label" for="email-input">Email</label>
@@ -71,7 +76,7 @@
             </section>
 
             <details class="auth-login-alternative auth-login-alternative--email">
-                <summary>Не получается войти с паролем? Получить код на почту Sirius</summary>
+                <summary><span class="material-symbols-outlined">mark_email_read</span><span>Войти по коду из письма Sirius</span></summary>
                 <p class="auth-card__desc" style="margin-top:8px">
                     Код придёт на почту, привязанную к Sirius. Пароль вводить здесь не нужно.
                 </p>
