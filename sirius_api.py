@@ -939,15 +939,24 @@ class SiriusClient:
         # Click submit
         log.info("login: нажимаю Войти")
         try:
-            await page.click('button[type="submit"]')
+            submit_button = page.locator('button[type="submit"]:not([disabled])').first
+            await submit_button.wait_for(state="visible", timeout=AUTH_FORM_TIMEOUT_MS)
+            await submit_button.click()
             log.info("login: кнопка нажата")
         except Exception as e:
-            log.warning("login: не удалось нажать — %s", e)
-            return None
+            # Sirius occasionally renders the submit button inside a non-standard
+            # form. Pressing Enter in the password input remains a valid fallback.
+            log.warning("login: не удалось нажать кнопку, отправляю Enter — %s", e)
+            try:
+                await page.locator('input[name="password"]').press("Enter")
+            except Exception as enter_error:
+                log.warning("login: не удалось отправить форму — %s", enter_error)
+                return None
 
         # Wait for auth to complete (URL changes: /password -> /auth/callback -> /)
         # Also wait for ngenix challenge to resolve
-        for _ in range(AUTH_COMPLETION_POLL_ATTEMPTS):
+        last_page_text = ""
+        for attempt in range(AUTH_COMPLETION_POLL_ATTEMPTS):
             await asyncio.sleep(0.25)
             try:
                 url = page.url
@@ -963,6 +972,17 @@ class SiriusClient:
                 elif "my.sirius.online" in url and has_ngenix:
                     log.info("login: аутентификация завершена (my.sirius.online), ngenix пройден")
                     break
+
+                # Do not wait a full minute if Sirius has already rejected the
+                # credentials or asks for its own one-time-code flow.
+                if attempt % 8 == 7 and "auth.sirius.online" in url:
+                    last_page_text = await page.locator("body").inner_text(timeout=1_000)
+                    text = last_page_text.lower()
+                    if any(marker in text for marker in (
+                        "неверный пароль", "неверные данные", "не удалось войти", "неправильный пароль",
+                    )):
+                        log.warning("login: Sirius отклонил вход по паролю")
+                        return None
             except Exception:
                 pass
 
@@ -1025,7 +1045,15 @@ class SiriusClient:
         except Exception:
             pass
 
-        log.warning("login: токен не найден, url=%s", page.url)
+        try:
+            last_page_text = last_page_text or await page.locator("body").inner_text(timeout=1_000)
+        except Exception:
+            last_page_text = ""
+        log.warning(
+            "login: токен не найден, url=%s, страница=%s",
+            page.url,
+            " ".join(last_page_text.split())[:500],
+        )
         return None
 
     async def stop(self):

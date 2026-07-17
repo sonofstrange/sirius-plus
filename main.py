@@ -90,6 +90,13 @@ def _personal_data_consent_required(wants_json: bool = False):
     return RedirectResponse(url=f"/?error={quote(message)}", status_code=303)
 
 
+def _login_error_response(message: str, wants_json: bool = False, status_code: int = 400):
+    """Return an error in the same format as the login form expects."""
+    if wants_json:
+        return JSONResponse({"ok": False, "error": message}, status_code=status_code)
+    return RedirectResponse(url=f"/?error={quote(message)}", status_code=303)
+
+
 def _remember_email_code_attempt(attempt_id: str, user_id: str | None, email: str) -> None:
     now = time.monotonic()
     for old_id, (_, _, created_at) in list(_email_code_attempt_users.items()):
@@ -1282,8 +1289,7 @@ async def api_login(request: Request):
     wants_json = request.headers.get("x-requested-with") == "XMLHttpRequest"
 
     if not _sirius_client:
-        msg = quote("Сервис недоступен")
-        return RedirectResponse(url=f"/?error={msg}", status_code=303)
+        return _login_error_response("Сервис входа временно недоступен. Попробуй через минуту.", wants_json, 503)
 
     # Accept both JSON (old clients) and form data (new form)
     content_type = request.headers.get("content-type", "")
@@ -1301,7 +1307,7 @@ async def api_login(request: Request):
         personal_data_consent = form_data.get("personal_data_consent")
 
     if not email or not password:
-        return RedirectResponse(url="/?error=Email+и+пароль+обязательны", status_code=303)
+        return _login_error_response("Укажи email и пароль от Sirius.", wants_json)
 
     if not _has_personal_data_consent(personal_data_consent):
         return _personal_data_consent_required(wants_json)
@@ -1309,18 +1315,23 @@ async def api_login(request: Request):
     try:
         token = await _sirius_client.login(email, password)
     except Exception as e:
-        return RedirectResponse(url=f"/?error={quote(f'Ошибка входа: {_friendly_error(e)}')}", status_code=303)
+        return _login_error_response(f"Не удалось войти: {_friendly_error(e)}", wants_json)
 
     if not token:
-        return RedirectResponse(url="/?error=Неверный+email+или+пароль", status_code=303)
+        return _login_error_response(
+            "Sirius не подтвердил вход по паролю. Проверь email и пароль. "
+            "Если они верные, войди по одноразовому коду из письма: Sirius иногда требует этот способ.",
+            wants_json,
+            401,
+        )
 
     exp = token_expiry(token)
     if not exp:
-        return RedirectResponse(url="/?error=Некорректный+токен", status_code=303)
+        return _login_error_response("Sirius вернул некорректный токен. Попробуй войти ещё раз.", wants_json)
 
     payload = _decode_jwt(token)
     if not payload or not payload.get("id"):
-        return RedirectResponse(url="/?error=Не удалось определить аккаунт Sirius", status_code=303)
+        return _login_error_response("Не удалось определить аккаунт Sirius. Попробуй войти ещё раз.", wants_json)
 
     uid = payload["id"]
     ban = storage.get_account_ban(uid)

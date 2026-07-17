@@ -14,7 +14,7 @@
         {% endif %}
 
         <div class="auth-card__body">
-            <details class="auth-card__help" style="margin-bottom:24px" open>
+            <details class="auth-card__help" style="margin-bottom:24px">
                 <summary>Войти по короткому коду из профиля</summary>
                 <p class="auth-card__desc" style="margin-top:8px">
                     Подходит только для аккаунта, в который уже входили. На авторизованном устройстве открой профиль и создай одноразовый код входа.
@@ -35,12 +35,12 @@
                 </form>
             </details>
 
-            <details id="login-section" open>
+            <details id="login-section">
                 <summary style="cursor:pointer;font-weight:600;font-size:15px;margin-bottom:16px">
-                    Войти через Sirius (email + пароль)
+                    Войти с паролем Sirius
                 </summary>
                 <p class="auth-card__desc" style="margin-top:8px">
-                    Это безопасно: вход выполняется через отдельный браузерный контекст Sirius, а данные для обновления токена хранятся в зашифрованном виде. Вход может занять до 2 минут. Исходный код проекта открыт на <a href="https://github.com/sonofstrange/sirius-plus" target="_blank" rel="noopener noreferrer">GitHub</a>.
+                    Запасной способ, если не получается получить код на почту. Вход выполняется в отдельном браузерном контексте Sirius; данные для обновления токена хранятся зашифрованными. Это может занять до 2 минут. Исходный код открыт на <a href="https://github.com/sonofstrange/sirius-plus" target="_blank" rel="noopener noreferrer">GitHub</a>.
                 </p>
                 <form method="POST" action="/api/login" onsubmit="submitPasswordLogin(this); return false;">
                 <div class="form-group">
@@ -76,9 +76,9 @@
             </details>
 
             <details class="auth-card__help" style="margin-top:24px" open>
-                <summary>Войти по одноразовому коду Sirius</summary>
+                <summary>Войти по коду из письма Sirius</summary>
                 <p class="auth-card__desc" style="margin-top:8px">
-                    Код придёт на почту из аккаунта Sirius. После входа Диспетчер сохранит только токен Sirius, который обычно действует до 7 дней.
+                    <strong>Рекомендуемый способ.</strong> Код придёт на почту из аккаунта Sirius. После входа Диспетчер сохранит только токен Sirius, который обычно действует до 7 дней.
                 </p>
                 <form id="email-code-login-form" onsubmit="requestSiriusEmailCode(this); return false;">
                     <div class="form-group">

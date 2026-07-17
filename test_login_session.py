@@ -135,6 +135,16 @@ class LoginSessionTests(unittest.IsolatedAsyncioTestCase):
         cookie.load(response.headers["set-cookie"])
         self.assertEqual(storage.get_user_by_session(cookie["session_id"].value), uid)
 
+    async def test_ajax_password_login_reports_missing_sirius_token_as_json(self):
+        main._sirius_client = _SiriusClient(None)
+
+        response = await main.api_login(_AjaxLoginRequest())
+
+        self.assertEqual(response.status_code, 401)
+        body = json.loads(response.body)
+        self.assertEqual(body["ok"], False)
+        self.assertIn("одноразовому коду", body["error"])
+
     async def test_email_code_login_saves_email_without_password(self):
         uid = "sirius-user-email-code"
         payload = {"id": uid, "exp": int(time.time()) + 3600}
