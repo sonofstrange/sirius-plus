@@ -145,6 +145,28 @@ class LoginSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["ok"], False)
         self.assertIn("одноразовому коду", body["error"])
 
+    async def test_saved_password_credentials_restore_existing_session(self):
+        uid = "saved-password-user"
+        payload = {"id": uid, "exp": int(time.time()) + 3600}
+        payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=").decode()
+        token = f"header.{payload_b64}.signature"
+        storage.save_token(uid, token)
+        storage.set_user_uid(uid, uid)
+        storage.save_login_credentials(uid, "user@example.com", "secret")
+
+        class _ClientThatMustNotBeCalled:
+            async def login(self, email, password):
+                raise AssertionError("saved credentials should restore the session locally")
+
+        main._sirius_client = _ClientThatMustNotBeCalled()
+        response = await main.api_login(_AjaxLoginRequest())
+
+        body = json.loads(response.body)
+        self.assertEqual(body, {"ok": True, "redirect": "/schedule", "restored": True})
+        cookie = SimpleCookie()
+        cookie.load(response.headers["set-cookie"])
+        self.assertEqual(storage.get_user_by_session(cookie["session_id"].value), uid)
+
     async def test_email_code_login_saves_email_without_password(self):
         uid = "sirius-user-email-code"
         payload = {"id": uid, "exp": int(time.time()) + 3600}

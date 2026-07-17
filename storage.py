@@ -791,6 +791,30 @@ def get_login_credentials(user_id: str) -> tuple[str, str] | None:
     return None
 
 
+def find_user_by_login_credentials(email: str, password: str) -> str | None:
+    """Find a previously saved password-login account without exposing credentials."""
+    normalized_email = email.strip().casefold()
+    if not normalized_email or not password:
+        return None
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT user_id, login_email, login_password, sirius_token FROM users "
+            "WHERE login_email != '' AND login_password != '' AND sirius_token != ''"
+        ).fetchall()
+    for row in rows:
+        try:
+            stored_email = _decrypt(row["login_email"])
+            stored_password = _decrypt(row["login_password"])
+        except Exception:
+            continue
+        if (
+            stored_email.strip().casefold() == normalized_email
+            and secrets.compare_digest(stored_password, password)
+        ):
+            return row["user_id"]
+    return None
+
+
 def get_login_email(user_id: str) -> str | None:
     with get_conn() as conn:
         row = conn.execute("SELECT login_email FROM users WHERE user_id=?", (user_id,)).fetchone()

@@ -1312,6 +1312,30 @@ async def api_login(request: Request):
     if not _has_personal_data_consent(personal_data_consent):
         return _personal_data_consent_required(wants_json)
 
+    # A returning user can open their Dispatcher account immediately when the
+    # same encrypted Sirius credentials were saved during a previous password login.
+    # This does not create a new account and never sends the password elsewhere.
+    if is_new_session:
+        saved_user_id = storage.find_user_by_login_credentials(email, password)
+        if saved_user_id:
+            uid = storage.get_user_uid(saved_user_id) or saved_user_id
+            ban = storage.get_account_ban(uid)
+            if ban:
+                return _banned_account_response(request, ban, wants_json=True if wants_json else False)
+            storage.record_personal_data_consent(uid, PERSONAL_DATA_CONSENT_VERSION)
+            response = JSONResponse({"ok": True, "redirect": "/schedule", "restored": True}) if wants_json else RedirectResponse(
+                url="/schedule", status_code=303
+            )
+            response.set_cookie(
+                key="session_id",
+                value=storage.create_session_for_user(saved_user_id),
+                max_age=86400 * 365,
+                httponly=True,
+                samesite="lax",
+            )
+            log.info("login: восстановлена сохранённая сессия")
+            return response
+
     try:
         token = await _sirius_client.login(email, password)
     except Exception as e:

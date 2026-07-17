@@ -6,16 +6,19 @@
         <div class="auth-card__header">
             <img src="/static/sirius.png" alt="" width="144" height="144" class="login-logo-img">
             <h1>Пирожковый Диспетчер</h1>
-            <p class="auth-card__subtitle">Автоматическая запись на события</p>
+            <p class="auth-card__subtitle">Расписание, автозапись и уведомления Sirius</p>
         </div>
 
         {% if error %}
         <div class="alert alert-error">{{ error }}</div>
         {% endif %}
 
-        <div class="auth-card__body">
-            <details class="auth-card__help" style="margin-bottom:24px">
-                <summary>Войти по короткому коду из профиля</summary>
+        <div class="auth-card__body auth-login-methods">
+            <details class="auth-method auth-method--profile">
+                <summary class="auth-method__summary">
+                    <span class="material-symbols-outlined">key</span>
+                    <span>Короткий код из профиля</span>
+                </summary>
                 <p class="auth-card__desc" style="margin-top:8px">
                     Подходит только для аккаунта, в который уже входили. На авторизованном устройстве открой профиль и создай одноразовый код входа.
                 </p>
@@ -35,14 +38,15 @@
                 </form>
             </details>
 
-            <details id="login-section">
-                <summary style="cursor:pointer;font-weight:600;font-size:15px;margin-bottom:16px">
-                    Войти с паролем Sirius
+            <details id="login-section" class="auth-method auth-method--password">
+                <summary class="auth-method__summary">
+                    <span class="material-symbols-outlined">password</span>
+                    <span>Войти с паролем Sirius</span>
                 </summary>
                 <p class="auth-card__desc" style="margin-top:8px">
                     Запасной способ, если не получается получить код на почту. Вход выполняется в отдельном браузерном контексте Sirius; данные для обновления токена хранятся зашифрованными. Это может занять до 2 минут. Исходный код открыт на <a href="https://github.com/sonofstrange/sirius-plus" target="_blank" rel="noopener noreferrer">GitHub</a>.
                 </p>
-                <form method="POST" action="/api/login" onsubmit="submitPasswordLogin(this); return false;">
+                <form id="password-login-form" method="POST" action="/api/login" onsubmit="submitPasswordLogin(this); return false;">
                 <div class="form-group">
                     <label class="form-label" for="email-input">Email</label>
                     <input type="email" name="email" id="email-input" class="form-input" style="width:100%"
@@ -75,10 +79,14 @@
                 {% endif %}
             </details>
 
-            <details class="auth-card__help" style="margin-top:24px" open>
-                <summary>Войти по коду из письма Sirius</summary>
+            <details class="auth-method auth-method--primary" open>
+                <summary class="auth-method__summary">
+                    <span class="material-symbols-outlined">mark_email_read</span>
+                    <span>Войти по коду из письма</span>
+                    <span class="auth-method__badge">Рекомендуем</span>
+                </summary>
                 <p class="auth-card__desc" style="margin-top:8px">
-                    <strong>Рекомендуемый способ.</strong> Код придёт на почту из аккаунта Sirius. После входа Диспетчер сохранит только токен Sirius, который обычно действует до 7 дней.
+                    Код придёт на почту, привязанную к Sirius. Это самый стабильный способ: пароль вводить здесь не нужно.
                 </p>
                 <form id="email-code-login-form" onsubmit="requestSiriusEmailCode(this); return false;">
                     <div class="form-group">
@@ -107,6 +115,11 @@
                 </div>
                 <div id="email-code-login-result" class="alert" style="display:none;margin-top:12px"></div>
             </details>
+
+            <div class="auth-login-note">
+                <span class="material-symbols-outlined">lock</span>
+                <span>Данные обрабатываются только для входа и автозаписи. <a href="/privacy" target="_blank" rel="noopener noreferrer">Подробнее</a></span>
+            </div>
 
             <details class="auth-card__help" style="margin-top:24px" hidden>
                 <summary>Или введи токен вручную</summary>
