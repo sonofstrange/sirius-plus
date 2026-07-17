@@ -21,6 +21,14 @@
         <button class="btn btn-primary" onclick="grantCoins()">Выдать коины</button>
         <div id="grant-result" class="alert" style="display:none;margin-top:16px"></div>
 
+        <h2 style="font-size:18px;margin:32px 0 16px">Уведомление всем</h2>
+        <div class="form-group">
+            <label class="form-label" for="broadcast-message">Текст уведомления</label>
+            <textarea class="form-textarea" id="broadcast-message" rows="3" maxlength="1000" placeholder="Сообщение увидят все пользователи с активным аккаунтом"></textarea>
+        </div>
+        <button class="btn btn-primary" type="button" onclick="sendBroadcast()"><span class="material-symbols-outlined">campaign</span> Отправить всем</button>
+        <div id="broadcast-result" class="alert" style="display:none;margin-top:16px"></div>
+
         <h2 style="font-size:18px;margin:32px 0 16px">Блокировка аккаунта</h2>
         <div class="form-group">
             <label class="form-label" for="ban-uid">Sirius UID</label>
@@ -120,6 +128,37 @@ async function createPromocode() {
     } catch (e) {
         result.className = 'alert alert-error';
         result.textContent = e.message;
+    }
+}
+
+async function sendBroadcast() {
+    const input = document.getElementById('broadcast-message');
+    const result = document.getElementById('broadcast-result');
+    const message = (input.value || '').trim();
+    if (!message) {
+        result.style.display = 'block';
+        result.className = 'alert alert-error';
+        result.textContent = 'Напиши текст уведомления';
+        return;
+    }
+    if (!confirm('Отправить это уведомление всем пользователям?')) return;
+    result.style.display = 'block';
+    result.className = 'alert';
+    result.textContent = 'Отправляю...';
+    try {
+        const response = await fetch('/api/admin/broadcast', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({message}),
+        });
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error || 'Не удалось отправить уведомление');
+        result.className = 'alert alert-success';
+        result.textContent = `Уведомление отправлено: ${data.sent} пользователей`;
+        input.value = '';
+    } catch (e) {
+        result.className = 'alert alert-error';
+        result.textContent = e.message || String(e);
     }
 }
 

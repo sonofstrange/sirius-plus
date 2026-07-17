@@ -45,7 +45,7 @@ async def process_radar_state(state: dict, notify: NotifyFn) -> bool:
         return False
 
     text = _alert_message(active)
-    kind = "alarm" if active else "info"
+    kind = "alarm" if active else "alarm_clear"
     for user_id in storage.get_all_users_with_tokens():
         await notify(user_id, text, kind)
     return True

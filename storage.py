@@ -977,6 +977,17 @@ def get_all_users_with_tokens() -> list[str]:
         return [r["user_id"] for r in rows]
 
 
+def get_canonical_users_with_tokens() -> list[str]:
+    """Return one current account row for every Sirius UID with a usable token."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT user_id FROM users
+               WHERE uid != '' AND user_id = uid
+                 AND sirius_token IS NOT NULL AND sirius_token != ''"""
+        ).fetchall()
+        return [r["user_id"] for r in rows]
+
+
 def get_admin_users_with_tokens() -> list[str]:
     with get_conn() as conn:
         rows = conn.execute(

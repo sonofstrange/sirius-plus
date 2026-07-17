@@ -37,7 +37,7 @@ class RadarAlertTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(await sirius_radar.process_radar_state({"active": False}, notify))
         self.assertEqual(len(sent), 4)
-        self.assertTrue(all(entry[2] == "info" for entry in sent[2:]))
+        self.assertTrue(all(entry[2] == "alarm_clear" for entry in sent[2:]))
 
     def test_mobile_push_token_moves_to_current_account(self):
         token = "fcm-token-12345678901234567890"

@@ -428,6 +428,7 @@ async def _send_push_to_user(user_id: str, text: str, ntype: str = "info"):
         "type": ntype,
         "url": "/events?tab=register",
         "is_alarm": ntype == "alarm",
+        "is_alarm_clear": ntype == "alarm_clear",
     }, ensure_ascii=False)
 
     sent = 0
@@ -482,6 +483,7 @@ def _send_mobile_push_blocking(rows, text: str, ntype: str) -> dict:
                     "title": "Пирожковый Диспетчер",
                     "body": text,
                     "is_alarm": "1" if is_alarm else "0",
+                    "is_alarm_clear": "1" if ntype == "alarm_clear" else "0",
                     "url": "/events?tab=register",
                 },
                 android=messaging.AndroidConfig(priority="high"),
@@ -2373,6 +2375,26 @@ async def api_redeem_promocode(request: Request):
         return JSONResponse({"ok": False, "error": message}, status_code=400)
     await web_notify(user_id, f"🎟 {message}", "success")
     return JSONResponse({"ok": True, "message": message, "new_balance": new_balance})
+
+
+@app.post("/api/admin/broadcast")
+async def api_admin_broadcast(request: Request):
+    admin_uid, denied = _require_admin(request)
+    if denied:
+        return denied
+    data = await request.json()
+    message = str(data.get("message", "")).strip()
+    if not message:
+        return JSONResponse({"ok": False, "error": "Напиши текст уведомления"}, status_code=400)
+    if len(message) > 1000:
+        return JSONResponse({"ok": False, "error": "Уведомление не должно быть длиннее 1000 символов"}, status_code=400)
+
+    recipients = storage.get_canonical_users_with_tokens()
+    text = f"📣 {message}"
+    for user_id in recipients:
+        await web_notify(user_id, text, "info")
+    log.info("Admin broadcast from %s delivered to %s users", admin_uid, len(recipients))
+    return JSONResponse({"ok": True, "sent": len(recipients)})
 
 
 @app.get("/api/admin/users")

@@ -48,15 +48,9 @@ final class MobileNotifier {
         alarm.setDescription("Сигналы угрозы атаки БПЛА");
         alarm.enableVibration(true);
         alarm.setVibrationPattern(new long[]{0, 700, 200, 700, 200, 1000});
-        Uri sound = getAlarmSound(context);
-        if (sound == null) {
-            alarm.setSound(null, null);
-        } else {
-            alarm.setSound(sound, new AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ALARM)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .build());
-        }
+        // The foreground BplaAlarmService plays the selected sound in a loop.
+        // Keeping this channel silent prevents a second overlapping playback.
+        alarm.setSound(null, null);
         manager.createNotificationChannel(events);
         manager.createNotificationChannel(alarm);
     }
@@ -106,10 +100,10 @@ final class MobileNotifier {
         if (PROFILE_CUSTOM.equals(profile)) {
             return prefs.getString(CUSTOM_CHANNEL_KEY, "sirius_alarm_custom_v2_default");
         }
-        return "sirius_alarm_v2_" + profile;
+        return "sirius_alarm_notice_v3";
     }
 
-    private static Uri getAlarmSound(Context context) {
+    static Uri getAlarmSound(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(ALARM_PREFS, Context.MODE_PRIVATE);
         return switch (prefs.getString(ALARM_PROFILE_KEY, PROFILE_SIREN)) {
             case PROFILE_RINGTONE -> bundledSound(context, R.raw.alarm_pulse);
