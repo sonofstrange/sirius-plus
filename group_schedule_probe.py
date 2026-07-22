@@ -19,6 +19,9 @@ from sirius_api import SCHEDULE_DAY_URL, SiriusClient, _parse_schedule_events
 
 
 GROUP_QUERY_KEYS = ("union", "unions", "group", "team", "groupName")
+# Local-only convenience for this probe. Paste a current Sirius token here,
+# run the script, then erase it before committing or sharing the file.
+TEST_TOKEN = ""
 
 
 def parse_args() -> argparse.Namespace:
@@ -39,7 +42,7 @@ def parse_args() -> argparse.Namespace:
 def load_token(args: argparse.Namespace) -> str:
     if args.token and args.user_id:
         raise SystemExit("Укажи только --token или --user-id")
-    token = args.token or os.environ.get("SIRIUS_TOKEN", "")
+    token = args.token or os.environ.get("SIRIUS_TOKEN", "") or TEST_TOKEN
     if token:
         return token.strip()
     if args.user_id:
@@ -47,7 +50,7 @@ def load_token(args: argparse.Namespace) -> str:
         if token:
             return token
         raise SystemExit("Для этого user-id в локальной БД нет токена")
-    raise SystemExit("Укажи --user-id или задай SIRIUS_TOKEN")
+    raise SystemExit("Вставь токен в TEST_TOKEN, укажи --token, --user-id или SIRIUS_TOKEN")
 
 
 def schedule_fingerprint(events) -> str:
